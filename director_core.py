@@ -192,7 +192,10 @@ class Desk:
         match = re.search(r" length ([\d.]+) s", reply[0])
         if not match or "no ground" in reply[0]:
             raise ValueError("Check the terrain in Film Viewer before editing this film")
-        length = float(match[1])
+        # The viewer tells a film's length rounded to 0.1 s, and `tracks` leaves out a moment past the real end
+        # (measured: a film "384.5 s" long had a snapshot at 384.48 and none at 384.5), so a shot reaching the
+        # told length could not be filmed. The desk's film ends a twentieth of a second sooner: inside the film.
+        length = round(max(.1, float(match[1]) - .05), 2)
         events = []
         for line in self.command("events kill,land,guns,impact,hit,drop"):
             if line.startswith("event "):
@@ -202,7 +205,8 @@ class Desk:
         path = self.root / (hashlib.sha256(film.encode()).hexdigest()[:20] + ".json")
         if path.exists():
             saved = json.loads(path.read_text(encoding="utf-8"))
-            shots = validate_plan(saved["shots"], length)
+            # A shot saved up to the told length ends with the film.
+            shots = validate_plan([{**shot, "end": min(shot["end"], length)} for shot in saved["shots"]], length)
         else:
             saved, shots = {}, []
         project = {"film": film, "length": length, "revision": saved.get("revision", 0) + 1,

@@ -338,6 +338,10 @@ each of these; a change in the viewer would make the workaround unnecessary.
   again once they are solid.
 - **Where a seek lands.** Up to 0.08 s past the time asked for, while `time`
   answers in tenths of a second.
+- **The end of a film.** `open` tells the length rounded to 0.1 s, and `tracks`
+  leaves out a snapshot past the real end (a film told as 384.5 s had one at
+  384.48 and none at 384.5), so a shot reaching the told length could not be
+  filmed. The desk ends every film 0.05 s sooner.
 - **The `chase` camera** driven through the socket did not keep the aircraft in
   the picture. The desk fastens a camera to the airframe instead.
 - **A render cannot be interrupted** from the socket, only in the viewer.

@@ -315,6 +315,22 @@ class DeskTests(unittest.TestCase):
         self.assertIn("Aircraft 10", self.desk.snapshot()["job"]["error"])
         self.assertFalse(any(c.startswith("video ") for c in commands))
 
+    def test_a_film_ends_inside_the_length_the_viewer_tells(self):
+        # The viewer rounds a film's length to 0.1 s and has no aircraft paths past the real end: the desk's film
+        # ends 0.05 s sooner, and a shot saved up to the told length ends with it.
+        def native(command, progress):
+            if command.startswith("open "):
+                return ["opened films/test.ahf length 20.0 s in 0.1 s"]
+            if command.startswith("shot "):
+                Path(command[5:]).write_bytes(b"test")
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+        self.desk.viewer.command = native
+        self.desk.data["films"] = [{"path": "films/test.ahf", "name": "test.ahf", "mb": 1, "modified": 0}]
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 15, "end": 20}]})
+        self.run_action({"action": "open", "film": "films/test.ahf"})
+        project = self.desk.snapshot()["project"]
+        self.assertEqual((project["length"], project["shots"][0]["end"]), (19.95, 19.95))
+
     def test_preview_clip_shows_an_unsaved_angle_and_is_rendered_once(self):
         commands = []
         def native(command, progress):
