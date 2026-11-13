@@ -72,12 +72,7 @@ time, shot and camera; Videos folder, under The cut, opens it.
 
 ## How it is built
 
-```
- browser page            local server               Film Viewer
- (ui/, React)   HTTP     (director_api.py,   TCP    (the offline viewer,
- 127.0.0.1:8766 <------> director_core.py)  <-----> its documented text
-                         one worker thread          socket, 127.0.0.1)
-```
+![The page in your browser sends your shots to a small program on your PC, which sends camera commands to Film Viewer and gets flight paths and video back](docs/flow.svg)
 
 - `viewer_socket.py` — the viewer's text protocol
 - `shot_plan.py` — shot geometry and the viewer's camera commands
