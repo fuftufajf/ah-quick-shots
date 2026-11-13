@@ -103,6 +103,11 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.desk.worker.join(5)
                     return self.send_json(200, self.server.desk.snapshot())
                 return self.send_json(202, job)
+            if self.path == "/api/folder":  # the videos folder, shown in Explorer: a page cannot open a folder itself
+                folder = self.server.desk.videos
+                folder.mkdir(parents=True, exist_ok=True)
+                os.startfile(folder)
+                return self.send_json(200, {"folder": str(folder)})
             self.send_json(404, {"message": "Not found"})
         except Conflict as error:
             self.send_json(409, {"message": str(error)})
@@ -115,20 +120,28 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-def default_output(root):
-    """Where clips and renders go when output.txt names no folder. Film Viewer takes no spaces in a video
-    path, and the temp folder has one when the Windows account name does: then the first place without."""
+def working_folder(root):
+    """Where the viewer writes stills, preview clips and renders. Film Viewer takes no spaces in a video path,
+    and the temp folder has one when the Windows account name does: then the first place without."""
     places = [Path(tempfile.gettempdir()) / "AHQuickShots", Path(root) / "media",
               Path(os.environ.get("PUBLIC", "C:/Users/Public")) / "AHQuickShots"]
     return next((place for place in places if " " not in str(place)), places[0])
 
 
-def make_server(port=PORT, root=ROOT / ".quickshots", media_root=None):
+def videos_folder(root):
+    """Where finished videos are kept: the folder named in output.txt, else "AH Quick Shots" in the account's
+    Videos folder. The desk copies a finished render there, so this path may have spaces."""
+    setting = Path(root) / "output.txt"
+    if setting.exists() and setting.read_text(encoding="utf-8").strip():
+        return Path(setting.read_text(encoding="utf-8").strip())
+    videos = Path.home() / "Videos"
+    return (videos if videos.is_dir() else Path.home()) / "AH Quick Shots"
+
+
+def make_server(port=PORT, root=ROOT / ".quickshots", media_root=None, videos=None):
     server = ThreadingHTTPServer((HOST, port), Handler)
     server.daemon_threads = True
-    output_setting = Path(root) / "output.txt"
-    media_root = media_root or (Path(output_setting.read_text(encoding="utf-8").strip()) if output_setting.exists() else default_output(root))
-    server.desk = Desk(root, media_root=media_root)
+    server.desk = Desk(root, media_root=media_root or working_folder(root), videos=videos or videos_folder(root))
     return server
 
 

@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import threading
 import time
 import uuid
@@ -58,11 +59,18 @@ def framing(found):
 
 
 class Desk:
-    def __init__(self, root, viewer=None, media_root=None):
+    def __init__(self, root, viewer=None, media_root=None, videos=None):
+        """`media_root` is the working folder (stills, preview clips, the page's copy of a render): the viewer
+        writes there, so its path has no spaces. `videos` is where a finished render is kept under a name that
+        says what it is: the one folder the pilot looks in."""
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.media_root = Path(media_root) if media_root else self.root / "media"
+        self.videos = Path(videos) if videos else self.media_root / "videos"
         (self.media_root / "clips").mkdir(parents=True, exist_ok=True)
+        for still in self.media_root.glob("*.bmp"):  # left by an earlier run: no page will ask for them again
+            self._drop(still)
+        self._tidy()
         self.viewer = viewer or Viewer()
         self.lock = threading.RLock()
         self.compiled = {}  # camera_key -> cam commands, so an unchanged shot never rereads its tracks
@@ -74,7 +82,38 @@ class Desk:
         self.stills = deque()
         self.data = {"connected": False, "films": [], "project": None, "planes": [],
                      "now": 0, "icons": False, "problems": {}, "nearby": None,
-                     "preview": None, "proposals": [], "job": None}
+                     "preview": None, "proposals": [], "job": None, "videos": str(self.videos)}
+
+    @staticmethod
+    def _drop(path):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass  # still open in a browser on Windows: the next start takes it
+
+    def _tidy(self):
+        """The working folder keeps the page's copies of the last few renders only; the videos folder has them all."""
+        for old in sorted(self.media_root.glob("*.mp4"), key=lambda p: p.stat().st_mtime)[:-6]:
+            self._drop(old)
+
+    def _keep(self, path, project, row, labels):
+        """A finished render, copied to the videos folder under a name that tells it from the others: the film,
+        where the shot starts, its name and its camera (the page sends each shot's camera as it calls it)."""
+        clock = lambda seconds: f"{int(seconds // 60):02d}.{int(seconds % 60):02d}"
+        film, first = Path(project["film"]).stem, row[0]
+        if len(row) == 1:
+            camera = labels.get(first["id"]) if isinstance(labels, dict) else None
+            title = f"{film} {clock(first['start'])} {first['name']} - {camera if isinstance(camera, str) and camera else first['kind']}"
+        else:
+            title = f"{film} {clock(first['start'])}-{clock(row[-1]['end'])} cut of {len(row)} shots"
+        title = re.sub(r":\s*", " ", title)  # "Kill: Somebody" reads better as "Kill Somebody" than "Kill- Somebody"
+        title = re.sub(r'[\\/*?"<>|\x00-\x1f]+', "-", title).strip(" .")[:120] or "video"
+        self.videos.mkdir(parents=True, exist_ok=True)
+        target, n = self.videos / (title + ".mp4"), 2
+        while target.exists():  # the same shot rendered again is kept beside the first
+            target, n = self.videos / f"{title} ({n}).mp4", n + 1
+        shutil.copyfile(path, target)
+        return target
 
     def snapshot(self):
         with self.lock:
@@ -340,7 +379,7 @@ class Desk:
         folder = self.media_root / "clips"
         path = folder / (name + ".mp4")
         if " " in str(path):
-            raise ValueError("Film Viewer video paths cannot contain spaces: name an output folder without spaces in .quickshots/output.txt")
+            raise ValueError("Film Viewer video paths cannot contain spaces: move AH Quick Shots to a folder without spaces in its path")
         if path.exists():
             path.touch()
         else:
@@ -464,7 +503,7 @@ class Desk:
         if not shots:
             raise ValueError("Select at least one saved shot")
         if " " in str(self.media_root):
-            raise ValueError("Film Viewer video paths cannot contain spaces: name an output folder without spaces in .quickshots/output.txt")
+            raise ValueError("Film Viewer video paths cannot contain spaces: move AH Quick Shots to a folder without spaces in its path")
         quality = raw.get("quality") if raw.get("quality") in RENDERS else "final"
         size = RENDERS[quality].replace(" ", "x", 1).replace(" ", " @ ")
         # The viewer holds one camera at a time: takes of one stretch come out as videos of their own, each the
@@ -485,7 +524,9 @@ class Desk:
             path = self.media_root / (uuid.uuid4().hex + ".mp4")
             self._render(row[0]["start"], row[-1]["end"], path, RENDERS[quality],
                          f"Rendering {len(row)} shot{'s' * (len(row) > 1)} at {size}" + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""))
-            files.append({"url": "/media/" + path.name, "file": str(path), "shots": [s["id"] for s in row]})
+            saved = self._keep(path, project, row, raw.get("labels"))
+            files.append({"url": "/media/" + path.name, "file": str(saved), "shots": [s["id"] for s in row]})
+        self._tidy()
         with self.lock:
             self.data["preview"] = {"url": files[0]["url"], "kind": "video", "time": shots[0]["start"],
                                     "revision": project["revision"], "film": project["film"], "file": files[0]["file"],

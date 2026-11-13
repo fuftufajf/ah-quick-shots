@@ -11,7 +11,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from director_api import default_output, make_server
+from director_api import make_server, videos_folder, working_folder
 from director_core import Conflict, Desk, framing
 from shot_plan import camera_pose, compile_shot, escort_poses, nearby, passes, probe_cameras, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows
@@ -236,6 +236,8 @@ class DeskTests(unittest.TestCase):
                 return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder']
             if command.startswith("shot "):
                 Path(command[5:]).write_bytes(b"test")
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"test")
             return []
         self.desk.viewer.command = native
         plan = [SHOT, {**SHOT, "id": "two", "start": 5, "end": 7}, {**SHOT, "id": "three", "start": 9, "end": 11}]
@@ -271,10 +273,17 @@ class DeskTests(unittest.TestCase):
         # and until it is selected the first take is the one that plays.
         self.desk.save({"expected_revision": 3, "shots": plan + [{**SHOT, "id": "take", "kind": "cockpit"}]})
         del commands[:]
-        self.run_action({"action": "export_cut", "shot_ids": ["one", "take", "three"], "quality": "draft"})
+        self.run_action({"action": "export_cut", "shot_ids": ["one", "take", "three"], "quality": "draft", "labels": {"take": "Cock/pit"}})
         self.assertEqual([c.split()[1:3] for c in commands if c.startswith("video ")],
                          [["1.00000000", "11.00000000"], ["1.00000000", "3.00000000"]])
-        self.assertEqual([f["shots"] for f in self.desk.snapshot()["preview"]["files"]], [["one", "three"], ["take"]])
+        files = self.desk.snapshot()["preview"]["files"]
+        self.assertEqual([f["shots"] for f in files], [["one", "three"], ["take"]])
+        # Each finished video is kept in the videos folder under a name that says what it is (the same cut
+        # rendered again beside the first); the working folder holds the copy the page plays.
+        self.assertEqual([Path(f["file"]).name for f in files], ["test 00.01-00.11 cut of 2 shots (2).mp4", "test 00.01 Pair - Cock-pit.mp4"])
+        self.assertTrue(all(Path(f["file"]).parent == self.desk.videos and Path(f["file"]).exists()
+                            and (self.desk.media_root / Path(f["url"]).name).exists() for f in files))
+        self.assertEqual(len(list(self.desk.videos.glob("*.mp4"))), 4)
         del commands[:]
         self.run_action({"action": "seek", "seconds": 2})
         cams = [c for c in commands if c.startswith("cam ")]
@@ -449,13 +458,29 @@ class DeskTests(unittest.TestCase):
         self.assertEqual((found["hero"], found["aircraft"][0]), (19, {"id": 10, "closest": 120, "typical": 310, "name": "YORK"}))
         self.assertIsNone(found["aircraft"][1]["name"])
 
-    def test_default_output_folder_has_no_space_when_the_account_name_does(self):
+    def test_working_folder_has_no_space_when_the_account_name_does(self):
         with patch("director_api.tempfile.gettempdir", return_value="C:/Users/John Smith/AppData/Local/Temp"):
-            self.assertEqual(default_output("C:/ah-quick-shots/.quickshots"), Path("C:/ah-quick-shots/.quickshots/media"))
+            self.assertEqual(working_folder("C:/ah-quick-shots/.quickshots"), Path("C:/ah-quick-shots/.quickshots/media"))
             with patch.dict("os.environ", {"PUBLIC": "C:/Users/Public"}):
-                self.assertEqual(default_output("C:/My Games/ah-quick-shots/.quickshots"), Path("C:/Users/Public/AHQuickShots"))
+                self.assertEqual(working_folder("C:/My Games/ah-quick-shots/.quickshots"), Path("C:/Users/Public/AHQuickShots"))
         with patch("director_api.tempfile.gettempdir", return_value="C:/Temp"):
-            self.assertEqual(default_output("C:/any where/.quickshots"), Path("C:/Temp/AHQuickShots"))
+            self.assertEqual(working_folder("C:/any where/.quickshots"), Path("C:/Temp/AHQuickShots"))
+
+    def test_finished_videos_have_a_folder_of_their_own_and_the_working_folder_is_tidied(self):
+        # The videos folder may have spaces: output.txt names it, else it is in the account's Videos folder.
+        root = Path(self.temp.name) / "settings"
+        root.mkdir()
+        with patch("director_api.Path.home", return_value=Path(self.temp.name)):
+            self.assertEqual(videos_folder(root), Path(self.temp.name) / "AH Quick Shots")
+        (root / "output.txt").write_text("D:/My Videos/Aces High\n", encoding="utf-8")
+        self.assertEqual(videos_folder(root), Path("D:/My Videos/Aces High"))
+        # A start clears the stills an earlier run left and all but the last few renders; clips are a cache.
+        work = Path(self.temp.name) / "work"
+        (work / "clips").mkdir(parents=True)
+        for name in ["a.bmp", "b.bmp", "clips/kept.mp4", *[f"{n}.mp4" for n in range(9)]]:
+            (work / name).write_bytes(b"test")
+        Desk(Path(self.temp.name) / "plans", self.viewer, work)
+        self.assertEqual((len(list(work.glob("*.bmp"))), len(list(work.glob("*.mp4"))), (work / "clips/kept.mp4").exists()), (0, 6, True))
 
     def test_film_library_lists_newest_first(self):
         lines = ["folder C:\\ah\\films", "film films/old.ahf 1.0 MB", "film films/new one.ahf 2.5 MB", "2 films"]

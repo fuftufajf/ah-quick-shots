@@ -44,6 +44,9 @@ does not read the viewer's memory or its film files.
    quick draft, with the gaps between shots left out. Add my kills makes a shot
    for every kill of yours.
 
+Finished videos are in **Videos\AH Quick Shots**, each named after its film,
+time, shot and camera; Videos folder, under The cut, opens it.
+
 ## Known limits
 
 - **Film Viewer does not run beside the game.** If the viewer exits at once,
@@ -55,8 +58,9 @@ does not read the viewer's memory or its film files.
   says for how long).
 - **Trails and gun cam** are not in the socket: tick them in the viewer's Edit
   tools.
-- **Paths with spaces.** The viewer takes no spaces in a video path. Videos go
-  to a folder without spaces by itself; keep the app's own folder free of
+- **Paths with spaces.** The viewer takes no spaces in a video path. It
+  renders into a working folder without spaces and the desk copies the
+  finished video to your Videos folder; keep the app's own folder free of
   spaces too.
 - The server has no window. It runs until you sign out of Windows or end
   `pythonw.exe` in Task Manager.

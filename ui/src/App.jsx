@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useRef, useState} from "react";
-import {ArrowClockwise, CaretLeft, CaretRight, FilmSlate, FilmStrip, MagnifyingGlass, Pause, Play, Plus, Sparkle, Trash} from "@phosphor-icons/react";
+import {ArrowClockwise, CaretLeft, CaretRight, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Trash} from "@phosphor-icons/react";
 import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
@@ -400,11 +400,10 @@ export function App() {
     return kill ? kill.fields[kill.fields[3] === String(id) ? 0 : 1] : `Aircraft ${id}`;
   };
   const camera = s => ANGLES.find(a => a.key === angleOf(s, castOf(s, desk.planes))).label;
-  // A rendered video saves under a name that tells the takes apart: its one shot and camera, else its number.
-  const saveAs = (file, i) => {
-    const [only, more] = (file.shots || []).map(id => shots.find(s => s.id === id));
-    return (only && !more ? `${only.name} - ${camera(only)}` : `Cut ${i + 1}`).replace(/[\\/:*?"<>|→]+/g, "-") + ".mp4";
-  };
+  // Finished videos are kept in one folder, each under its film, time, shot and camera. A page cannot open a
+  // folder, so the desk shows it in Explorer.
+  const openVideos = () => request("/api/folder", {}).catch(e => setError(e.message));
+  const baseName = path => String(path || "").split(/[\\/]/).pop();
   const planes = [...desk.planes];
   if (cast.lead != null && !planes.some(p => p.id === cast.lead)) planes.push({id: cast.lead, name: `${called(cast.lead)} · not at the playhead`});
   // Who to film you with: the aircraft that come near in this shot, nearest first. A name comes from the viewer,
@@ -460,10 +459,10 @@ export function App() {
             {working && <div className="preview-busy"><span className="spinner"/><span>{desk.job?.message || "Working…"}</span>{desk.job?.expect && <span className="meter"><i style={{width: `${Math.min(100, (desk.job.elapsed || 0) / desk.job.expect * 100)}%`}}/></span>}</div>}
             {failure && <div className="preview-busy failed" role="alert"><span>{failure}</span><button onClick={() => setHidden(desk.job.id)} aria-label="Dismiss message">×</button></div>}
           </div>
-          <div className="caption"><span>{video ? "Rendered by Film Viewer · original sound"
+          <div className="caption"><span title={video ? (video.files || [video]).map(f => baseName(f.file)).join("\n") : undefined}>{video ? `Rendered by Film Viewer · original sound · ${(video.files || []).length > 1 ? `${video.files.length} videos saved` : `saved as ${baseName(video.file)}`} in ${desk.videos}`
             : clip ? `Preview ${formatTime(clip.start)} — ${formatTime(clip.end)}${movable ? " · drag the picture to move the camera" : ""}`
             : still && draft ? `Still at ${formatTime(still.time)} through this camera${movable ? " · drag to move it, Ctrl + wheel to zoom" : ""} · Play shows it moving`
-            : still ? `Still at ${formatTime(still.time)} · press Play for a moving preview` : "A preview takes about as long to render as it plays."}</span>{video && <span>{(video.files || [video]).map((f, i, all) => <a key={f.url} href={f.url} download={saveAs(f, i)} title={saveAs(f, i)}>{all.length > 1 ? `Save video ${i + 1} ↗ ` : "Save video ↗"}</a>)} <button onClick={() => setClosedVideo(video.url)}>Back to the film</button></span>}</div>
+            : still ? `Still at ${formatTime(still.time)} · press Play for a moving preview` : "A preview takes about as long to render as it plays."}</span>{video && <span><button onClick={openVideos}>Open folder</button><button onClick={() => setClosedVideo(video.url)}>Back to the film</button></span>}</div>
 
           <div className="timeline">
             <div className="lane">
@@ -547,7 +546,8 @@ export function App() {
         <div className="cut-actions">
           <button disabled={working || dirty || !uncovered.length} onClick={reel} title="A shot for every kill of yours that has none yet">Add my kills ({uncovered.length})</button>
           <select aria-label="Render quality" value={quality} onChange={e => setQuality(e.target.value)}><option value="final">1080p60</option><option value="4k">4K · 2160p60</option><option value="draft">Quick draft</option></select>
-          <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; action("export_cut", {shot_ids: chosen, quality}); }} title={dirty ? "Add or update the shot first" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button></div>
+          <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; action("export_cut", {shot_ids: chosen, quality, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))}); }} title={dirty ? "Add or update the shot first" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>
+          <button onClick={openVideos} title={`Finished videos are kept in ${desk.videos}`}><FolderOpen/> Videos folder</button></div>
       </aside>
     </section>
   </main>;

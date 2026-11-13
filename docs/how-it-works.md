@@ -215,13 +215,26 @@ aircraft tracks of a stretch are read once for every camera tried on it. The
 desk controls only the offline viewer, never the live game.
 
 `.quickshots/current.ahs` is the most recently applied native plan; JSON is the
-editable project. Stills, preview clips and rendered videos go to an
-`AHQuickShots` folder under the system temp directory. The viewer takes no
-spaces in a video path, so when the temp directory has one (a Windows account
-name with a space) the desk uses `.quickshots/media` instead, or
-`AHQuickShots` under the Public folder. To choose the folder yourself, write
-its absolute path, without spaces, into `.quickshots/output.txt`.
-MP4s are kept for review and download; old stills are removed after replacement.
+editable project.
+
+Files go to two places. **Finished videos** are kept in `AH Quick Shots` in
+your Videos folder, each under a name that says what it is: the film, where
+the shot starts, the shot's name and its camera
+(`myfilm 08.08 Kill Somebody - Observer.mp4`; a video of several shots is
+`myfilm 05.14-08.16 cut of 3 shots.mp4`; the same thing rendered again gets
+`(2)`). Videos folder, under The cut, shows it in Explorer. To keep them
+somewhere else, write that folder's absolute path into
+`.quickshots/output.txt`; it may have spaces.
+
+Everything else is working material in an `AHQuickShots` folder under the
+system temp directory: the stills, the preview clips (`clips/`, the newest 80:
+a cache) and the copy of a render that the page plays. The viewer writes there
+and takes no spaces in a video path, so when the temp directory has one (a
+Windows account name with a space) the desk uses `.quickshots/media` instead,
+or `AHQuickShots` under the Public folder; a finished render is then copied to
+the videos folder. The desk keeps this folder small: three stills while it
+runs, none left from an earlier run, and the page's copies of the last six
+renders. Deleting the whole folder loses nothing but the previews' cache.
 
 Checks: `python director_api.py --check`, `node ui/src/desk.test.mjs`,
 `npm --prefix ui run build`. No game is needed for automated checks. Live QA
@@ -309,7 +322,10 @@ most 5 s later). One action runs at a time; a second is refused while
 - `export_cut` `{shot_ids?, quality}` — draft|final|4k: the chosen saved shots
   (all when omitted) as one 16:9 MP4 with sound, the gaps left out. Overlapping
   shots cannot share a video: `state.preview.files` then lists several,
-  `[{url, file, shots}]`
+  `[{url, file, shots}]`; `file` is where the video was kept (`state.videos`
+  is that folder). `labels` `{shot id: camera name}` names each shot's camera
+  in its file name; without it the shot's `kind` is used
+- POST `/api/folder` `{}` shows the videos folder in Explorer
 
 `seek`, `clip` and `icons` also take `shot`, an unsaved shot object: it stands
 in for the saved shots it overlaps, so a camera can be looked at before it is
