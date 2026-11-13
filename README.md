@@ -5,6 +5,8 @@ cameras, and render the ones you like. AH Quick Shots is a page in your browser
 that drives the offline Film Viewer for you: the viewer keeps the world, draws
 the picture and renders the video with the film's sound.
 
+![A fight picked from the list, shown through the "You in front" camera, with two shots of it in the cut](docs/screenshot.png)
+
 **Unofficial.** This tool is not made by, endorsed by or affiliated with
 HiTech Creations. It uses only the Film Viewer's documented local socket (the
 commands the viewer lists under `help`). It does not touch the game, and it
