@@ -7,6 +7,10 @@ the picture and renders the video with the film's sound.
 
 ![A fight picked from the list, shown through the "You in front" camera, with two shots of it in the cut](docs/screenshot.png)
 
+A fight filmed with it, on YouTube:
+
+[![109K-4 against La-7: two aircraft turning under the sun](https://img.youtube.com/vi/v4BFbKYKXig/maxresdefault.jpg)](https://www.youtube.com/watch?v=v4BFbKYKXig)
+
 **Unofficial.** This tool is not made by, endorsed by or affiliated with
 HiTech Creations. It uses only the Film Viewer's documented local socket (the
 commands the viewer lists under `help`). It does not touch the game, and it
