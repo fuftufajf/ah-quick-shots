@@ -1,0 +1,489 @@
+"""Run with python -m unittest test_director (no Film Viewer required)."""
+import copy
+import http.client
+import json
+import math
+from pathlib import Path
+import socket
+import tempfile
+import threading
+import time
+import unittest
+from unittest.mock import patch
+
+from director_api import default_output, make_server
+from director_core import Conflict, Desk, framing
+from shot_plan import camera_pose, compile_shot, escort_poses, nearby, passes, probe_cameras, validate_plan, validate_shot
+from viewer_socket import Viewer, film_rows
+
+SHOT = {"id": "one", "name": "Pair", "start": 1, "end": 3, "kind": "pair",
+        "hero": 19, "target": 10, "side": "right", "distance": 280, "height": 60, "fov": 60}
+PROJECT = {"film": "films/test.ahf", "length": 20, "revision": 1, "shots": [], "events": []}
+
+
+class SlowViewer:
+    def __init__(self):
+        self.entered, self.release = threading.Event(), threading.Event()
+
+    def command(self, command, progress):
+        if command.startswith("seek "):
+            self.entered.set()
+            progress("waiting for viewer")
+            self.release.wait(3)
+            return ["at 1.0 in 2.0 s"]
+        if command == "planes":
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder']
+        if command.startswith("shot "):
+            Path(command[5:]).write_bytes(b"test")
+            return ["saved"]
+        return []
+
+
+class DeskTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir=Path(__file__).parent)
+        self.viewer = SlowViewer()
+        self.desk = Desk(self.temp.name, self.viewer)
+        self.desk.pace = 0  # no waiting for a viewer that is not there
+        self.desk.data.update(project=copy.deepcopy(PROJECT), connected=True, now=10)
+
+    def tearDown(self):
+        self.viewer.release.set()
+        deadline = time.monotonic() + 3
+        while self.desk.snapshot()["job"] and self.desk.snapshot()["job"]["running"] and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.temp.cleanup()
+
+    def test_background_seek_does_not_lock_state_and_rejects_duplicate_work(self):
+        self.desk.start({"action": "seek", "seconds": 1, "expected_revision": 1})
+        self.assertTrue(self.viewer.entered.wait(1))
+        begin = time.monotonic()
+        state = self.desk.snapshot()
+        self.assertLess(time.monotonic() - begin, .1)
+        self.assertTrue(state["job"]["running"])
+        with self.assertRaises(Conflict):
+            self.desk.start({"action": "seek", "seconds": 2, "expected_revision": 1})
+        with self.assertRaises(Conflict):
+            self.desk.save({"expected_revision": 1, "shots": []})
+
+    def test_revision_conflict_and_restart_readback(self):
+        saved = self.desk.save({"expected_revision": 1, "shots": [SHOT]})
+        self.assertEqual(saved["revision"], 2)
+        disk = json.loads(next(Path(self.temp.name).glob("*.json")).read_text())
+        self.assertEqual(disk, saved)
+        with self.assertRaises(Conflict):
+            self.desk.save({"expected_revision": 1, "shots": []})
+        with self.assertRaises(Conflict):
+            self.desk.save({"expected_revision": 2.0, "shots": []})
+
+    def test_failed_disk_write_keeps_previous_plan(self):
+        self.desk.save({"expected_revision": 1, "shots": [SHOT]})
+        before = self.desk.snapshot()["project"]
+        with patch("director_core.os.replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self.desk.save({"expected_revision": 2, "shots": []})
+        self.assertEqual(self.desk.snapshot()["project"], before)
+
+    def test_plan_validation_boundaries(self):
+        for changes in ({"start": float("nan")}, {"fov": 360}, {"hero": 1.5},
+                        {"target": 19}, {"hero": None}, {"start": -1}, {"end": 40}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_shot({**SHOT, **changes}, 20)
+        # Takes of one stretch through different cameras are allowed; they are dealt into passes without overlaps.
+        takes = validate_plan([{**SHOT, "id": "later", "start": 5, "end": 7}, SHOT, {**SHOT, "id": "two"}], 20)
+        self.assertEqual([[s["id"] for s in row] for row in passes(takes)], [["one", "later"], ["two"]])
+        self.assertNotIn("notes", validate_shot({**SHOT, "notes": "kept by an older plan"}, 20))  # read, and dropped
+
+    def test_true_world_camera_and_many_keyframes(self):
+        shot = validate_shot(SHOT, 20)
+        tracks = {t: {19: (t*100, 200, 0, 0, 0, 0), 10: (t*100, 200, 400, 0, 0, 0)} for t in [1, 1.5, 2, 2.5, 3]}
+        commands = compile_shot(shot, tracks)
+        self.assertEqual(len(commands), 4)
+        self.assertTrue(all(" fixed " in c and c.endswith("curve") for c in commands))
+        fixed = compile_shot({**shot, "kind": "fixed"}, tracks)
+        self.assertEqual(len(fixed), 1)
+        self.assertIn("at 10", fixed[0])
+        # An ambush stands by the other aircraft's path instead (here 400 ft further along z) and watches it.
+        ambush = compile_shot({**shot, "kind": "ambush", "orbit": 0}, tracks)
+        self.assertEqual((len(ambush), ambush[0].endswith("at 10")), (1, True))
+        self.assertAlmostEqual(float(ambush[0].split()[6]) - float(compile_shot({**shot, "kind": "fixed", "orbit": 0}, tracks)[0].split()[6]), 400)
+        # A camera ship flies with the lead (heading +z; the other 600 ft ahead): 200 ft from it, 30 degrees off
+        # the line through both, 30 ft up. Both fit its lens, so it looks between them: 30 degrees to the lead,
+        # 7 to the other, 19 in the middle.
+        ship = {**shot, "kind": "escort", "orbit": 30, "distance": 200, "height": 30, "fov": 50}
+        flying = {t: {19: (0, 200, t * 400, 0, 0, 0), 10: (0, 200, t * 400 + 600, 0, 0, 0)} for t in [1, 1.5, 2, 2.5, 3]}
+        x, alt, z, yaw = escort_poses(ship, flying)[2][:4]
+        self.assertEqual((round(x), alt, round(z)), (-100, 230, 627))
+        self.assertAlmostEqual(math.degrees(yaw), -18.7, places=0)
+        # Asked for a narrower lens, it opens it as far as both need (23 degrees between them and room round
+        # each) and shows the same picture. When even its widest could not hold both (the ship on the other
+        # aircraft's side, the two some 150 degrees apart), it keeps the lens asked for and the lead in the middle.
+        narrow = escort_poses({**ship, "fov": 20}, flying)[2]
+        self.assertAlmostEqual(math.degrees(narrow[3]), -18.7, places=0)
+        self.assertTrue(44 < math.degrees(narrow[6]) < 49)
+        self.assertEqual(escort_poses(ship, flying)[2][6], math.radians(50))
+        between = escort_poses({**ship, "orbit": 150, "fov": 36}, flying)[2]
+        self.assertAlmostEqual(between[6], math.radians(36))
+        self.assertLess(abs(between[3] - math.atan2(between[0], 800 - between[2])), math.radians(1.5))
+        # The further off, the heavier: where the lead turns a sharp corner (at 3 s, 1200 ft along), a ship
+        # 520 ft off swings much wider of its station than one 130 ft off, which cuts the corner only a little.
+        bend = {t: {19: ((0, 200, t * 400, 0, 0, 0) if t <= 3 else ((t - 3) * 400, 200, 1200, 0, 0, 0)),
+                    10: (0, 200, t * 400 + 3000, 0, 0, 0)} for t in [i / 2 for i in range(13)]}
+        wide = lambda distance: math.dist(escort_poses({**ship, "orbit": 0, "distance": distance, "height": 0}, bend)[6][:3],
+                                          (0, 200, 1200)) - distance
+        self.assertTrue(0 < wide(130) < 200 and wide(520) > 2 * wide(130))
+        # It is heavy: the other aircraft crossing from one side to the other in half a second moves it little.
+        crossing = {t: {19: rows[19], 10: ((-300 if t < 2 else 300), 200, t * 400 + 600, 0, 0, 0)} for t, rows in flying.items()}
+        places = escort_poses(ship, crossing)
+        self.assertLess(math.dist(places[1][:3], places[2][:3]) - 200, 60)  # 200 ft is the lead's own half second
+        self.assertEqual(len(compile_shot(ship, flying)), 4)
+        # The other aircraft 600 ft above as well: the ship drops below the lead, on the line through both.
+        above = {t: {19: rows[19], 10: (0, 800, t * 400 + 600, 0, 0, 0)} for t, rows in flying.items()}
+        self.assertLess(escort_poses({**ship, "height": 0}, above)[2][1], 200 - 100)
+        # Watching one aircraft, the viewer holds it in the middle between our points, at any lens. Watching its
+        # hero the ship circles the hero's own line of flight: 90 degrees is off the right wing, +x when heading +z.
+        close = {**ship, "watch": "hero", "orbit": 90, "distance": 90, "height": 0, "fov": 12}
+        self.assertEqual([round(v) for v in escort_poses(close, flying)[2][:3]], [90, 200, 800])
+        self.assertTrue(all(" at 19 curve" in line for line in compile_shot(close, flying)))
+        self.assertTrue(all(" at 10 curve" in line for line in compile_shot({**ship, "watch": "target"}, flying)))
+        self.assertEqual(validate_shot({**SHOT, "kind": "escort", "watch": "hero", "target": None}, 20)["watch"], "hero")
+        with self.assertRaises(ValueError):
+            validate_shot({**SHOT, "kind": "escort", "target": None}, 20)
+        # The camera for two aims between them, not at the point half way: on a long lens with the other aircraft
+        # far off (3000 ft ahead here) the near one stays in the picture, 12.5 degrees being half this lens.
+        far = {19: (0, 200, 0, 0, 0, 0), 10: (0, 200, 3000, 0, 0, 0)}
+        pose = camera_pose({**shot, "orbit": 25, "distance": 300, "height": 0, "fov": 25}, far)
+        self.assertLess(abs(math.degrees(pose[3]) - math.degrees(math.atan2(pose[0], -pose[2]))), 12.5)
+        self.assertEqual(len(probe_cameras(ship, dict(enumerate(flying.values())), .5)), 5)
+        # The near aircraft (19) shot down at 2 s while the other flies past where it fell: the camera stays where
+        # it was, turns to the other over a second, and from then on the viewer holds the other for it. Left on
+        # the line through both, it would be whipped round that place.
+        passing = {t: {19: (0, 200, 0, 0, 0, 0), 10: (300 - 200 * t, 200, 400, 0, 0, 0)} for t in [0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4]}
+        for t in (2.5, 3, 3.5, 4):
+            passing[t].pop(19)
+        fallen = compile_shot({**shot, "start": 0, "end": 4}, passing)
+        places = [line.split()[4:7] for line in fallen]
+        self.assertEqual(places[4:], [places[4]] * 4)
+        self.assertNotEqual(places[3], places[4])
+        self.assertEqual([" at 10 " in line for line in fallen], [False] * 6 + [True] * 2)
+        # The far aircraft shot down instead: the camera flies on with the near one, the same way off it.
+        for t in passing:
+            passing[t] = {19: (t * 400, 200, 0, 0, 0, 0), **({10: (t * 400, 200, 900, 0, 0, 0)} if t <= 2 else {})}
+        onward = [list(map(float, line.split()[4:7])) for line in compile_shot({**shot, "start": 0, "end": 4}, passing)]
+        self.assertEqual([round(b[0] - a[0]) for a, b in zip(onward, onward[1:])], [200] * 7)
+        self.assertEqual({round(place[2]) for place in onward}, {round(onward[0][2])})
+        # Shot down mid-shot: the camera holds on where the aircraft was last seen.
+        tracks[2.5].pop(10); tracks[3].pop(10)
+        self.assertEqual(len(compile_shot(shot, tracks)), 4)
+        for row in tracks.values():
+            row.pop(10, None)
+        with self.assertRaises(ValueError):
+            compile_shot(shot, tracks)
+
+    def run_action(self, raw):
+        self.desk.start({**raw, "expected_revision": self.desk.snapshot()["project"]["revision"]})
+        deadline = time.monotonic()+2
+        while self.desk.snapshot()["job"]["running"] and time.monotonic()<deadline:
+            time.sleep(.01)
+        self.assertIsNone(self.desk.snapshot()["job"]["error"])
+
+    def test_angles_are_rated_over_the_whole_shot(self):
+        commands = []
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("tracks "):
+                return [f"track {t} {ident} {x} 200 0 0 0 0"
+                        for t in (1, 1.5, 2, 2.5, 3) for ident, x in ((19, 0), (10, 300))]
+            if command.startswith("project "):
+                parts = command.split()
+                cameras = Path(parts[4]).read_text().splitlines()
+                self.assertEqual(len(cameras), 6)  # five steps of the moving pair, one wing mount
+                rows = []
+                for step, t in enumerate(("1.00", "1.50", "2.00", "2.50", "3.00")):
+                    for cam in range(1, 7):
+                        rows.append(f"eye {t} {cam} 0 0 0 0 0 0 1")
+                        if cam == 6 and step < 2:
+                            continue  # the wing camera loses the opponent after the first second
+                        rows.extend(f"on {t} {cam} {ident} {x} 0 .05" for ident, x in ((19, -.3), (10, .3)))
+                Path(parts[5]).write_text("\n".join(rows))
+            return []
+        self.desk.viewer.command = native
+        self.run_action({"action": "suggest", "shots": [SHOT, {**SHOT, "id": "wing", "kind": "wing", "height": 3}]})
+        self.assertEqual(self.desk.snapshot()["proposals"], [{"id": "one", "score": 1.0, "size": .05, "quality": .875},
+                                                             {"id": "wing", "score": .6, "size": .05, "quality": .525}])
+        # A dot, an aircraft at the edge and one hiding the other all read worse than two clear silhouettes,
+        # and the smaller of the two reads better bigger, up to a tenth of the picture's width.
+        clear = framing([(-.3, 0, .2), (.3, 0, .05)])
+        self.assertEqual(framing([(-.3, 0, .2), (.3, 0, .12)]), 1)
+        for worse in ([(-.3, 0, .2), (.3, 0, .01)], [(-.3, 0, .2), (.95, 0, .05)], [(0, 0, .2), (.1, 0, .05)]):
+            self.assertLess(framing(worse), clear)
+        self.assertLess(clear, 1)
+        self.assertEqual(len([c for c in commands if c.startswith("project ")]), 1)
+        with self.assertRaises(ValueError):
+            self.desk._suggest({"shots": [SHOT, {**SHOT, "id": "two", "end": 4}]}, self.desk.snapshot()["project"])
+
+    def test_unchanged_shots_keep_their_cameras_and_selected_shots_render_as_one_video(self):
+        commands = []
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("tracks "):
+                start = float(command.split()[1])
+                return [f"track {start + i/2} {ident} {x} 200 0 0 0 0"
+                        for i in range(5) for ident, x in ((19, 0), (10, 300))]
+            if command.startswith("time"):
+                return ["time 4.0 length 20.0 paused 0"]
+            if command == "planes":
+                return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder']
+            if command.startswith("shot "):
+                Path(command[5:]).write_bytes(b"test")
+            return []
+        self.desk.viewer.command = native
+        plan = [SHOT, {**SHOT, "id": "two", "start": 5, "end": 7}, {**SHOT, "id": "three", "start": 9, "end": 11}]
+        self.desk.save({"expected_revision": 1, "shots": plan})
+        self.run_action({"action": "seek", "seconds": 2, "rough": True})
+        self.assertIn("seek 2.00000000 rough", commands)
+        self.assertEqual(len([c for c in commands if c.startswith("tracks ")]), 3)
+        plan[0] = {**SHOT, "name": "Renamed"}
+        self.desk.save({"expected_revision": 2, "shots": plan})
+        self.run_action({"action": "seek", "seconds": 2})
+        self.assertEqual(len([c for c in commands if c.startswith("tracks ")]), 3)
+        del commands[:]
+        self.run_action({"action": "export_cut", "shot_ids": ["one", "three"], "quality": "draft"})
+        self.assertIn("skip 3.00000000 9.00000000", commands)
+        self.assertTrue(commands[-1].startswith("video 1.00000000 11.00000000 ") and commands[-1].endswith(" 960 540 30"))
+        self.run_action({"action": "icons", "on": True})
+        self.assertIn("icons on", commands)
+        self.assertTrue(self.desk.snapshot()["icons"])
+        # Asked with a time, a switch answers with a still of that moment: seen at once, no render.
+        self.run_action({"action": "icons", "on": False, "seconds": 6, "rough": True})
+        self.assertEqual(commands[-4:-1], ["icons off", "seek 6.00000000 rough", "planes"])
+        # Taken right after the jump the aircraft are still fading in: the still says so, and asked for again where
+        # the film already is, it is taken again without another jump.
+        self.assertTrue(self.desk.snapshot()["preview"]["fresh"])
+        del commands[:]
+        self.desk.jumped -= 5
+        self.run_action({"action": "seek", "seconds": 6, "rough": True})
+        self.assertFalse(any(c.startswith("seek ") for c in commands) or self.desk.snapshot()["preview"]["fresh"])
+        self.assertEqual(self.desk.snapshot()["preview"]["kind"], "image")
+        self.run_action({"action": "export_cut", "shot_ids": ["two"], "quality": "4k"})
+        self.assertTrue(commands[-1].endswith(" 3840 2160 60"))
+        # A second take of the first stretch cannot share the viewer's one camera: it gets a video of its own,
+        # and until it is selected the first take is the one that plays.
+        self.desk.save({"expected_revision": 3, "shots": plan + [{**SHOT, "id": "take", "kind": "cockpit"}]})
+        del commands[:]
+        self.run_action({"action": "export_cut", "shot_ids": ["one", "take", "three"], "quality": "draft"})
+        self.assertEqual([c.split()[1:3] for c in commands if c.startswith("video ")],
+                         [["1.00000000", "11.00000000"], ["1.00000000", "3.00000000"]])
+        self.assertEqual([f["shots"] for f in self.desk.snapshot()["preview"]["files"]], [["one", "three"], ["take"]])
+        del commands[:]
+        self.run_action({"action": "seek", "seconds": 2})
+        cams = [c for c in commands if c.startswith("cam ")]
+        self.assertTrue(cams and not any(c.startswith("cam 1 2 mount") for c in cams))
+
+    def test_socket_does_not_accept_partial_confirmation_or_injected_lines(self):
+        viewer = Viewer()
+        client, peer = socket.socketpair()
+        viewer.sock, viewer.reader = client, client.makefile("r", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            viewer.command("seek 1\nquit")
+        peer.sendall(b"at 1.0\n")
+        peer.shutdown(socket.SHUT_WR)
+        with self.assertRaises(ConnectionError):
+            viewer.command("seek 1")
+        peer.close()
+
+    def test_a_shot_that_cannot_be_built_does_not_block_the_desk(self):
+        commands = []
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("tracks "):  # aircraft 10 never appears
+                return [f"track {t} 19 0 200 0 0 0 0" for t in (1, 1.5, 2, 2.5, 3)]
+            if command.startswith("time"):
+                return ["time 4.0 length 20.0 paused 0"]
+            if command.startswith("shot "):
+                Path(command[5:]).write_bytes(b"test")
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+        self.desk.viewer.command = native
+        self.desk.save({"expected_revision": 1, "shots": [SHOT]})
+        self.run_action({"action": "seek", "seconds": 2, "rough": True})
+        self.assertIn("seek 2.00000000 rough", commands)
+        self.assertIn("Aircraft 10 is not in the film", self.desk.snapshot()["problems"]["one"])
+        self.desk.start({"action": "export_cut", "expected_revision": 2})
+        deadline = time.monotonic()+2
+        while self.desk.snapshot()["job"]["running"] and time.monotonic()<deadline:
+            time.sleep(.01)
+        self.assertIn("Aircraft 10", self.desk.snapshot()["job"]["error"])
+        self.assertFalse(any(c.startswith("video ") for c in commands))
+
+    def test_preview_clip_shows_an_unsaved_angle_and_is_rendered_once(self):
+        commands = []
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("tracks "):
+                return [f"track {t} {ident} {x} 200 0 0 0 0"
+                        for t in (1, 1.5, 2, 2.5, 3) for ident, x in ((19, 0), (10, 300))]
+            if command.startswith(("shot ", "video ")):
+                Path(command.split()[-4 if command.startswith("video ") else -1]).write_bytes(b"test")
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+        self.desk.viewer.command = native
+        saved = {**SHOT, "id": "kept", "start": 5, "end": 7, "kind": "cockpit"}
+        self.desk.save({"expected_revision": 1, "shots": [saved, {**SHOT, "id": "old", "start": 2, "end": 4, "kind": "cockpit"}]})
+        ask = {"action": "clip", "start": 1, "end": 3, "shot": SHOT, "still": 2.5}
+        self.run_action(ask)
+        # The unsaved draft replaces the saved shot it overlaps; the rest of the plan stays.
+        cams = [c for c in commands if c.startswith("cam ")]
+        self.assertEqual(len(cams), 5)
+        self.assertFalse(any(c.startswith("cam 2 2 mount") for c in cams))
+        self.assertLess(commands.index("seek 2.50000000 rough"), commands.index(next(c for c in commands if c.startswith("video "))))
+        first = self.desk.snapshot()["preview"]
+        self.assertEqual((first["kind"], first["start"], first["end"]), ("clip", 1, 3))
+        self.assertTrue((self.desk.media_root / "clips" / Path(first["url"]).name).exists())
+        self.assertEqual(self.desk.snapshot()["project"]["shots"][0]["id"], "old")  # nothing was saved
+        del commands[:]
+        self.run_action({**ask, "shot": {**SHOT, "name": "Renamed"}})
+        self.assertEqual(commands, [])  # straight from its file
+        self.assertEqual(self.desk.snapshot()["preview"]["url"], first["url"])
+        self.run_action({**ask, "shot": {**SHOT, "side": "left"}})
+        self.assertNotEqual(self.desk.snapshot()["preview"]["url"], first["url"])
+        self.assertFalse(any(c.startswith("tracks ") for c in commands))  # another angle on the same stretch
+        # The viewer is still finishing a rendered stretch's sound for about as long as the stretch lasts: the next
+        # render waits that out, or it would lose the engine, the guns and the pilots' voices.
+        self.desk.pace = .1
+        self.run_action({**ask, "shot": {**SHOT, "orbit": 35}})
+        waiting = time.monotonic()
+        self.run_action({**ask, "shot": {**SHOT, "orbit": 40}})
+        self.assertGreater(time.monotonic() - waiting, .3)  # the 2 s stretch and a second and a half, at this pace
+        self.desk.pace = 0
+        self.desk.start({**ask, "shot": {**SHOT, "target": 77}, "expected_revision": 2})
+        deadline = time.monotonic()+2
+        while self.desk.snapshot()["job"]["running"] and time.monotonic()<deadline:
+            time.sleep(.01)
+        self.assertIn("Aircraft 77", self.desk.snapshot()["job"]["error"])
+
+    def test_cameras_on_the_airframe_and_on_the_bomb(self):
+        base = validate_shot({**SHOT, "fov": 66}, 20)
+        self.assertEqual(compile_shot({**base, "kind": "shoulder"}, {}), ["cam 1 2 mount 19 1.4 3.6 -2.5 0.0000 -0.07 0.00000000 1.15191731 at 10 outside"])
+        self.assertEqual(compile_shot({**base, "kind": "gear", "side": "left"}, {}), ["cam 1 2 mount 19 -9 -6 -6 -0.7000 0.14 0.00000000 1.15191731 outside"])
+        self.assertIn("mount 19 0 3.2 16 3.1416 -0.09", compile_shot({**base, "kind": "nose"}, {})[0])
+        self.assertEqual(compile_shot({**base, "kind": "weapon"}, {}), ["cam 1 2 weapon 19"])
+        self.assertEqual(compile_shot({**base, "kind": "wing", "height": 3}, {}), ["cam 1 2 mount 19 24 3 -6 0 0 0.00000000 1.15191731 at 10 outside"])
+        self.assertEqual(probe_cameras({**base, "kind": "weapon"}, {}), [])
+        self.assertEqual(probe_cameras({**base, "kind": "belly"}, {}), [(None, "mount 19 0 -4.5 -6 0.0000 0.09 0.00000000 1.15191731")])
+        self.assertEqual(validate_shot({**SHOT, "kind": "weapon", "target": None}, 20)["kind"], "weapon")
+        self.assertEqual(compile_shot({**base, "kind": "recorded"}, {}), ["cam 1 2 recorded"])
+        # Behind the tail and fastened to the airframe, so a loop or a roll cannot swing it round to the side.
+        behind = {**base, "kind": "follow", "target": None, "orbit": 0, "distance": 80, "height": 16}
+        self.assertEqual(compile_shot(behind, {}), ["cam 1 2 mount 19 0.00 16 -80.00 0.0000 -0.0974 0.00000000 1.15191731 outside"])
+        self.assertIn("mount 19 80.00 16 -0.00 1.5708", compile_shot({**behind, "orbit": 90}, {})[0])
+        # A shot saved before cameras could stand anywhere keeps its place: a side becomes degrees round the aircraft.
+        self.assertEqual([validate_shot({**SHOT, **old}, 20)["orbit"] for old in ({}, {"side": "left"}, {"kind": "follow", "side": "rear"}, {"kind": "fixed", "side": "left"})], [25, -25, 0, -90])
+        self.assertEqual(validate_shot({**SHOT, "kind": "follow", "side": "top"}, 20)["side"], "right")
+
+    def test_a_camera_change_at_the_playhead_sends_one_camera_and_does_not_move_the_film(self):
+        commands = []
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("tracks "):
+                return [f"track {9 + i / 2} {ident} {x} 200 0 0 0 0" for i in range(7) for ident, x in ((19, 0), (10, 300))]
+            if command.startswith("shot "):
+                Path(command[5:]).write_bytes(b"test")
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+        self.desk.viewer.command = native
+        draft = {**SHOT, "start": 9, "end": 12}
+        self.run_action({"action": "seek", "seconds": 10, "rough": True, "shot": draft})  # the desk is at 10 s
+        self.assertEqual([c.split()[0] for c in commands], ["tracks", "cams", "cam", "cam", "cams", "shot"])
+        # Only the pieces of the moving camera around the playhead: a seek may have landed a little late.
+        self.assertTrue(commands[2].startswith("cam 9.5 0.5") and commands[3].startswith("cam 10 0.5"))
+        del commands[:]
+        self.run_action({"action": "seek", "seconds": 10, "rough": True, "shot": {**draft, "orbit": 40}})
+        self.assertEqual([c.split()[0] for c in commands], ["cams", "cam", "cam", "cams", "shot"])
+        # Anywhere else the film is moved, with the whole plan in the viewer again.
+        self.run_action({"action": "seek", "seconds": 11, "rough": True, "shot": draft})
+        self.assertIn("seek 11.00000000 rough", commands)
+        self.assertEqual(len([c for c in commands if c.startswith("cam ")]), 2 + 6)
+        # Asked to wait, the desk answers with the finished state: one round trip per look.
+        server = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)
+        server.desk = self.desk
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+            connection.request("POST", "/api/action", json.dumps({"action": "seek", "seconds": 11, "shot": draft, "expected_revision": 1, "wait": True}))
+            response = connection.getresponse()
+            state = json.loads(response.read())
+            connection.close()
+            self.assertEqual((response.status, state["job"]["running"], state["preview"]["kind"]), (200, False, "image"))
+        finally:
+            server.shutdown(); server.server_close()
+
+    def test_who_is_around_the_lead_aircraft(self):
+        tracks = {1: {19: (0, 200, 0, 0, 0, 0), 10: (300, 200, 400, 0, 0, 0), 7: (0, 200, 9000, 0, 0, 0)},
+                  2: {19: (100, 200, 0, 0, 0, 0), 10: (100, 200, 120, 0, 0, 0), 7: (0, 200, 9000, 0, 0, 0)},
+                  3: {10: (0, 0, 0, 0, 0, 0)}}  # the lead is gone here: nothing to measure
+        self.assertEqual(nearby(tracks, 19), [{"id": 10, "closest": 120, "typical": 310}, {"id": 7, "closest": 9000, "typical": 9000}])
+        commands = []
+        def native(command, progress):
+            commands.append(command)
+            return [f"track {t} {ident} {x} 200 {z} 0 0 0" for t, rows in tracks.items() for ident, (x, _alt, z, *_rest) in rows.items()] if command.startswith("tracks ") else []
+        self.desk.viewer.command = native
+        self.desk.data["planes"] = [{"id": 10, "name": "YORK"}]
+        self.run_action({"action": "around", "start": 1, "end": 3, "hero": 19})
+        self.run_action({"action": "around", "start": 1, "end": 3, "hero": 19})
+        self.assertEqual(len(commands), 1)  # the stretch is read once, also for the cameras that follow
+        found = self.desk.snapshot()["nearby"]
+        self.assertEqual((found["hero"], found["aircraft"][0]), (19, {"id": 10, "closest": 120, "typical": 310, "name": "YORK"}))
+        self.assertIsNone(found["aircraft"][1]["name"])
+
+    def test_default_output_folder_has_no_space_when_the_account_name_does(self):
+        with patch("director_api.tempfile.gettempdir", return_value="C:/Users/John Smith/AppData/Local/Temp"):
+            self.assertEqual(default_output("C:/ah-quick-shots/.quickshots"), Path("C:/ah-quick-shots/.quickshots/media"))
+            with patch.dict("os.environ", {"PUBLIC": "C:/Users/Public"}):
+                self.assertEqual(default_output("C:/My Games/ah-quick-shots/.quickshots"), Path("C:/Users/Public/AHQuickShots"))
+        with patch("director_api.tempfile.gettempdir", return_value="C:/Temp"):
+            self.assertEqual(default_output("C:/any where/.quickshots"), Path("C:/Temp/AHQuickShots"))
+
+    def test_film_library_lists_newest_first(self):
+        lines = ["folder C:\\ah\\films", "film films/old.ahf 1.0 MB", "film films/new one.ahf 2.5 MB", "2 films"]
+        dates = {"C:\\ah\\films/old.ahf": 10, "C:\\ah\\films/new one.ahf": 20}
+        self.assertEqual([row["name"] for row in film_rows(lines, dates.__getitem__)], ["new one.ahf", "old.ahf"])
+        self.assertEqual([row["path"] for row in film_rows(lines)], ["films/old.ahf", "films/new one.ahf"])
+
+    def test_socket_waiting_message_keeps_reading_until_end(self):
+        viewer = Viewer()
+        client, peer = socket.socketpair()
+        viewer.sock, viewer.reader = client, client.makefile("r", encoding="utf-8")
+        peer.sendall(b"waiting for the user: terrain?\nopened film\n.end\n")
+        progress = []
+        self.assertEqual(viewer.command("open films/a.ahf", progress.append)[-1], "opened film")
+        self.assertIn("terrain?", progress[0])
+        viewer.close(); peer.close()
+
+    def test_http_stays_responsive_during_seek_and_has_local_security_gate(self):
+        server = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)
+        server.desk = self.desk
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        def call(method, path, data=None, headers=None):
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+            connection.request(method, path, json.dumps(data) if data is not None else None, headers or {})
+            response = connection.getresponse(); result = response.status, response.read()
+            connection.close(); return result
+        try:
+            status, _ = call("POST", "/api/action", {"action": "seek", "seconds": 1, "expected_revision": 1})
+            self.assertEqual(status, 202); self.assertTrue(self.viewer.entered.wait(1))
+            before = time.monotonic(); status, body = call("GET", "/api/state")
+            self.assertLess(time.monotonic()-before, .2)
+            self.assertTrue(json.loads(body)["job"]["running"])
+            self.assertEqual(call("POST", "/api/project", {"expected_revision": 1, "shots": []})[0], 409)
+            self.assertEqual(call("POST", "/api/action", {}, {"Origin": "https://example.com"})[0], 403)
+            self.assertEqual(call("GET", "/api/state", headers={"Host": "evil.example"})[0], 403)
+            self.assertEqual(call("GET", "/media/../../director_api.py")[0], 404)
+            media = self.desk.root / "media" / ("a"*32+".mp4"); media.write_bytes(b"0123456789")
+            self.assertEqual(call("GET", "/media/"+media.name, headers={"Range": "bytes=2-4"}), (206, b"234"))
+            (media.parent / "clips" / media.name).write_bytes(b"clip")
+            self.assertEqual(call("GET", "/media/clips/"+media.name), (200, b"clip"))
+            self.assertEqual(call("GET", "/media/clips/../"+media.name)[0], 404)
+        finally:
+            self.viewer.release.set(); server.shutdown(); server.server_close()
+
+
+if __name__ == "__main__":
+    unittest.main()
