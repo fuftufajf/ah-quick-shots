@@ -54,9 +54,9 @@ export function killSequence(project, planes, kill, events = []) {
 
 // A take-off and a landing found in your flight path by the desk ({kind, time, roll or stop, hero}), each as a
 // few shots: the take-off rolling past a camera beside the runway ahead, the wheels, the lift-off with a camera
-// swinging round you and closing in, the climb behind you; the landing coming at a camera ahead of you, the
-// wheels touching, the roll-out with a camera swinging round. Every camera is at or above your own height, so it
-// stays out of the ground (whose height is known only under your wheels).
+// swinging round you and closing in, the climb seen from a camera falling back behind you; the landing coming at a camera ahead of you, the
+// wheels touching, the roll-out with a camera swinging round. Near the ground every camera is at or above your
+// own height, so it stays out of the ground (whose height is known only under your wheels).
 function airfieldShots(project, moment, name, parts) {
   const base = {side: "right", orbit: 0, distance: 120, height: 24, fov: 60, roll: 0, watch: "both", hero: moment.hero, target: null};
   const tidy = seconds => Math.round(Math.min(Math.max(0, seconds), project.length) * 100) / 100;
@@ -69,7 +69,9 @@ export function takeoffSequence(project, moment) {
     ["rolling", a, b, {kind: "fixed", orbit: 150, distance: 250, height: 8, fov: 35}],
     ["wheels", b, c, {kind: "gear", fov: 66}],
     ["lift-off", c, t + 6, {kind: "escort", watch: "hero", orbit: 60, sweep: 100, distance: 250, closer: 100, height: 15, fov: 40}],
-    ["climbing out", t + 6, t + 12, {kind: "follow", orbit: 0, distance: 120, height: 15, fov: 50}],
+    // From ahead and a little below, swinging round behind you and falling back: you climb away against the sky.
+    // 20 ft below is safe here: 6 s after lift-off a fighter was 160 ft up (measured).
+    ["climbing out", t + 6, t + 12, {kind: "escort", watch: "hero", orbit: 150, sweep: -150, distance: 150, closer: 500, height: -20, fov: 35}],
   ]);
 }
 export function landingSequence(project, moment) {

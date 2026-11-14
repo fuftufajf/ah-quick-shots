@@ -32,11 +32,11 @@ assert.deepEqual(killSequence({length:20}, [], {...event, time:1.5}).map(s => [s
 
 // A take-off and a landing as the desk finds them in your flight path.
 assert.deepEqual(takeoffSequence({length:536}, {kind:'takeoff', time:18, roll:9, hero:88}).map(s => [s.kind, s.start, s.end]),
-  [['fixed', 9, 12], ['gear', 12, 17], ['escort', 17, 24], ['follow', 24, 30]]);
+  [['fixed', 9, 12], ['gear', 12, 17], ['escort', 17, 24], ['escort', 24, 30]]);
 const lift = takeoffSequence({length:536}, {kind:'takeoff', time:18, roll:9, hero:88})[2];
 assert.deepEqual([lift.watch, lift.sweep, lift.closer, lift.hero, lift.target], ['hero', 100, 100, 88, null]);
 // Rolled for less than a second: no picture of the roll, the rest as usual.
-assert.deepEqual(takeoffSequence({length:536}, {kind:'takeoff', time:18, roll:17.6, hero:88}).map(s => s.kind), ['escort', 'follow']);
+assert.deepEqual(takeoffSequence({length:536}, {kind:'takeoff', time:18, roll:17.6, hero:88}).map(s => s.kind), ['escort', 'escort']);
 assert.deepEqual(landingSequence({length:536}, {kind:'touchdown', time:531, stop:536, hero:88}).map(s => [s.kind, s.start, s.end]),
   [['follow', 519, 529], ['gear', 529, 534], ['escort', 534, 536]]);
 assert.ok(landingSequence({length:536}, {kind:'touchdown', time:531, stop:536, hero:88})[0].name.startsWith('Landing 08:51'));

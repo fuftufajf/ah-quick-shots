@@ -211,10 +211,13 @@ that height, after being 20 ft higher in the minute before (measured: down at
 host's landing message comes for other pilots, not reliably for you. The shots:
 for a take-off the roll from a camera standing beside the runway ahead, the
 wheels, the lift-off from a camera ship that swings 100 degrees round you while
-closing from 250 to 100 ft (`sweep` and `closer`), and the climb from behind;
-for a landing the approach from a camera ahead of you looking back, the wheels
-and the roll-out from a camera ship swinging round. Every camera is at or above
-your height, because the ground's height is known only under your wheels.
+closing from 250 to 100 ft (`sweep` and `closer`), and the climb from a camera
+ship that starts ahead of you and 20 ft below, swings 150 degrees round behind
+you and falls back from 150 to 500 ft, so you climb away against the sky; for a
+landing the approach from a camera ahead of you looking back, the wheels and
+the roll-out from a camera ship swinging round. Near the ground every camera is
+at or above your height, because the ground's height is known only under your
+wheels; the climb is 6 s after lift-off, when a fighter was 160 ft up.
 
 ## Under the desk
 
