@@ -177,7 +177,9 @@ def render(layout, segments, target, height, fps):
              "-filter_complex", graph, "-map", "[o]", "-c:v", "prores_ks", "-profile:v", "4444", "-alpha_bits", "8",
              "-vendor", "apl0", "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
              str(target)],
-            cwd=folder, capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            # Below normal priority: it is drawn while the viewer may be rendering the next clip.
+            cwd=folder, capture_output=True, text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0))
     if done.returncode:
         raise ValueError("ffmpeg could not make the overlay: " + done.stderr.strip()[-300:])
     return target

@@ -126,9 +126,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(200, self.server.desk.snapshot())
                 return self.send_json(202, job)
             if self.path == "/api/restart":
-                job = self.server.desk.snapshot()["job"]
-                if job and job["running"]:
+                state = self.server.desk.snapshot()
+                if state["job"] and state["job"]["running"]:
                     raise ValueError("Wait for the operation in progress to finish, then restart")
+                if state["overlays"] and state["overlays"]["running"]:
+                    raise ValueError("Wait for the data overlays to be drawn, then restart")
                 self.send_json(202, {"restarting": True})
                 threading.Thread(target=restart, args=(self.server,), daemon=True).start()
                 return

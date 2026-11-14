@@ -732,7 +732,10 @@ class DeskTests(unittest.TestCase):
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"test")
             return []
+        drawing, go_on = threading.Event(), threading.Event()
         def draw(layout, segments, target, height, fps):
+            drawing.set()
+            go_on.wait(2)
             made.append((layout, [(s["start"], s["end"], s["hero_name"], s["target_name"], len(s["hero"])) for s in segments], Path(target).name, height, fps))
             Path(target).write_bytes(b"overlay")
             return target
@@ -741,6 +744,15 @@ class DeskTests(unittest.TestCase):
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", lambda a, b, s: Path(b).write_bytes(b"cut")), \
                 patch("director_core.overlay.render", draw):
             self.run_action({"action": "export_cut", "quality": "final", "overlay": True})
+            # The overlays are drawn while the desk goes on: the render's job is over, the viewer free.
+            self.assertTrue(drawing.wait(2))
+            state = self.desk.snapshot()
+            self.assertFalse(state["job"]["running"])
+            self.assertEqual((state["overlays"]["running"], state["overlays"]["left"]), (True, 2))
+            self.assertIn("16:9 data overlay of test 00.01-00.07 cut of 2 shots", state["overlays"]["message"])
+            go_on.set()
+            self.desk.drawer.join(2)
+        self.assertEqual(self.desk.snapshot()["overlays"], {"running": False, "message": "Data overlays ready", "left": 0, "error": None})
         # The flights are read before the first render, and each video gets a 16:9 and a 9:16 overlay of its shots.
         self.assertLess(max(i for i, c in enumerate(commands) if " keep " in c), min(i for i, c in enumerate(commands) if c.startswith("video ")))
         both = [(1, 3, "Pilot", "Other", 21), (5, 7, "Pilot", None, 21)]

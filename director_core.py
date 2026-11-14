@@ -116,10 +116,12 @@ class Desk:
         self.quiet = 0.0  # when the viewer has finished the last render's sound and the next render may start
         self.pace = 1  # how long this desk waits for the viewer's own timing, as a share; tests have no viewer to wait for
         self.stills = deque()
+        self.drawing = deque()  # data overlays still to draw: ffmpeg's work, the viewer is not needed for it
+        self.drawer = None
         self.data = {"connected": False, "films": [], "project": None, "planes": [],
                      "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None, "flight": None,
                      "preview": None, "proposals": [], "job": None, "videos": str(self.videos),
-                     "ffmpeg": bool(shutil.which("ffmpeg"))}
+                     "ffmpeg": bool(shutil.which("ffmpeg")), "overlays": None}
 
     @staticmethod
     def _drop(path):
@@ -415,15 +417,38 @@ class Desk:
                 "target_name": None if target is None else (aircraft.get(str(target), {}).get("name") or "Opponent"),
                 "pair": pair(rows[hero], rows[target]) if hero in rows and target in rows else None}
 
-    def _overlays(self, video, segments, quality, n, count):
-        """The data overlay of a finished video, beside it: one for a 16:9 timeline at the video's size, one for a
-        9:16 reel, at the video's frame rate and length."""
-        width, height, fps = map(int, RENDERS[quality].split())
-        made = []
-        for layout, tall in (("16x9", height), ("9x16", 960 if quality == "draft" else 1920)):
-            self.progress(f"Drawing the {layout.replace('x', ':')} data overlay" + (f" for video {n} of {count}" if count > 1 else ""))
-            made.append(str(overlay.render(layout, segments, video.with_name(f"{video.stem} - overlay {layout}.mov"), tall, fps)))
-        return made
+    def _overlays(self, video, segments, quality):
+        """Queue the data overlays of a finished video, to be drawn beside it while the desk goes on: one for a 16:9
+        timeline at the video's size, one for a 9:16 reel, at the video's frame rate and length. Drawing them in the
+        render's own job held the viewer for 80 s after a 37 s render at 4K (measured), and the next camera waited."""
+        _, height, fps = map(int, RENDERS[quality].split())
+        made = [(layout, video.with_name(f"{video.stem} - overlay {layout}.mov"), tall)
+                for layout, tall in (("16x9", height), ("9x16", 960 if quality == "draft" else 1920))]
+        with self.lock:
+            self.drawing.extend((layout, segments, path, tall, fps) for layout, path, tall in made)
+            if self.data["overlays"] and self.data["overlays"]["running"]:  # the drawer looks at the queue again before it stops
+                self.data["overlays"]["left"] = len(self.drawing) + 1
+            else:
+                self.data["overlays"] = {"running": True, "message": "Drawing data overlays", "left": len(self.drawing), "error": None}
+                self.drawer = threading.Thread(target=self._draw, daemon=True)
+                self.drawer.start()
+        return [str(path) for _, path, _ in made]
+
+    def _draw(self):
+        """Draw queued overlays one at a time, until none is left."""
+        while True:
+            with self.lock:
+                if not self.drawing:
+                    self.data["overlays"].update(running=False, left=0, message="Data overlays ready" if not self.data["overlays"]["error"] else self.data["overlays"]["message"])
+                    return
+                layout, segments, path, tall, fps = self.drawing.popleft()
+                self.data["overlays"].update(message=f"Drawing the {layout.replace('x', ':')} data overlay of {path.stem.rsplit(' - overlay', 1)[0]}",
+                                             left=len(self.drawing) + 1)
+            try:
+                overlay.render(layout, segments, path, tall, fps)
+            except Exception as error:  # one failed overlay must not stop the others, nor the desk
+                with self.lock:
+                    self.data["overlays"].update(error=str(error), message=f"{path.name}: {error}")
 
     def flight_data(self):
         """The last stretch's flight data in full, for GET /api/flight; None before one was read."""
@@ -741,7 +766,7 @@ class Desk:
             saved = self._keep(path, project, row, raw.get("labels"))
             files.append({"url": "/media/" + path.name, "file": str(saved), "shots": [s["id"] for s in row]})
             if segments:
-                files[-1]["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality, n, len(rows))
+                files[-1]["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality)
         self._tidy()
         with self.lock:
             self.data["preview"] = {"url": files[0]["url"], "kind": "video", "time": shots[0]["start"],

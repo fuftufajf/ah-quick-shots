@@ -212,9 +212,13 @@ BT.709, drawn by ffmpeg with libass in Source Sans Pro when it is installed;
 without ffmpeg the option is off. The numbers change ten times a second; while
 the opponent is out of the film his are a dash. The flights are read before the
 first render (see "Flight data" below), because touching the film between
-renders can thin the next one's sound; the overlays are drawn after each render,
-about half as long as the video plays at 1080p and twice as long at 4K, and
-take about 6 MB a second at 1080p60.
+renders can thin the next one's sound. The overlays are drawn after each render
+by ffmpeg alone, at below-normal priority, while the desk goes on with the next
+camera or render (drawn in the render's own job, they held the viewer for 80 s
+after a 37 s render at 4K); the line under the picture says how many are left,
+and Restart the desk waits for them. Drawing takes about half as long as the
+video plays at 1080p and twice as long at 4K; they take about 6 MB a second at
+1080p60.
 
 Add my kills makes four shots for every kill of yours that has none yet, after
 the kill sequence in Steely's Aces High film companion: you closing in (you in
