@@ -223,7 +223,8 @@ the apps' own bars, and half as large again to be read on a phone. In DaVinci
 Resolve put the video on V1 and the overlay that fits the timeline on V2: on a
 9:16 timeline the overlay stays put however the video under it is moved or
 cropped. They are ProRes 4444 with transparency (Resolve reads it as Straight),
-BT.709, drawn by ffmpeg with libass in Source Sans Pro when it is installed;
+BT.709, drawn by ffmpeg with libass in Source Sans Pro from the app's `fonts`
+folder (Adobe's release 2.045: the card's sizes are measured on its metrics);
 without ffmpeg the option is off. The numbers change ten times a second; while
 the opponent is out of the film his are a dash. The flights are read before the
 first render (see "Flight data" below), because touching the film between

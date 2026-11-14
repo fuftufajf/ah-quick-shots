@@ -1,0 +1,28 @@
+# When a release is published, GitHub builds the Windows package from this repository's code at that release,
+# attaches the zip and its SHA-256 to the release, and signs a record that this workflow built it (attestation),
+# which anyone can check with: gh attestation verify AH-Quick-Shots-Windows.zip -R fuftufajf/ah-quick-shots
+name: Windows package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write  # to attach the files to the release
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python dev/build_package.py
+      - uses: actions/attest@v4
+        with:
+          subject-path: build/AH-Quick-Shots-Windows.zip
+      - run: gh release upload "$env:TAG" build/AH-Quick-Shots-Windows.zip build/AH-Quick-Shots-Windows.zip.sha256 --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}

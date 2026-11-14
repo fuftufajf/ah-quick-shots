@@ -7,6 +7,7 @@ ffmpeg's subtitles filter squares the opacity of what it draws onto a transparen
 meant 58% opaque came out 34%), so the picture and its transparency are drawn apart, each fully opaque: once in
 colour, once in greys that are the opacity, and joined with alphamerge."""
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 
@@ -21,6 +22,9 @@ PANEL_OPACITY, EDGE_OPACITY = .58, .30
 SEMIBOLD, REGULAR = "Source Sans Pro SemiBold", "Source Sans Pro"
 DESCENT = .273  # below the baseline, as a share of the CSS size: libass sets a line's bottom there (font metrics)
 ASS_SIZE = 1.257  # libass sizes a font by ascent plus descent; Source Sans Pro's are 1.257 of its em
+# The font comes with the app (Adobe's release 2.045, whose metrics the sizes above are measured on; 3.x differ), so the
+# card is the same on every PC whether Source Sans Pro is installed or not.
+FONTS = Path(__file__).resolve().parent / "fonts"
 
 
 def number(value, digits=0, sign=False):
@@ -166,10 +170,11 @@ def render(layout, segments, target, height, fps):
         # Bare file names: inside a filter graph a Windows path's colon and backslashes would need escaping.
         Path(folder, "colour.ass").write_text(script(layout, segments), encoding="utf-8")
         Path(folder, "matte.ass").write_text(script(layout, segments, matte=True), encoding="utf-8")
+        shutil.copytree(FONTS, Path(folder, "fonts"))
         # Colour as the overlays already laid over films in Resolve on this desk's PC: BT.709, video range, tagged,
         # alpha Straight on import. 8-bit alpha is plenty for text edges and halves the file (16-bit: 51 MB, 8-bit:
         # 29 MB for 5 s at 1080p60).
-        graph = ("[0]format=gbrp,split[a][b];[a]subtitles=colour.ass[c];[b]subtitles=matte.ass,extractplanes=r[m];"
+        graph = ("[0]format=gbrp,split[a][b];[a]subtitles=colour.ass:fontsdir=fonts[c];[b]subtitles=matte.ass:fontsdir=fonts,extractplanes=r[m];"
                  "[c][m]alphamerge,scale=out_color_matrix=bt709:out_range=tv:flags=accurate_rnd+full_chroma_int,format=yuva444p10le,"
                  "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv[o]")
         done = subprocess.run(

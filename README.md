@@ -20,19 +20,54 @@ does not read the viewer's memory or its film files.
 
 - Windows
 - Aces High III **Film Viewer 3.07 Patch 2 or newer**
-- **Python 3.11 or newer**, on the PATH (no extra packages)
-- optional: **ffmpeg** on the PATH. With it a video is rendered from two
-  seconds early and those seconds are cut off, so the other aircraft are solid
-  from the first frame; without it they can fade in during the first second.
-  It also draws the data overlay (below).
 - a current browser
+
+That is all with the Windows package. Run from the source code instead, it
+also needs **Python 3.11 or newer** on the PATH (no extra packages) and,
+optionally, **ffmpeg** on the PATH: with it a video is rendered from two
+seconds early and those seconds are cut off, so the other aircraft are solid
+from the first frame (without it they can fade in during the first second),
+and it draws the data overlay (below). The package brings both.
 
 ## Start
 
-1. Download this repository and unzip it to a folder **without spaces in its
-   path**, for example `C:\ah-quick-shots`.
-2. Close the game and start Film Viewer.
-3. Double-click **AH Quick Shots.bat**. The page opens and connects by itself.
+1. Download **AH-Quick-Shots-Windows.zip** (about 50 MB) from the
+   [latest release](https://github.com/fuftufajf/ah-quick-shots/releases/latest).
+2. Unzip it to a place **without spaces in its path**, for example `C:\`:
+   it makes the folder `C:\ah-quick-shots`.
+3. Close the game and start Film Viewer.
+4. Double-click **AH Quick Shots.bat** in that folder. The page opens and
+   connects by itself.
+
+Nothing is installed and nothing in Windows is changed; to remove it, delete
+the folder. From the source code instead: Code > Download ZIP on this page,
+unzip it to a folder without spaces in its path, and start the same file.
+
+### Is the download safe?
+
+The zip is built by GitHub itself from the public source code on this page,
+every time a version is released, by the workflow you can read in
+[.github/workflows/package.yml](.github/workflows/package.yml). Its SHA-256
+checksum is published next to it on the release page, so you can check that
+your download is exactly that build: in PowerShell,
+`Get-FileHash AH-Quick-Shots-Windows.zip` must print the same number, in
+capitals. GitHub
+also signs a record that this workflow made the file; with the GitHub CLI,
+`gh attestation verify AH-Quick-Shots-Windows.zip -R fuftufajf/ah-quick-shots`
+checks it.
+
+Inside are the official portable Python from python.org (signed by the Python
+Software Foundation), the free ffmpeg video tool (gyan.dev's build of an FFmpeg
+release), the font of the data overlay and this program's own small source
+files. There is no installer, no Windows service and no account, and nothing
+is sent anywhere: it talks only to Film Viewer on your own PC, through the
+viewer's documented socket, and to your browser on 127.0.0.1. It does not use
+AI.
+
+Windows may ask once whether to run a file from the internet: that is because
+the download is free and not paid-signed, not because anything is wrong. To
+skip the question, right-click the zip > Properties > tick Unblock > OK before
+unzipping.
 
 ## Work down the page
 
@@ -92,6 +127,9 @@ time, shot and camera; Videos folder, under The cut, opens it.
 - **Updating.** A new version unzipped over a running desk is not used until
   the desk restarts: the page says so and has a Restart the desk button.
   Version 0.1.5 and older cannot tell, so end `pythonw.exe` in Task Manager once.
+  The package's own Python cannot be replaced while it runs: end `pythonw.exe`
+  in Task Manager first, then unzip the new package over the old folder. Your
+  saved shots stay either way.
 - Camera ratings know nothing of terrain: watch the shot before you render it.
 
 ## How it is built
@@ -105,7 +143,9 @@ time, shot and camera; Videos folder, under The cut, opens it.
 - `director_core.py` — saved plans, revision checks, the one worker that owns the viewer
 - `director_api.py` — loopback-only HTTP, same-origin gate, media serving
 - `ui/src/` — the page; `ui/dist/` is its ready build, so Node is not needed to run
+- `fonts/` — Source Sans Pro, the data overlay's font
 - `dev/try_camera.py` — renders unsaved cameras through the running desk, for judging camera work
+- `dev/build_package.py` — builds the Windows package; GitHub runs it when a version is released
 
 Everything stays on your computer: the server listens on 127.0.0.1 only. Your
 shots are saved under `.quickshots/` beside the code.
@@ -122,12 +162,15 @@ npm --prefix ui ci
 npm --prefix ui run build
 ```
 
-None of the checks needs Film Viewer.
+None of the checks needs Film Viewer. `python dev/build_package.py` builds
+the Windows package into `build/`, as GitHub does for a release.
 
 ## Licence
 
 [MIT](LICENSE). The page's build includes React and Phosphor Icons, and is
-made with Vite; all three are MIT too, see
+made with Vite; all three are MIT too. The overlay's font, Source Sans Pro, is
+under the SIL Open Font License. The Windows package also holds Python (PSF
+License) and ffmpeg (GPL v3), each with its licence beside it. See
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 Aces High is a trademark of HiTech Creations, Inc.

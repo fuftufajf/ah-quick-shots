@@ -1,5 +1,24 @@
 # Third-party notices
 
+`fonts/` holds **Source Sans Pro** 2.045 (Regular and Semibold), Copyright
+2010-2018 Adobe, with Reserved Font Name 'Source', from
+https://github.com/adobe-fonts/source-sans, under the SIL Open Font License
+1.1: see `fonts/LICENSE.txt`.
+
+The Windows package (AH-Quick-Shots-Windows.zip) also holds, unchanged:
+
+- **Python** 3.15.2, the embeddable package for Windows from
+  https://www.python.org/downloads/, under the Python Software Foundation
+  License: see `python/LICENSE.txt`. Only its `python315._pth` gets one line,
+  the app's folder.
+- **FFmpeg** 9.0.2, `ffmpeg.exe` of the essentials build by gyan.dev
+  (https://www.gyan.dev/ffmpeg/builds/), under the GNU General Public License
+  version 3: see `ffmpeg/LICENSE`. Its source code is at
+  https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz and
+  https://github.com/FFmpeg/FFmpeg/commit/946fcce07b; `ffmpeg/README.txt`
+  lists the libraries built into it. AH Quick Shots runs it as a separate
+  program and does not link to it.
+
 The ready build of the page in `ui/dist/` contains code from:
 
 - **React**, **React DOM** and **Scheduler**
