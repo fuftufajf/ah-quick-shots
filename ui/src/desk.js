@@ -81,6 +81,19 @@ export function landingSequence(project, moment) {
   ]);
 }
 
+// The saved shots of a sequence that `shot` belongs to: the same name before " · ", following one another with
+// gaps of under 20 s (a kill's guns and his fall can be 14 s apart; two kills of one pilot are further).
+export function sequenceOf(shot, shots) {
+  const head = shot.name.split(" · ")[0];
+  if (!shot.name.includes(" · ")) return [];
+  const same = shots.filter(s => s.name.split(" · ")[0] === head).sort((a, b) => a.start - b.start);
+  let at = same.findIndex(s => s.id === shot.id), from = at, to = at;
+  if (at < 0) return [];
+  while (from > 0 && same[from].start - same[from - 1].end < 20 && same[from - 1].end <= same[from].start + .01) from--;
+  while (to < same.length - 1 && same[to + 1].start - same[to].end < 20 && same[to + 1].start >= same[to].end - .01) to++;
+  return same.slice(from, to + 1);
+}
+
 // What a preview clip shows: the stretch, the shot's camera (not its name) and the picture switches.
 export function clipKey(start, end, shot, flags) {
   const {id, name, ...camera} = shot || {};

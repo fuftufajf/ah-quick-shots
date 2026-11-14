@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, fitShot, killSequence, landingSequence, ownKills, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
+import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, fitShot, killSequence, landingSequence, ownKills, sequenceOf, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
 const event = {time:199, kind:'kill', text:'Hawk Raven 1 19 10', fields:['Hawk','Raven','1','19','10']};
 assert.equal(formatTime(195.3), '03:15.3');
 assert.equal(filterMoments([event], 'Raven 03:19', 'kill').length, 1);
@@ -40,6 +40,15 @@ assert.deepEqual(takeoffSequence({length:536}, {kind:'takeoff', time:18, roll:17
 assert.deepEqual(landingSequence({length:536}, {kind:'touchdown', time:531, stop:536, hero:88}).map(s => [s.kind, s.start, s.end]),
   [['follow', 519, 529], ['gear', 529, 534], ['escort', 534, 536]]);
 assert.ok(landingSequence({length:536}, {kind:'touchdown', time:531, stop:536, hero:88})[0].name.startsWith('Landing 08:51'));
+
+// A sequence is the shots of one name in a row; another kill of the same pilot later is another sequence.
+const takeoff = takeoffSequence({length:536}, {kind:'takeoff', time:18, roll:9, hero:88});
+const again = killSequence({length:294.8}, [], event).map(s => ({...s, start: s.start + 60, end: s.end + 60}));
+const reel = [...killSequence({length:294.8}, [], event), ...again, ...takeoff, {id:'lone', name:'Shot at 01:00', start:60, end:62}];
+assert.deepEqual(sequenceOf(reel[1], reel).map(s => s.id), reel.slice(0, 4).map(s => s.id));
+assert.deepEqual(sequenceOf(again[3], reel).map(s => s.id), again.map(s => s.id));
+assert.equal(sequenceOf(takeoff[2], reel).length, 4);
+assert.deepEqual(sequenceOf(reel.at(-1), reel), []);
 
 const me = {id:19, name:'Hawk'}, elsewhere = {kind:'kill', text:'', fields:['Falcon','Kestrel','1','28','34']};
 assert.deepEqual(filterMoments([event, elsewhere, {kind:'impact', text:'', fields:[]}, {kind:'guns', text:'', fields:[]}], '', 'mine', me).map(e => e.kind), ['kill', 'impact']);

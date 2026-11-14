@@ -41,12 +41,15 @@ does not read the viewer's memory or its film files.
 2. **Picture** — Play (Space) renders a short preview clip with sound, once;
    after that it replays and scrubs from its file. Set in / Set out (I / O)
    mark the shot at the playhead; drag the ends of the highlighted range to
-   trim it. Drag the picture to walk the camera round the aircraft.
+   trim it. Drag the picture to walk the camera round the aircraft. With a
+   shot of a kill, take-off or landing selected, Sequence previews all its
+   shots in a row, as the cut will render them.
 3. **Cameras** — one click shows the moment through that camera, before
    anything is saved: you or the opponent in front, an observer flying along
    like a third aircraft, close views, over your shoulder, from your wing,
    behind you, a fly-by, the pilot's own view, cameras on the airframe, riding
-   the bomb. Sliders or a drag adjust it. Add to cut keeps the shot.
+   the bomb. Sliders or a drag adjust it (a lift-off or roll-out also has
+   Swing round and Ends at). Add to cut keeps the shot.
 4. **The cut** — tick the shots you want and Render selected: 1080p60, 4K or a
    quick draft, with the gaps between shots left out. Add my kills makes four
    shots for every kill of yours: you closing in, your guns, him going down,

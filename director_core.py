@@ -205,6 +205,12 @@ class Desk:
             self.progress(f"Film Viewer is finishing the last clip's sound: {math.ceil(self.quiet - time.monotonic())} s, so this one keeps its own")
             time.sleep(.25)
         self.progress(label or f"Rendering {end - start:.1f} s of film")
+        if abs(self.data["now"] - (start - early)) > .5:
+            # A render that began far from where the film stood came out with its first second silent, just after
+            # opening a film (-49 dB, 5 of 5). A seek there and 2 s paused kept it whole (2 of 2); a seek alone, or
+            # with a still drawn, did not. Paused, not playing: playing before a render thins its sound (see LEAD).
+            self._seek(start - early)
+            time.sleep(2 * self.pace)
         whole = path.with_name(path.stem + "-lead" + path.suffix) if early else path
         self.command(f"video {start - early:.8f} {end:.8f} {whole.as_posix()} {size}")
         self.quiet = time.monotonic() + (end - start + early + TAIL) * self.pace
@@ -397,6 +403,17 @@ class Desk:
         elif draft["id"] in self.built:
             raise ValueError(self.built[draft["id"]])
 
+    def _cut(self, project, row):
+        """The viewer set to film these shots in a row as one video, the gaps between them skipped."""
+        self._apply(project, only=row)
+        for shot in row:
+            if shot["id"] in self.built:
+                raise ValueError(f"{shot['name']}: {self.built[shot['id']]}")
+        for a, b in zip(row, row[1:]):
+            if b["start"] > a["end"] + .01:
+                self.command(f"skip {a['end']:.8f} {b['start']:.8f}")
+        self.applied = None  # The skips must not leak into the next look at one shot.
+
     def _glance(self, project, raw):
         """A still of the moment already on screen through a camera that has just changed. Only that camera is
         sent and the film is not moved, so the picture is back in about a tenth of a second (measured 0.08 s):
@@ -437,17 +454,25 @@ class Desk:
     def _clip(self, raw, project):
         """The desk's moving picture. The socket has no stream, and the viewer renders a video in about the
         time it plays, so a stretch is rendered once and replayed from its file until its cameras change."""
-        length = project["length"]
-        start, end = number(raw.get("start"), 0, length, "start"), number(raw.get("end"), 0, length, "end")
+        length, row = project["length"], None
+        if raw.get("shot_ids") is not None:  # saved shots in a row, a sequence: as they will be rendered
+            if not isinstance(raw["shot_ids"], list):
+                raise ValueError("shot_ids must be a list")
+            row = sorted((s for s in project["shots"] if s["id"] in raw["shot_ids"]), key=lambda s: s["start"])
+            if not row or any(b["start"] < a["end"] - .01 for a, b in zip(row, row[1:])):
+                raise ValueError("Choose saved shots that follow one another")
+            start, end = row[0]["start"], row[-1]["end"]
+        else:
+            start, end = number(raw.get("start"), 0, length, "start"), number(raw.get("end"), 0, length, "end")
         if not .1 <= end - start <= 120:
             raise ValueError("A preview lasts 0.1 to 120 seconds")
-        shots = self._plan(project, raw)[0]
+        shots = row or self._plan(project, raw)[0]
         if raw.get("hero") is not None:  # who is near the lead in this stretch, for choosing the opponent
             self._around(raw, project)
         film = next((row for row in self.data["films"] if row["path"] == project["film"]), {})
         name = hashlib.sha256(json.dumps([
             project["film"], film.get("mb"), film.get("modified"), round(start, 2), round(end, 2), CLIP, CAMERAS,
-            self.data["icons"],
+            self.data["icons"], row is not None,
             [camera_key(s) for s in shots if s["end"] > start and s["start"] < end]]).encode()).hexdigest()[:32]
         folder = self.media_root / "clips"
         path = folder / (name + ".mp4")
@@ -458,8 +483,11 @@ class Desk:
         else:
             with self.lock:
                 self.data["job"]["expect"] = round(end - start + 1.5, 1)
-            self._apply(project, raw)
-            if raw.get("still") is not None:  # something to look at while the clip renders
+            if row:
+                self._cut(project, row)
+            else:
+                self._apply(project, raw)
+            if raw.get("still") is not None and not row:  # something to look at while the clip renders
                 self._seek(number(raw["still"], 0, length, "time"), rough=True)
                 self._settle()
                 self._frame(project["revision"])
@@ -588,14 +616,7 @@ class Desk:
             with self.lock:
                 self.data["job"]["expect"] = round(sum(s["end"] - s["start"] for s in shots) + 2 * len(rows), 1)
         for n, row in enumerate(rows, 1):
-            self._apply(project, only=row)
-            for shot in row:
-                if shot["id"] in self.built:
-                    raise ValueError(f"{shot['name']}: {self.built[shot['id']]}")
-            for a, b in zip(row, row[1:]):
-                if b["start"] > a["end"] + .01:
-                    self.command(f"skip {a['end']:.8f} {b['start']:.8f}")
-            self.applied = None  # The export-only skips must not leak into previews.
+            self._cut(project, row)
             path = self.media_root / (uuid.uuid4().hex + ".mp4")
             self._render(row[0]["start"], row[-1]["end"], path, RENDERS[quality],
                          f"Rendering {len(row)} shot{'s' * (len(row) > 1)} at {size}" + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""))

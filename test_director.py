@@ -262,6 +262,7 @@ class DeskTests(unittest.TestCase):
         self.assertIn("skip 3.00000000 9.00000000", commands)
         self.assertTrue(commands[-1].startswith("video 1.00000000 11.00000000 ") and commands[-1].endswith(" 960 540 30"))
         self.assertNotIn("play", commands)  # playing just before a render takes the engine and guns out of its sound
+        self.assertEqual(commands[-3:-1], ["seek 1.00000000", "planes"])  # from far off: a seek first, or its first second is silent
         self.run_action({"action": "icons", "on": True})
         self.assertIn("icons on", commands)
         self.assertTrue(self.desk.snapshot()["icons"])
@@ -400,6 +401,25 @@ class DeskTests(unittest.TestCase):
         self.assertEqual([c for c in commands if c.startswith("tracks")],
                          ["tracks 0.00 600.00 1", "tracks 600.00 1200.00 1", "tracks 1200.00 1300.00 1"])
         self.assertEqual(self.desk.snapshot()["airfield"], {"film": "films/test.ahf", "moments": []})
+
+    def test_a_sequence_previews_as_the_cut_renders_it(self):
+        commands = []
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"clip")
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+        self.desk.viewer.command = native
+        row = [{**SHOT, "id": "a", "start": 2, "end": 4, "kind": "cockpit"}, {**SHOT, "id": "b", "start": 9, "end": 11, "kind": "gear"}]
+        self.desk.save({"expected_revision": 1, "shots": row + [{**SHOT, "id": "c", "start": 2, "end": 4, "kind": "nose"}]})
+        self.run_action({"action": "clip", "shot_ids": ["b", "a"]})
+        self.assertIn("skip 4.00000000 9.00000000", commands)
+        self.assertFalse(any(c.startswith("cam ") and " 19 " in c and "3.2" in c for c in commands))  # not the other take
+        self.assertTrue(next(c for c in commands if c.startswith("video ")).startswith("video 2.00000000 11.00000000 "))
+        preview = self.desk.snapshot()["preview"]
+        self.assertEqual((preview["kind"], preview["start"], preview["end"]), ("clip", 2, 11))
+        self.desk.start({"action": "clip", "shot_ids": ["a", "c"], "expected_revision": 2}); self.desk.worker.join(2)
+        self.assertIn("follow one another", self.desk.snapshot()["job"]["error"])
 
     def test_a_shot_s_first_camera_stands_in_the_seconds_before_it(self):
         self.assertEqual(lead("cam 5 2 fixed 1 2 3 4 5 6 7 to 8 9 10 11 12 13 14 curve", 3), ["cam 3 2.00000000 fixed 1 2 3 4 5 6 7"])

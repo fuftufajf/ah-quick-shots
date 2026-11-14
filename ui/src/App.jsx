@@ -1,11 +1,13 @@
 import {useEffect, useMemo, useRef, useState} from "react";
 import {ArrowClockwise, CaretLeft, CaretRight, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Trash} from "@phosphor-icons/react";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, killSequence, landingSequence, takeoffSequence, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
+import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, killSequence, landingSequence, sequenceOf, takeoffSequence, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
 const TUNING = [["orbit", "Around", "°", -180, 180, 1, FREE], ["distance", "Distance", "ft", 20, 1500, 5, FREE],
-  ["height", "Height", "ft", -300, 600, 1, [...FREE, "wing"]], ["fov", "Lens (zoom)", "°", 6, 120, 1, null], ["roll", "Roll", "°", -45, 45, 1, null]];
+  ["height", "Height", "ft", -300, 600, 1, [...FREE, "wing"]], ["fov", "Lens (zoom)", "°", 6, 120, 1, null], ["roll", "Roll", "°", -45, 45, 1, null],
+  // Only on the shots made with them (a lift-off, a roll-out): the camera ship swings round and closes in.
+  ["sweep", "Swing round", "°", -180, 180, 5, ["escort"], true], ["closer", "Ends at", "ft", 20, 1500, 5, ["escort"], true]];
 const AS_FLOWN = ["recorded", "weapon"];  // the pilot's own view and the bomb's ride: nothing to adjust
 const CHUNK = 10;  // seconds of film per preview when no shot is selected
 const NEAR = 3000;  // feet: an aircraft that never comes this close is a dot, not someone to film
@@ -64,6 +66,7 @@ export function App() {
   const isSaved = Boolean(draft) && shots.some(s => s.id === draft.id);
   const conflict = dirty && isSaved && baseRevision !== project?.revision;
   const clip = desk.preview?.kind === "clip" ? desk.preview : null;
+  const sequence = draft && isSaved ? sequenceOf(draft, shots) : [];
   const flags = [Boolean(desk.icons)];
   // A shot's camera stops at its end, and a seek can land a little late (measured: up to 0.08 s): a still asked
   // for at the very end would show the pilot's view instead.
@@ -132,7 +135,7 @@ export function App() {
     const job = desk.job, player = film.current;
     if (!job || job.running) return;
     const own = clip && Array.isArray(asking.current) && clip.start === asking.current[0] && clip.end === asking.current[1];
-    if (job.action === "clip" && !job.error && own && player && !trimGrab.current && (!draft || (clip.start === draft.start && clip.end === draft.end))) { asking.current = null; player.currentTime = 0; player.play().catch(() => {}); }
+    if (job.action === "clip" && !job.error && own && player && !trimGrab.current && (!draft || asking.current[2] === "sequence" || (clip.start === draft.start && clip.end === draft.end))) { asking.current = null; player.currentTime = 0; player.play().catch(() => {}); }
     if (job.action === "airfield" && airfieldAsked.current) {
       airfieldAsked.current = false;
       if (!job.error) airfieldReel(desk.airfield?.moments || []);
@@ -239,6 +242,12 @@ export function App() {
       return player.play();
     }
     show(draft, cursor);
+  }
+
+  // The selected shot's sequence (a kill, a take-off, a landing): its saved shots in a row, as the cut renders them.
+  function playSequence() {
+    asking.current = [sequence[0].start, sequence.at(-1).end, "sequence"];
+    setAsked("sequence"); setWanted({action: "clip", body: {shot_ids: sequence.map(s => s.id)}});
   }
 
   function open(shot, changed) {
@@ -449,7 +458,7 @@ export function App() {
   const scores = rated === rateKey ? Object.fromEntries(desk.proposals.map(p => [p.id, p])) : {};
   const movable = Boolean(draft) && FREE.includes(draft.kind) && !video && !conflict;
   const adjustable = Boolean(draft) && !AS_FLOWN.includes(draft.kind) && !video && !conflict;
-  const tuning = adjustable ? TUNING.filter(row => row[6] ? row[6].includes(draft.kind) : true) : [];
+  const tuning = adjustable ? TUNING.filter(row => (row[6] ? row[6].includes(draft.kind) : true) && (!row[7] || draft[row[0]] != null)) : [];
   const dropInShot = draft && events.some(e => e.kind === "drop" && e.time >= draft.start - 1 && e.time <= draft.end);
   // The ship flying with you may watch both of you or one alone; flying with him it watches him.
   const watching = draft?.kind === "escort" && draft.hero === cast.lead && !conflict ? {hero: "you", target: "them"}[draft.watch] || "both" : null;
@@ -521,6 +530,7 @@ export function App() {
           </div>
           <div className="transport">
             <button className="play" disabled={!project} onClick={play} aria-label={rolling ? "Pause" : "Play"} title={draft ? "Play this shot (Space)" : `Play the next ${CHUNK} seconds (Space)`}>{rolling ? <Pause weight="fill"/> : <Play weight="fill"/>}</button>
+            {sequence.length > 1 && <button disabled={working || dirty} onClick={playSequence} title={dirty ? "Update the shot first" : "The whole sequence as one preview, as the cut will show it"}><Play/> Sequence ({sequence.length})</button>}
             <strong>{formatTime(cursor)}</strong><span>/ {formatTime(project?.length)}</span>
             <button disabled={!project || conflict} onClick={another} title={again ? "Another shot of this same stretch: pick a camera, then Add to cut" : "Start a new six-second shot at the playhead"}><Plus/> New shot</button>
             <button disabled={!project} onClick={() => mark("start")} title="Shot starts at the playhead (I)">Set in</button>
