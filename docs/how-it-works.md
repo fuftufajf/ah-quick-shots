@@ -218,22 +218,25 @@ first shot of a stretch is the one that plays until another is selected.
 
 Motion blur renders each video four times at 120 fps, the viewer's most, each
 pass a quarter of a frame (1/480 s) after the one before, and ffmpeg weaves the
-passes and makes each frame the mean of the four in the first half of its time,
-as a film camera's 180° shutter does. The blur is made of the viewer's own
-frames: nothing is guessed. Fewer frames gave a double image instead of a
-streak (two a frame at 120 fps for 60 fps), and ffmpeg's motion interpolation
-took 130 times the film's length. The sound is the first pass's. Measured on a
-7 s shot at 1080p60: 70 s with blur, 17 s without.
+passes and makes each frame the mean of all eight in its time, as a 360°
+shutter does. The blur is made of the viewer's own frames: nothing is guessed.
+A film camera's 180° (the first four) left too little to see; fewer frames gave
+a double image instead of a streak (two a frame at 120 fps for 60 fps), and
+ffmpeg's motion interpolation took 130 times the film's length. The sound is
+the first pass's. Measured on a 7 s shot at 1080p60: 67 s with blur, 17 s
+without.
 
 Film look is applied by ffmpeg in the same step (`look()` in director_core.py).
 Its colour is `looks/film.cube`, a 17-point LUT fitted to three stills of this
-footage before and after a DaVinci Resolve grade (Film Look Creator, Cinematic,
-colour at half strength): on a still it was not fitted to, it takes the mean
-difference from that grade from 7.5-8.4 to 4.2-5.8 (of 255). The rest of that
-difference is the grade's haze on the horizon, which follows depth, not colour.
-Then bloom, a red halation round highlights, a vignette (corners 10% darker) and
-grain, sized to the picture's height. The same 7 s shot: 31 s with the look,
-85 s with the look and motion blur.
+footage before and after a DaVinci Resolve grade (Film Look Creator, Cinematic):
+on a still it was not fitted to, it took the mean difference from that grade
+from 7.5-8.4 to 4.2-5.8 (of 255); the rest is the grade's haze on the horizon,
+which follows depth, not colour. That grade mixes its colour in at half and
+could hardly be seen, so the LUT holds the whole of it, and the bloom, the red
+halation round highlights, the vignette (corners about 20% darker) and the grain
+are stronger than the grade's; all are sized to the picture's height. The same
+7 s shot: 82 s with the look and motion blur, a mean change of 6.6 of 255 from
+the plain render.
 
 Data overlay (16:9 and 9:16) adds, beside every rendered video, two transparent
 films of the same length and frame rate to lay over it in an editor: a card with
