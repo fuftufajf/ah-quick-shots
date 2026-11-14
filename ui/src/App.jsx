@@ -552,7 +552,7 @@ export function App() {
           </div>
           <div className="transport">
             <button className="play" disabled={!project} onClick={play} aria-label={rolling ? "Pause" : "Play"} title={sequence.length > 1 && !dirty ? `Play the whole sequence, ${sequence.length} shots (Space)` : draft ? "Play this shot (Space)" : `Play the next ${CHUNK} seconds (Space)`}>{rolling ? <Pause weight="fill"/> : <Play weight="fill"/>}</button>
-            <button disabled={!project || working} onClick={playLive} title="Play it now in Film Viewer's own window, with its sound and nothing rendered. A render after it waits about 12 s, so its sound stays whole."><Play/> In Film Viewer</button>
+            <button disabled={!project || working} onClick={playLive} title="Play it now in Film Viewer's own window (keep that window on screen), with its sound and nothing rendered. A render after it waits about 12 s, so its sound stays whole."><Play/> In Film Viewer</button>
             <strong>{formatTime(cursor)}</strong><span>/ {formatTime(project?.length)}</span>
             <button disabled={!project || conflict} onClick={another} title={again ? "Another shot of this same stretch: pick a camera, then Add to cut" : "Start a new six-second shot at the playhead"}><Plus/> New shot</button>
             <button disabled={!project} onClick={() => mark("start")} title="Shot starts at the playhead (I)">Set in</button>

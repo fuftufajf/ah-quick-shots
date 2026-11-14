@@ -180,8 +180,9 @@ turns where the camera looks (`turn` left, `tilt` up, in degrees). The wheel zoo
 camera: the aircraft grows without the camera going nearer, which would distort
 it; with nothing to zoom, the wheel scrolls the page. In Film Viewer plays the
 shot (or its sequence) at once in the viewer's own window, with its sound and
-nothing rendered; a render after it waits at least 12 s, because playing just
-before a render thins its sound. Shot details holds exact times, the lead
+nothing rendered (the viewer's window must be on screen to be seen); a render
+after it waits at least 12 s, because playing just before a render thins its
+sound (measured with that wait: the same sound as a rested render, 2 of 2). Shot details holds exact times, the lead
 aircraft and the name.
 
 **The cut.** Saved shots, each with a tick box. Render selected makes one 16:9
