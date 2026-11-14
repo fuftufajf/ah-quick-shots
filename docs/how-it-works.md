@@ -226,7 +226,7 @@ ffmpeg's motion interpolation took 130 times the film's length. The sound is
 the first pass's. Measured on a 7 s shot at 1080p60: 67 s with blur, 17 s
 without.
 
-Film look is applied by ffmpeg in the same step (`look()` in director_core.py).
+Film look (experimental) is applied by ffmpeg in the same step (`look()` in director_core.py).
 Its colour is `looks/film.cube`, a 17-point LUT fitted to three stills of this
 footage before and after a DaVinci Resolve grade (Film Look Creator, Cinematic):
 on a still it was not fitted to, it took the mean difference from that grade
@@ -238,7 +238,7 @@ are stronger than the grade's; all are sized to the picture's height. The same
 7 s shot: 82 s with the look and motion blur, a mean change of 6.6 of 255 from
 the plain render.
 
-Haze (`haze()`) lays mist along the horizon, as the same grade does through a
+Haze (experimental, `haze()`) lays mist along the horizon, as the same grade does through a
 sky mask and an AI depth map. The viewer tells nothing of its camera to work
 depth out from (and the pilot's view follows a head no one recorded), so the
 horizon is found in the picture: at an eighth of its size, sky (bluish) and
