@@ -33,6 +33,7 @@ export function App() {
   const [rated, setRated] = useState("");
   const [skipped, setSkipped] = useState(() => new Set());
   const [forgetting, setForgetting] = useState(null);  // {ids, label}: shots asked to be removed, waiting for a choice
+  const [trashing, setTrashing] = useState(null);  // a replay asked to go to the Recycle Bin, waiting for a yes
   const [quality, setQuality] = useState("final");
   const [apart, setApart] = useState(false);
   const [withOverlay, setWithOverlay] = useState(false);
@@ -410,6 +411,16 @@ export function App() {
     if (saved) { setDraft(saved.shots.find(s => s.id === draft.id)); setDirty(false); setBaseRevision(saved.revision); }
   }
   function remove() { setForgetting({ids: [draft.id], label: draft.name}); }
+  async function deleteFilm() {
+    const film = trashing;
+    setSending(true); setError("");
+    try {
+      const result = await request("/api/delete-film", {film: film.path});
+      setDesk(s => ({...s, films: result.films}));
+      setFilmChoice("");
+    } catch (e) { setError(e.message); }
+    finally { setSending(false); setTrashing(null); }
+  }
   // The finished videos (and their overlays) the desk kept of these shots and that are still on disk.
   function filesOf(ids) {
     return (desk.renders || []).filter(r => r.shots.some(id => ids.includes(id))).flatMap(r => [r.file, ...(r.overlays || [])]);
@@ -516,7 +527,8 @@ export function App() {
   return <main className="desk">
     <header className="topbar">
       <div className="brand"><FilmStrip size={26} weight="duotone"/><h1>AH <span>QUICK SHOTS</span></h1></div>
-      <div className="open-film"><select aria-label="Film" value={filmChoice || project?.film || ""} onChange={e => setFilmChoice(e.target.value)}><option value="">Choose a replay</option>{desk.films.map(f => <option key={f.path} value={f.path}>{f.name}{f.modified ? ` · ${new Date(f.modified * 1000).toLocaleDateString()}` : ""}</option>)}</select><button disabled={!(filmChoice || project?.film) || (running && desk.job.action === "export_cut")} onClick={load} title="Open this replay; an operation in progress finishes first">Open</button></div>
+      <div className="open-film"><select aria-label="Film" value={filmChoice || project?.film || ""} onChange={e => setFilmChoice(e.target.value)}><option value="">Choose a replay</option>{desk.films.map(f => <option key={f.path} value={f.path}>{f.name}{f.modified ? ` · ${new Date(f.modified * 1000).toLocaleDateString()}` : ""}</option>)}</select><button disabled={!(filmChoice || project?.film) || (running && desk.job.action === "export_cut")} onClick={load} title="Open this replay; an operation in progress finishes first">Open</button>
+        <button className="danger" aria-label="Delete this replay" disabled={!filmChoice || filmChoice === project?.film || working} onClick={() => setTrashing(desk.films.find(f => f.path === filmChoice))} title={filmChoice && filmChoice === project?.film ? "Open another replay first: Film Viewer holds the one that is open" : "Move the chosen replay to the Recycle Bin"}><Trash/></button></div>
       <div className={`operation ${working ? "working" : desk.job?.error ? "failed" : ""}`} role="status" aria-live="polite">
         <span className={working ? "spinner" : "status-dot"}/><strong>{status}</strong>{working && <span className="elapsed">{Math.floor(desk.job?.elapsed || 0)}s</span>}
       </div>
@@ -647,6 +659,16 @@ export function App() {
           <button onClick={openVideos} title={`Finished videos are kept in ${desk.videos}`}><FolderOpen/> Videos folder</button></div>
       </aside>
     </section>
+    {trashing && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="trash-title" onKeyDown={e => e.key === "Escape" && setTrashing(null)}>
+      <div className="modal-box">
+        <h2 id="trash-title">Move the replay “{trashing.name}” to the Recycle Bin?</h2>
+        <p>{trashing.mb} MB. Its saved shots stay with the desk, and videos made from it stay in your Videos folder. You can restore it from the Recycle Bin.</p>
+        <div className="modal-actions">
+          <button autoFocus onClick={() => setTrashing(null)}>Cancel</button>
+          <button className="danger" disabled={sending} onClick={deleteFilm}><Trash/> Move to the Recycle Bin</button>
+        </div>
+      </div>
+    </div>}
     {forgetting && (() => {
       const files = filesOf(forgetting.ids), many = forgetting.ids.length > 1;
       return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="forget-title" onKeyDown={e => e.key === "Escape" && setForgetting(null)}>

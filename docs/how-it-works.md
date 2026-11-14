@@ -19,7 +19,9 @@ connection disconnects the first.
 
 ## Working down the page
 
-**Moments.** The film library lists the newest film first. "Fights" is one row
+**Moments.** The film library lists the newest film first; the bin beside Open
+moves the chosen replay to the Recycle Bin (not the open one, which Film Viewer
+holds; its saved shots and videos stay). "Fights" is one row
 per engagement of the recording pilot: their bursts, hits given and taken and
 kills, grouped when less than twelve seconds apart, and closed by a kill of
 theirs. A row names the kill, or the hits, and its opponent is whoever took the
@@ -409,6 +411,8 @@ most 5 s later). One action runs at a time; a second is refused while
   in its file name; without it the shot's `kind` is used. With `overlay: true` (needs ffmpeg, `state.ffmpeg`)
   every entry of `files` also has `overlays`: the 16:9 and the 9:16 data overlay kept beside it
 - POST `/api/folder` `{}` shows the videos folder in Explorer
+- POST `/api/delete-film` `{film}` moves a replay from `state.films` to the Recycle Bin (not the open one:
+  Film Viewer holds it). Answers `{films}`
 - POST `/api/forget` `{expected_revision, shot_ids, files}` takes shots out of the plan; with `files: true`
   their finished videos and overlays on record (`state.renders`: `file`, `shots`, `overlays`) go to the
   Recycle Bin. Answers `{project, renders, recycled}`

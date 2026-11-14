@@ -715,6 +715,24 @@ class DeskTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.desk.forget({"expected_revision": 4, "shot_ids": []})
 
+    def test_a_replay_goes_to_the_recycle_bin_but_not_the_open_one(self):
+        folder = Path(self.temp.name) / "films"
+        folder.mkdir()
+        for name in ("old.ahf", "test.ahf"):
+            (folder / name).write_bytes(b"film")
+        self.desk.films_folder = folder
+        self.desk.data["films"] = [{"path": "films/old.ahf", "name": "old.ahf", "mb": 1.0, "modified": 0},
+                                   {"path": "films/test.ahf", "name": "test.ahf", "mb": 1.0, "modified": 0}]
+        moved = []
+        with patch("director_core.to_recycle_bin", lambda paths: [moved.extend(paths), *(p.unlink() for p in paths)]):
+            with self.assertRaises(ValueError):  # the open one: Film Viewer holds it
+                self.desk.delete_film({"film": "films/test.ahf"})
+            with self.assertRaises(ValueError):  # only what the viewer listed
+                self.desk.delete_film({"film": "films/../../director_api.py"})
+            left = self.desk.delete_film({"film": "films/old.ahf"})
+        self.assertEqual(([p.name for p in moved], [f["name"] for f in left["films"]]), (["old.ahf"], ["test.ahf"]))
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["test.ahf"])
+
     def test_the_observer_lets_go_of_an_aircraft_that_leaves_the_film(self):
         # He crosses ahead of the hero and leaves the film at 6 s (shot down). Held at his last place, he pulled the
         # lens open to 90 degrees (or, past the widest, snapped it back to the shot's own) and stopped the turn dead.

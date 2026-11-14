@@ -136,6 +136,7 @@ class Desk:
         self.stills = deque()
         self.drawing = deque()  # data overlays still to draw: ffmpeg's work, the viewer is not needed for it
         self.drawer = None
+        self.films_folder = None  # where the viewer keeps its films, as its `films` reply says
         self.data = {"connected": False, "films": [], "project": None, "planes": [],
                      "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None, "flight": None,
                      "preview": None, "proposals": [], "job": None, "videos": str(self.videos), "renders": [],
@@ -242,6 +243,25 @@ class Desk:
                 path.write_text(json.dumps(kept, ensure_ascii=False, indent=2), encoding="utf-8")
                 self.data["renders"] = kept
             return {"project": copy.deepcopy(project), "renders": copy.deepcopy(self.data["renders"]), "recycled": len(paths)}
+
+    def delete_film(self, raw):
+        """Move a replay from the viewer's films folder to the Recycle Bin. Not the open one: Film Viewer holds it.
+        Its saved shots stay with the desk and its finished videos in the videos folder."""
+        with self.lock:
+            self._idle()
+            row = next((f for f in self.data["films"] if f["path"] == raw.get("film")), None)
+            if row is None or self.films_folder is None:
+                raise ValueError("Choose a replay from the list")
+            if self.data["project"] and self.data["project"]["film"] == row["path"]:
+                raise ValueError("Open another replay first: Film Viewer holds the one that is open")
+            folder = self.films_folder.resolve()
+            path = (folder / row["name"]).resolve()
+            if path.parent != folder or path.suffix.lower() != ".ahf":
+                raise ValueError("Only a replay in the films folder can be deleted")
+            if path.exists():
+                to_recycle_bin([path])
+            self.data["films"] = [f for f in self.data["films"] if f["path"] != row["path"]]
+            return {"films": copy.deepcopy(self.data["films"])}
 
     def save(self, raw):
         with self.lock:
@@ -770,7 +790,9 @@ class Desk:
             greeting = self.viewer.connect(self.progress)
             if int(greeting.split()[1]) < 5:
                 raise ValueError("Update Film Viewer to 3.07 Patch 2 or newer")
-            films = film_rows(self.command("films"), os.path.getmtime)
+            listing = self.command("films")
+            films = film_rows(listing, os.path.getmtime)
+            self.films_folder = next((Path(line[7:]) for line in listing if line.startswith("folder ")), None)
             self.command("icons " + ("on" if self.data["icons"] else "off"))
             with self.lock:
                 self.data.update(connected=True, films=films, greeting=greeting)

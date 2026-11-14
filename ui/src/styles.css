@@ -40,7 +40,8 @@ small{font-size:12px}
 .brand{display:flex;align-items:center;gap:9px;color:var(--navy)}
 .brand h1{font-size:17px;letter-spacing:1.6px;color:var(--ink);font-weight:600}
 .brand h1 span{font-weight:400}
-.open-film{display:flex;gap:6px;width:min(340px,100%)}
+.open-film{display:flex;gap:6px;width:min(380px,100%)}
+.open-film .danger{flex:0 0 34px;padding:0}
 .operation{flex:1;min-width:200px;display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted)}
 .operation strong{font-weight:500}
 .operation.working{color:var(--navy)}
