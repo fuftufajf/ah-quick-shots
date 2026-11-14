@@ -1,7 +1,10 @@
 # How AH Quick Shots works
 
 Requires Film Viewer 3.07 Patch 2 (socket protocol 5) or newer. Start the viewer,
-then `AH Quick Shots.bat`; the desk connects by itself.
+then `AH Quick Shots.bat`; the desk connects by itself. The batch file starts
+`director_api.py --page`, which opens the page once the server listens. If the
+port is held by a desk of this folder, or by one busy rendering, that page opens
+instead; a desk of another folder is stopped first (found with `netstat`).
 
 ```
  browser page            local server               Film Viewer
@@ -342,7 +345,8 @@ yourself: that disconnects the desk.
 **GET /api/state** — everything: `connected`, `films`, `project` (`film`,
 `length`, `revision`, `shots`, `events`), `planes`, `now`, `preview`, `nearby`,
 `proposals`, `problems`, `job` (`running`, `message`, `elapsed`, `expect`,
-`error`). Poll it; it never waits for the viewer.
+`error`), `stale` (the code on disk is newer) and `folder` (where this desk
+runs from). Poll it; it never waits for the viewer.
 
 **POST /api/project** `{expected_revision, shots}` — saves the whole plan
 atomically. Merge the current shots and keep their ids. A 409 means the plan

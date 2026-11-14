@@ -14,7 +14,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from director_api import make_server, videos_folder, working_folder
+import director_api
+from director_api import listener, make_server, take_port, videos_folder, working_folder
 from director_core import Conflict, Desk, framing, lead
 import flight_data
 import overlay
@@ -840,6 +841,55 @@ class DeskTests(unittest.TestCase):
                 make_server(server.server_port, Path(self.temp.name) / "second", self.desk.media_root)
         finally:
             server.server_close()
+
+    def test_a_desk_of_another_copy_gives_up_the_port_and_this_copy_s_own_keeps_it(self):
+        # The server has no window: one started from another folder, an older version since deleted, kept the port
+        # and the page came from it, "404 Not Found". Now it is stopped; this copy's own, or a busy one, stays.
+        first = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)
+        port = first.server_port
+        threading.Thread(target=first.serve_forever, daemon=True).start()
+        def stop(pid, sig):
+            first.shutdown(); first.server_close()
+        try:
+            self.assertIsNone(take_port(port))  # it is this copy's: its page is the one
+            with patch("director_api.running_desk", return_value={"job": {"running": True}}), patch("director_api.os.kill") as kill:
+                self.assertIsNone(take_port(port))  # another copy's, busy rendering: left alone
+                kill.assert_not_called()
+            with patch("director_api.running_desk", return_value={"job": None}), patch("director_api.listener", return_value=4242),                     patch("director_api.os.kill", side_effect=stop) as kill,                     patch("director_api.make_server", side_effect=lambda p: make_server(p, Path(self.temp.name) / "new", self.desk.media_root)):
+                second = take_port(port)
+            self.assertEqual((kill.call_args.args[0], second.server_port), (4242, port))
+            second.server_close()
+            with patch("director_api.running_desk", return_value=None), self.assertRaises(OSError):
+                held = make_server(port, Path(self.temp.name) / "held", self.desk.media_root)
+                try:
+                    take_port(port)  # something else holds the port: it is said, not stopped
+                finally:
+                    held.server_close()
+        finally:
+            first.server_close()
+        rows = ("\r\n  Proto  Adres lokalny          Obcy adres             Stan\r\n"
+                f"  TCP    127.0.0.1:{port}         0.0.0.0:0              NAS\u0141UCHIWANIE   5150\r\n"
+                f"  TCP    127.0.0.1:{port}         127.0.0.1:50000        USTANOWIONO     5150\r\n"
+                f"  TCP    127.0.0.1:50000        127.0.0.1:{port}         USTANOWIONO     777\r\n").encode("cp852")
+        with patch("director_api.subprocess.run", return_value=subprocess.CompletedProcess([], 0, rows, b"")):
+            self.assertEqual((listener(port), listener(port + 1)), (5150, None))
+
+    def test_the_page_s_script_is_javascript_whatever_the_windows_registry_says(self):
+        # Some programs make .js plain text in the registry, where Python looks: the browser ran no script, blank page.
+        server = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        script = next((director_api.ROOT / "ui" / "dist" / "assets").glob("*.js")).name
+        try:
+            with patch("director_api.mimetypes.guess_type", return_value=("text/plain", None)):
+                for path, kind in ((f"/assets/{script}", "text/javascript"), ("/", "text/html; charset=utf-8")):
+                    connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+                    connection.request("GET", path)
+                    response = connection.getresponse()
+                    response.read()
+                    connection.close()
+                    self.assertEqual((response.status, response.getheader("Content-Type")), (200, kind))
+        finally:
+            server.shutdown(); server.server_close()
 
     def test_working_folder_has_no_space_when_the_account_name_does(self):
         with patch("director_api.tempfile.gettempdir", return_value="C:/Users/John Smith/AppData/Local/Temp"):
