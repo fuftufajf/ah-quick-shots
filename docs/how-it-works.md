@@ -187,9 +187,17 @@ a time, so ticked shots of the same stretch cannot share a video: the render
 then makes several, the first shots of every stretch in the first, the second
 ones in the next. Three shots of one stretch come out as three videos of the
 same length, each saved under its shot's name and camera. On the desk, the
-first shot of a stretch is the one that plays until another is selected. Add my kills makes a shot for
-every kill of yours that has none yet — a kill reel to tick and render, with the
-cameras still yours to pick.
+first shot of a stretch is the one that plays until another is selected.
+
+Add my kills makes four shots for every kill of yours that has none yet, after
+the kill sequence in Steely's Aces High film companion: you closing in (you in
+front, him beyond), your guns (over your shoulder at him), him going down (close
+on him, from 60 ft above) and you flying on (from ahead, looking back). The guns
+are your last burst that hit him within 20 s of the kill message; with none in
+the film, the 4 s before it. He is followed down for at most the last 6 s before
+the message, where he leaves the film; between the guns and that the cut skips.
+Seen on a real kill: he hit the ground about a second before the message, so the
+end of his fall shows grass. The cameras stay yours to change.
 
 ## Under the desk
 

@@ -1,6 +1,6 @@
 import {useEffect, useMemo, useRef, useState} from "react";
 import {ArrowClockwise, CaretLeft, CaretRight, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Trash} from "@phosphor-icons/react";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
+import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, killSequence, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
@@ -377,8 +377,10 @@ export function App() {
   async function reel() {
     const made = [];
     for (const e of uncovered) {
-      const shot = fitShot(newShot(project, desk.planes, e, e.time), [...shots, ...made]);
-      if (shot.end - shot.start >= 2) made.push(shot);
+      for (const part of killSequence(project, desk.planes, e, events)) {
+        const shot = fitShot(part, [...shots, ...made]);
+        if (shot.end - shot.start >= .5) made.push(shot);
+      }
     }
     if (made.length) await save([...shots, ...made]);
   }
@@ -544,7 +546,7 @@ export function App() {
           {!shots.length && <p className="hint">Shots you add appear here. Tick the ones to render.</p>}
         </div>
         <div className="cut-actions">
-          <button disabled={working || dirty || !uncovered.length} onClick={reel} title="A shot for every kill of yours that has none yet">Add my kills ({uncovered.length})</button>
+          <button disabled={working || dirty || !uncovered.length} onClick={reel} title="Four shots for every kill of yours that has none yet: closing in, the guns, him going down, you flying on">Add my kills ({uncovered.length})</button>
           <select aria-label="Render quality" value={quality} onChange={e => setQuality(e.target.value)}><option value="final">1080p60</option><option value="4k">4K · 2160p60</option><option value="draft">Quick draft</option></select>
           <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; action("export_cut", {shot_ids: chosen, quality, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))}); }} title={dirty ? "Add or update the shot first" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>
           <button onClick={openVideos} title={`Finished videos are kept in ${desk.videos}`}><FolderOpen/> Videos folder</button></div>

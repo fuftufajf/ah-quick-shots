@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, fitShot, ownKills, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
+import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, fitShot, killSequence, ownKills, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
 const event = {time:199, kind:'kill', text:'Hawk Raven 1 19 10', fields:['Hawk','Raven','1','19','10']};
 assert.equal(formatTime(195.3), '03:15.3');
 assert.equal(filterMoments([event], 'Raven 03:19', 'kill').length, 1);
@@ -13,6 +13,22 @@ assert.notEqual(clipKey(1, 2, {...shot, side:'left'}, [false, false]), clipKey(1
 assert.notEqual(clipKey(1, 2, shot, [true, false]), clipKey(1, 2, shot, [false, false]));
 assert.equal(momentLabel(event), 'Hawk → Raven');
 assert.ok(newShot({length:20}, [{id:19,recorder:true}], null, 19.99).end <= 20);
+// A kill as four shots in a row: closing in, the guns, him going down (ending at the message), flying on.
+// Without your burst in the film, the fatal hits are taken as about 3 s before the message.
+const sequence = killSequence({length:294.8}, [], event);
+assert.deepEqual(sequence.map(s => [s.kind, s.start, s.end]),
+  [['pair', 191, 195], ['shoulder', 195, 198], ['escort', 198, 199], ['follow', 199, 201.5]]);
+assert.deepEqual(sequence.map(s => [s.hero, s.target]), [[19, 10], [19, 10], [10, 19], [19, null]]);
+assert.equal(new Set(sequence.map(s => s.id)).size, 4);
+assert.ok(sequence[0].name.startsWith('Hawk → Raven · '));
+// With it, the shooting is your last burst that hit him, and he is followed down for the last 6 s before the message.
+const burst = [{time:180.4, kind:'guns', fields:['start','19']}, {time:180.6, kind:'impact', fields:['19','10','CAN','7']},
+  {time:181.1, kind:'guns', fields:['stop','19','27']}, {time:185, kind:'impact', fields:['7','10','MG','2']}];
+assert.deepEqual(killSequence({length:294.8}, [], event, burst).map(s => [s.kind, s.start, s.end]),
+  [['pair', 176.4, 180.4], ['shoulder', 180.4, 182.1], ['escort', 193, 199], ['follow', 199, 201.5]]);
+// So near the start of the film that the fall has no room: it is left out, and nothing overlaps.
+assert.deepEqual(killSequence({length:20}, [], {...event, time:1.5}).map(s => [s.kind, s.start, s.end]),
+  [['pair', 0, 1], ['shoulder', 1, 2.5], ['follow', 2.5, 5]]);
 
 const me = {id:19, name:'Hawk'}, elsewhere = {kind:'kill', text:'', fields:['Falcon','Kestrel','1','28','34']};
 assert.deepEqual(filterMoments([event, elsewhere, {kind:'impact', text:'', fields:[]}, {kind:'guns', text:'', fields:[]}], '', 'mine', me).map(e => e.kind), ['kill', 'impact']);

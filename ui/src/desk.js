@@ -23,6 +23,35 @@ export function newShot(project, planes, moment, now = 0) {
     side: "right", orbit: 0, distance: 120, height: 24, fov: 60, roll: 0, watch: "both", ...camera};
 }
 
+// The shots a kill usually wants, after Steely's kill sequence (Aces High film companion): closing in, the
+// shooting, him going down, you flying on. The victim leaves the film at the kill message, so the camera on him
+// ends there. The shooting is your last burst that hit him (on a real kill it came 11 s before the message: he
+// crashed later); a film without one gets Steely's rule, the fatal hits about 3 s before the message. His cameras
+// were swapped for ones that keep the victim in the picture (seen live: the pilot's view looked at the sky as he
+// flew it, the wingtip camera lost the victim, and neither your seat nor your shoulder showed him while you closed in):
+// you in front with him beyond, over your shoulder at him for the guns, and close on him from above as he falls.
+export function killSequence(project, planes, kill, events = []) {
+  const base = newShot(project, planes, kill, kill.time), t = kill.time, you = base.hero, him = base.target;
+  const tidy = seconds => Math.round(Math.min(Math.max(0, seconds), project.length) * 100) / 100;
+  const mine = (e, kind) => e.kind === kind && idValue(e.fields[kind === "guns" ? 1 : 0]) === you;
+  const hit = events.filter(e => mine(e, "impact") && idValue(e.fields[1]) === him && e.time <= t && e.time >= t - 20).at(-1);
+  const opened = hit && events.filter(e => mine(e, "guns") && e.fields[0] === "start" && e.time <= hit.time).at(-1);
+  const ceased = hit && events.find(e => mine(e, "guns") && e.fields[0] === "stop" && e.time >= hit.time);
+  const fire = hit ? opened?.time ?? hit.time - .5 : t - 4, held = hit ? ceased?.time ?? hit.time + .5 : t - 2;
+  const a = tidy(fire - 4), b = tidy(Math.max(a + 1, fire)), c = tidy(Math.max(b + 1.5, held + 1)), down = tidy(Math.max(c, t - 6));
+  const end = tidy(Math.max(down, t)), away = tidy(end + 2.5);
+  const shot = (part, start, stop, camera) => ({...base, id: crypto.randomUUID(), name: `${base.name} · ${part}`, start, end: stop, ...camera});
+  return [
+    shot("closing in", a, b, him == null ? {kind: "follow", target: null, orbit: 0, distance: 120, height: 15, fov: 50}
+      : ANGLES[0].make({lead: you, other: him})[0]),
+    shot("guns", b, c, him == null ? {kind: "cockpit", target: null, fov: 69} : {kind: "shoulder", target: him, side: "right", fov: 66}),
+    // Well above him: he may hit the ground before the message, and a camera at his height ends up in the grass.
+    ...(him == null ? [] : [shot("going down", down, end,
+      {kind: "escort", watch: "hero", hero: him, target: you, orbit: 145, distance: 110, height: 60, fov: 28})]),
+    shot("flying on", end, away, {kind: "follow", target: null, orbit: 160, distance: 160, height: 25, fov: 55}),
+  ].filter(s => s.end - s.start >= .5);
+}
+
 // What a preview clip shows: the stretch, the shot's camera (not its name) and the picture switches.
 export function clipKey(start, end, shot, flags) {
   const {id, name, ...camera} = shot || {};
