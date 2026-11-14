@@ -38,8 +38,10 @@ assert.deepEqual([lift.watch, lift.sweep, lift.closer, lift.hero, lift.target], 
 // Rolled for less than a second: no picture of the roll, the rest as usual.
 assert.deepEqual(takeoffSequence({length:536}, {kind:'takeoff', time:18, roll:17.6, hero:88}).map(s => s.kind), ['escort', 'escort']);
 assert.deepEqual(landingSequence({length:536}, {kind:'touchdown', time:531, stop:536, hero:88}).map(s => [s.kind, s.start, s.end]),
-  [['follow', 519, 529], ['gear', 529, 534], ['escort', 534, 536]]);
+  [['follow', 519, 529], ['gear', 529, 532.5], ['escort', 532.5, 536]]);
 assert.ok(landingSequence({length:536}, {kind:'touchdown', time:531, stop:536, hero:88})[0].name.startsWith('Landing 08:51'));
+// A film that runs on after the stop: the roll-out ends 2 s after it.
+assert.equal(landingSequence({length:600}, {kind:'touchdown', time:531, stop:536, hero:88})[2].end, 538);
 
 // A sequence is the shots of one name in a row; another kill of the same pilot later is another sequence.
 const takeoff = takeoffSequence({length:536}, {kind:'takeoff', time:18, roll:9, hero:88});

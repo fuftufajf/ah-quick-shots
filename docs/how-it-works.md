@@ -214,8 +214,10 @@ wheels, the lift-off from a camera ship that swings 100 degrees round you while
 closing from 250 to 100 ft (`sweep` and `closer`), and the climb from a camera
 ship that starts ahead of you and 20 ft below, swings 150 degrees round behind
 you and falls back from 150 to 500 ft, so you climb away against the sky; for a
-landing the approach from a camera ahead of you looking back, the wheels and
-the roll-out from a camera ship swinging round. Near the ground every camera is
+landing the approach from a camera ahead of you looking back, the wheels, and
+the roll-out like the climb: from ahead, 15 ft above you, swinging 120 degrees
+round and falling back from 120 to 300 ft, on to 2 s past the stop when the
+film runs on. Near the ground every camera is
 at or above your height, because the ground's height is known only under your
 wheels; the climb is 6 s after lift-off, when a fighter was 160 ft up.
 

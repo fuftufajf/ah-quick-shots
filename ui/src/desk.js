@@ -55,7 +55,7 @@ export function killSequence(project, planes, kill, events = []) {
 // A take-off and a landing found in your flight path by the desk ({kind, time, roll or stop, hero}), each as a
 // few shots: the take-off rolling past a camera beside the runway ahead, the wheels, the lift-off with a camera
 // swinging round you and closing in, the climb seen from a camera falling back behind you; the landing coming at a camera ahead of you, the
-// wheels touching, the roll-out with a camera swinging round. Near the ground every camera is at or above your
+// wheels touching, the roll-out with a camera swinging round and falling back. Near the ground every camera is at or above your
 // own height, so it stays out of the ground (whose height is known only under your wheels).
 function airfieldShots(project, moment, name, parts) {
   const base = {side: "right", orbit: 0, distance: 120, height: 24, fov: 60, roll: 0, watch: "both", hero: moment.hero, target: null};
@@ -75,11 +75,13 @@ export function takeoffSequence(project, moment) {
   ]);
 }
 export function landingSequence(project, moment) {
-  const t = moment.time, end = Math.max(t + 3, Math.min(moment.stop, t + 10));
+  // The roll-out runs on 2 s past the stop when the film does: the camera finishes its swing round you standing.
+  const t = moment.time, end = Math.max(t + 4.5, Math.min(moment.stop + 2, t + 10));
   return airfieldShots(project, moment, `Landing ${formatTime(t)}`, [
     ["approach", t - 12, t - 2, {kind: "follow", orbit: 150, distance: 160, height: 10, fov: 50}],
-    ["touchdown", t - 2, t + 3, {kind: "gear", fov: 66}],
-    ["roll-out", t + 3, end, {kind: "escort", watch: "hero", orbit: 120, sweep: -60, distance: 150, height: 25, fov: 45}],
+    ["touchdown", t - 2, t + 1.5, {kind: "gear", fov: 66}],
+    // Like the climb after a take-off: from ahead, swinging round and falling back; above you, you are on the ground.
+    ["roll-out", t + 1.5, end, {kind: "escort", watch: "hero", orbit: 160, sweep: -120, distance: 120, closer: 300, height: 15, fov: 40}],
   ]);
 }
 
