@@ -20,6 +20,7 @@ import director_core
 from director_core import Conflict, Desk, framing, lead
 import flight_data
 import overlay
+import trails
 from shot_plan import _last_seen, _steady, camera_pose, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows
 
@@ -466,6 +467,61 @@ class DeskTests(unittest.TestCase):
         self.assertGreater(moved(160, h // 2 + 2), 15)  # the far ground just below it
         for x, y in ((160, 3), (160, h - 3), (52, 26), (252, 26)):  # high sky, near ground, both aircraft
             self.assertLess(moved(x, y), 4, (x, y))
+
+    def test_wingtips_and_the_camera_put_a_rolled_aircraft_where_the_eye_sees_it(self):
+        # Level, heading +z, 18 ft to each tip; seen from 100 ft behind on a 1.2 rad lens: the tips either side of the
+        # middle, the same distance off it. Rolled right a quarter turn, the right tip is straight below the middle.
+        left, right = trails.wingtips((0, 0, 0), 0, 0, 0, 18)
+        self.assertEqual((left, right), ((-18.0, 0.0, 0.0), (18.0, 0.0, 0.0)))
+        cam = trails.camera((0, 0, -100, 0, 0, 0, 1.2))
+        (lx, ly), (rx, ry) = (trails.to_screen(cam, p, 1920, 1080) for p in (left, right))
+        self.assertAlmostEqual(lx + rx, 1920)
+        self.assertAlmostEqual(rx - 960, 18 / 100 / math.tan(.6) * 960)
+        self.assertEqual((round(ly), round(ry)), (540, 540))
+        down = trails.wingtips((0, 0, 0), 0, 0, math.pi / 2, 18)[1]
+        self.assertAlmostEqual(down[1], -18)
+        self.assertIsNone(trails.to_screen(cam, (0, 0, -150), 1920, 1080))  # behind the camera
+        # A camera rolled a quarter turn to the right puts the right of the world at the top of the picture.
+        rolled = trails.to_screen(trails.camera((0, 0, -100, 0, 0, math.pi / 2, 1.2)), right, 1920, 1080)
+        self.assertLess(rolled[1], 540)
+        self.assertAlmostEqual(rolled[0], 960)
+
+    def test_a_curving_camera_is_placed_as_the_viewer_moves_it(self):
+        points = [(0.0, [0.0, 0.0]), (1.0, [10.0, 0.0]), (2.0, [20.0, 10.0]), (3.0, [30.0, 10.0])]
+        self.assertEqual(trails.between(points, 1.0), [10.0, 0.0])
+        self.assertEqual(trails.between(points, 3.0), [30.0, 10.0])
+        self.assertAlmostEqual(trails.between(points, 1.5)[1], 5.0)  # halfway, the curve and the straight line agree
+        self.assertLess(trails.between(points, 1.25)[1], 2.5)  # nearer the bend's start, the curve lags a straight line
+
+    def test_trails_are_drawn_from_both_wingtips_fading_behind_and_not_without_a_camera(self):
+        # An aircraft flying +z at 300 ft/s, seen from the side 400 ft off; three frames at 60 fps, the middle one blind.
+        rows = [(t / 50, 0.0, 1000.0, 300 * t / 50, 0.0, 0.0, 0.0, 0.0, 0.0, 300.0) for t in range(0, 200)]
+        eye = (-400.0, 1000.0, 300.0 * 3.5, -math.pi / 2, 0.0, 0.0, 1.2)  # yaw -pi/2 looks toward +x
+        text = trails.script([(3.5, eye), (3.5 + 1 / 60, None), (3.5 + 2 / 60, eye)], {7: rows}, {7: 18}, [7], .02, 60, 1920, 1080,
+                             trails.colour("#ff8000"))
+        events = [line for line in text.splitlines() if line.startswith("Dialogue:")]
+        firsts = [e for e in events if ",0:00:00.00,0:00:00.01," in e]
+        style = trails.STYLE
+        seen = sum(style["opacity"] * (1 - (b + .5) / style["bands"]) ** style["fade"] >= .01 for b in range(style["bands"]))
+        self.assertEqual(len(firsts), 2 * seen)  # two wingtips, each band that is not too faint to see
+        self.assertFalse([e for e in events if ",0:00:00.01,0:00:00.03," in e])  # no camera, no trails
+        self.assertTrue(all("\\1c&H0080FF&" in e for e in events))
+        alphas = [int(e.split("\\1a&H")[1][:2], 16) for e in firsts[:seen]]  # one wingtip's, from the wingtip back
+        self.assertEqual(alphas, sorted(alphas))  # older, more transparent
+        with self.assertRaises(ValueError):
+            trails.colour("red")
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
+    def test_the_trail_filters_lay_a_light_line_over_the_picture(self):
+        rows = [(t / 50, 0.0, 1000.0, 300 * t / 50, 0.0, 0.0, 0.0, 0.0, 0.0, 300.0) for t in range(0, 200)]
+        eye = (-400.0, 1000.0, 300.0 * 3.5, -math.pi / 2, 0.0, 0.0, 1.2)
+        ass = Path(self.temp.name) / "t.ass"
+        ass.write_text(trails.script([(3.5, eye)], {7: rows}, {7: 18}, [7], .02, 30, 320, 180), encoding="utf-8")
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=0x203040:s=320x180:d=0.03:r=30",
+                              "-vf", trails.filters(ass, 180), "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"],
+                             capture_output=True, check=True).stdout
+        brightest = max(sum(raw[i:i + 3]) for i in range(0, len(raw), 3))
+        self.assertGreater(brightest, 0x20 + 0x30 + 0x40 + 200)  # a trail lit the dark blue
 
     def test_take_offs_and_touchdowns_are_found_in_the_filmer_s_path(self):
         # Parked, a roll, a lift-off at 18 s, a flight, a landing at 60 s that stops at 64 s; then a second sortie

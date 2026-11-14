@@ -17,6 +17,7 @@ import uuid
 
 from flight_data import derive, pair, read_kept
 import overlay
+import trails
 from shot_plan import RIDES, compile_shot, filmer_path, ground_moments, nearby, passes, probe_cameras, track_rows, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows, number, plane_rows
 
@@ -681,6 +682,55 @@ class Desk:
         elif draft["id"] in self.built:
             raise ValueError(self.built[draft["id"]])
 
+    def _trails(self, project, row, width, height, fps, rgb):
+        """An ASS script of the wingtip trails over one video of a cut (see trails.py), in the working folder. The
+        video runs the row's shots end to end (the gaps between them skipped), from the first one's start."""
+        first, last = row[0]["start"], row[-1]["end"]
+        flight = self._read_flight(project, max(0.0, first - trails.STYLE["seconds"]), last)
+        spans, offset = [], 0.0
+        for shot in row:
+            key = camera_key(shot)
+            if key not in self.compiled:
+                tracks = {} if shot["kind"] in RIDES else self._tracks(shot["start"], shot["end"])
+                self.compiled[key] = compile_shot(shot, tracks)
+            spans.append((offset, shot, self.compiled[key]))
+            offset += shot["end"] - shot["start"]
+        frames = []
+        for k in range(round(offset * fps) + 1):
+            if k % fps == 0:
+                self.progress(f"Finding the camera for the trails: {k // fps} of {math.ceil(offset)} s")
+            begin, shot, lines = next(span for span in reversed(spans) if span[0] <= k / fps + 1e-9)
+            t = min(shot["end"], shot["start"] + k / fps - begin)
+            frames.append((t, self._eye(lines, t, shot)))
+        radii = {int(ident): plane["radius"] for ident, plane in flight["data"]["aircraft"].items()}
+        ids = sorted({shot[key] for shot in row for key in ("hero", "target") if shot.get(key) is not None})
+        path = self.media_root / (uuid.uuid4().hex + ".ass")
+        path.write_text(trails.script(frames, flight["rows"], radii, ids, flight["data"]["step"], fps, width, height, rgb),
+                        encoding="utf-8")
+        return path
+
+    def _eye(self, lines, t, shot):
+        """Where the camera of a shot's compiled `cam` lines is at film time t (x, alt, z, yaw, pitch, roll, fov), by
+        the viewer's own projection from the kept tracks; None for the pilot's view and the weapon ride, which it
+        does not project. The projection takes still cameras only: a moving one is placed on its curve first."""
+        if shot["kind"] in ("recorded", "weapon"):
+            return None
+        pieces = [line.split(maxsplit=3) for line in lines]  # cam, start, duration, the camera
+        rest = pieces[0][3]
+        if " to " in rest:
+            points = [(float(p[1]), [float(v) for v in p[3].split()[1:8]]) for p in pieces]
+            points.append((float(pieces[-1][1]) + float(pieces[-1][2]), [float(v) for v in pieces[-1][3].split(" to ")[1].split()[:7]]))
+            held = re.search(r" at (\S+)", rest)
+            camera = "fixed " + " ".join(f"{v:.8f}" for v in trails.between(points, t)) + (f" at {held[1]}" if held else "")
+        else:
+            camera = re.sub(r" (outside|curve)\b", "", rest).split(" name ")[0]
+        camfile, found = self.root / "trailcam.txt", self.root / "trailcam-eye.txt"
+        camfile.write_text(camera + "\n", encoding="ascii")
+        # Ending at t keeps it inside the kept tracks (beyond them the viewer would read the film); its second step is t.
+        self.command(f"project {t - .15:.8f} {t:.8f} .15 {camfile.as_posix()} {found.as_posix()} ids {shot['hero']}")
+        eyes = [row.split() for row in found.read_text().splitlines() if row.startswith("eye ")]
+        return [float(v) for v in eyes[-1][3:10]] if eyes else None
+
     def _cut(self, project, row):
         """The viewer set to film these shots in a row as one video, the gaps between them skipped."""
         self._apply(project, only=row)
@@ -942,13 +992,27 @@ class Desk:
                 self.data["job"]["expect"] = round(sum(s["end"] - s["start"] for s in shots) + 2 * len(rows), 1)
         width, height, fps = RENDERS[quality].split()
         blur = int(fps) if raw.get("blur") and shutil.which("ffmpeg") else None
+        scripts = [None] * len(rows)
+        if raw.get("trails"):
+            if not shutil.which("ffmpeg"):
+                raise ValueError("Trails need ffmpeg: install it, then try again")
+            rgb = trails.colour(raw.get("trail_colour", "#ffffff"))
+            # Worked out before the first render, as the overlay's numbers are: touching the film between renders can
+            # thin the next one's sound (TAIL).
+            scripts = [self._trails(project, row, int(width), int(height), int(fps), rgb) for row in rows]
         filters = style(int(width), int(height), bool(raw.get("look")), bool(raw.get("haze"))) if shutil.which("ffmpeg") else ""
         for n, row in enumerate(rows, 1):
             self._cut(project, row)
             path = self.media_root / (uuid.uuid4().hex + ".mp4")
-            self._render(row[0]["start"], row[-1]["end"], path, f"{width} {height} {FASTEST}" if blur else RENDERS[quality],
-                         f"Rendering {len(row)} shot{'s' * (len(row) > 1)} at {size}" + (" with motion blur" if blur else "")
-                         + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""), blur, filters)
+            drawn = scripts[n - 1]
+            try:
+                self._render(row[0]["start"], row[-1]["end"], path, f"{width} {height} {FASTEST}" if blur else RENDERS[quality],
+                             f"Rendering {len(row)} shot{'s' * (len(row) > 1)} at {size}" + (" with motion blur" if blur else "")
+                             + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""), blur,
+                             ",".join(f for f in (trails.filters(drawn, int(height)) if drawn else "", filters) if f))
+            finally:
+                if drawn:
+                    drawn.unlink(missing_ok=True)
             saved = self._keep(path, project, row, raw.get("labels"))
             files.append({"url": "/media/" + path.name, "file": str(saved), "shots": [s["id"] for s in row]})
             record = {"file": str(saved), "shots": [s["id"] for s in row]}

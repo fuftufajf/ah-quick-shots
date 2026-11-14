@@ -251,6 +251,21 @@ Resolve; an aircraft against the sky and clouds stayed as they were. An aircraft
 in front of the horizon is misted with it. Haze and film look on 5 s of 4K:
 53 s.
 
+Trails (experimental, `trails.py`) draws two smooth lines from the wingtips of
+each shot's aircraft, fading over 2.5 s behind them, with a soft glow, in a
+colour the page picks. Before the first render the desk keeps every aircraft's
+track from 2.5 s before the video, and asks the viewer's `project` where the
+shot's camera stands at every frame: a moving camera is first placed on its
+curve (a uniform Catmull-Rom through the shot's points, as the viewer moves it:
+within 0.05 ft halfway between points), then projected as a still one. Its eye
+puts the aircraft where the viewer does to 0.7 px (median, 1080p), and to
+0.15 px on airframe cameras rolled up to 70 degrees. The wingtips are 0.88 of
+the aircraft's visible radius out (a Yak's tips matched at 75 ft). libass draws
+the lines; ffmpeg blurs a copy for the glow and lays the light over the picture.
+A 7 s shot at 1080p60: 65 s with trails, 17 s without. Not in the pilot's view
+or the weapon ride, which the projection does not know; a trail is not hidden
+behind what stands in front of it.
+
 Data overlay (16:9 and 9:16) adds, beside every rendered video, two transparent
 films of the same length and frame rate to lay over it in an editor: a card with
 the lead aircraft's true airspeed (mph), height (ft), climb (ft/min) and G, and,
@@ -442,13 +457,13 @@ most 5 s later). One action runs at a time; a second is refused while
   `state.proposals` gets `{id, score, size, quality}` each: `score` the share of
   the shot with both aircraft in frame, `size` the lead's mean width in the
   picture, `quality` (0 to 1) how well it reads. It ignores terrain
-- `export_cut` `{shot_ids?, quality, apart?, blur?, look?, haze?}` — draft|final|4k: the chosen saved shots
+- `export_cut` `{shot_ids?, quality, apart?, blur?, look?, haze?, trails?, trail_colour?}` — draft|final|4k: the chosen saved shots
   (all when omitted) as one 16:9 MP4 with sound, the gaps left out; with
   `apart: true` an MP4 of each shot, in time order. Overlapping
   shots cannot share a video: `state.preview.files` then lists several,
   `[{url, file, shots}]`; `file` is where the video was kept (`state.videos`
   is that folder). `labels` `{shot id: camera name}` names each shot's camera
-  in its file name; without it the shot's `kind` is used. `blur: true` (needs ffmpeg) adds motion blur, `look: true` (needs ffmpeg) the film look, `haze: true` (needs ffmpeg) haze along the horizon.
+  in its file name; without it the shot's `kind` is used. `blur: true` (needs ffmpeg) adds motion blur, `look: true` (needs ffmpeg) the film look, `haze: true` (needs ffmpeg) haze along the horizon, `trails: true` (needs ffmpeg) wingtip trails in `trail_colour` (`#rrggbb`, white by default).
   With `overlay: true` (needs ffmpeg, `state.ffmpeg`)
   every entry of `files` also has `overlays`: the 16:9 and the 9:16 data overlay kept beside it
 - POST `/api/folder` `{}` shows the videos folder in Explorer
