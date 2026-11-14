@@ -295,6 +295,13 @@ class DeskTests(unittest.TestCase):
         self.assertTrue(all(Path(f["file"]).parent == self.desk.videos and Path(f["file"]).exists()
                             and (self.desk.media_root / Path(f["url"]).name).exists() for f in files))
         self.assertEqual(len(list(self.desk.videos.glob("*.mp4"))), 4)
+        # Apart, every shot is a video of its own, in time order, named as one shot.
+        del commands[:]
+        self.run_action({"action": "export_cut", "shot_ids": ["three", "one"], "quality": "draft", "apart": True})
+        self.assertEqual([c.split()[1:3] for c in commands if c.startswith("video ")],
+                         [["1.00000000", "3.00000000"], ["9.00000000", "11.00000000"]])
+        self.assertNotIn("skip 3.00000000 9.00000000", commands)
+        self.assertEqual([f["shots"] for f in self.desk.snapshot()["preview"]["files"]], [["one"], ["three"]])
         del commands[:]
         self.run_action({"action": "seek", "seconds": 2})
         cams = [c for c in commands if c.startswith("cam ")]

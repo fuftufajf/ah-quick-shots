@@ -55,7 +55,8 @@ does not read the viewer's memory or its film files.
    the bomb. Sliders or a drag adjust it (a lift-off or roll-out also has
    Swing round and Ends at). Add to cut keeps the shot.
 4. **The cut** — tick the shots you want and Render selected: 1080p60, 4K or a
-   quick draft, with the gaps between shots left out. Add my kills makes four
+   quick draft, as one video with the gaps between shots left out or as a file
+   per shot for cutting in an editor. Add my kills makes four
    shots for every kill of yours: you closing in, your guns, him going down,
    you flying on. Take-offs & landings finds yours in your flight path and adds
    a few shots for each: the roll, the wheels, the lift-off with the camera

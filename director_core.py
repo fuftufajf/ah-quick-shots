@@ -646,8 +646,9 @@ class Desk:
         quality = raw.get("quality") if raw.get("quality") in RENDERS else "final"
         size = RENDERS[quality].replace(" ", "x", 1).replace(" ", " @ ")
         # The viewer holds one camera at a time: takes of one stretch come out as videos of their own, each the
-        # same length, to lay over one another in an editor.
-        rows, files = passes(shots), []
+        # same length, to lay over one another in an editor. Asked apart, every shot is a video of its own.
+        rows = [[s] for s in sorted(shots, key=lambda s: s["start"])] if raw.get("apart") else passes(shots)
+        files = []
         if quality == "draft":  # measured: about real time; the larger sizes have not been timed
             with self.lock:
                 self.data["job"]["expect"] = round(sum(s["end"] - s["start"] for s in shots) + 2 * len(rows), 1)

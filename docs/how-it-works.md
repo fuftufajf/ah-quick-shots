@@ -187,7 +187,10 @@ aircraft and the name.
 
 **The cut.** Saved shots, each with a tick box. Render selected makes one 16:9
 video of the ticked shots with the film's sound, at 1080p60, 4K (2160p60) or as
-a quick draft (960×540, 30 fps), leaving out everything between them. Between
+a quick draft (960×540, 30 fps), leaving out everything between them; set to
+A file per shot, it makes a video of every ticked shot instead, each starting
+and ending where its shot does, for cutting in an editor (each render waits for
+the viewer to finish the last one's sound, so this takes longer). Between
 shots the picture shows the recorded pilot view. The viewer holds one camera at
 a time, so ticked shots of the same stretch cannot share a video: the render
 then makes several, the first shots of every stretch in the first, the second
@@ -356,8 +359,9 @@ most 5 s later). One action runs at a time; a second is refused while
   `state.proposals` gets `{id, score, size, quality}` each: `score` the share of
   the shot with both aircraft in frame, `size` the lead's mean width in the
   picture, `quality` (0 to 1) how well it reads. It ignores terrain
-- `export_cut` `{shot_ids?, quality}` — draft|final|4k: the chosen saved shots
-  (all when omitted) as one 16:9 MP4 with sound, the gaps left out. Overlapping
+- `export_cut` `{shot_ids?, quality, apart?}` — draft|final|4k: the chosen saved shots
+  (all when omitted) as one 16:9 MP4 with sound, the gaps left out; with
+  `apart: true` an MP4 of each shot, in time order. Overlapping
   shots cannot share a video: `state.preview.files` then lists several,
   `[{url, file, shots}]`; `file` is where the video was kept (`state.videos`
   is that folder). `labels` `{shot id: camera name}` names each shot's camera
