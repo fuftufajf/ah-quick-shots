@@ -360,10 +360,15 @@ each of these; a change in the viewer would make the workaround unnecessary.
   The desk does this before every still, with each shot's first camera
   standing in the two seconds before it. Not before a video: on a rested
   viewer, a render that followed that playing lost its engine and guns every
-  time (3 of 3; 0 of 2 without), so the first second of a video can still show
-  a ghost. A skip inside a cut does not bring the fade back. Waiting while
-  paused would fix it too, but a burning aircraft's smoke piles up while film
-  time stands still.
+  time (3 of 3; 0 of 2 without). A video instead starts two seconds early,
+  through the same camera, and with ffmpeg on the PATH those seconds are cut off
+  again (re-encoded, so the cut is frame-exact: H.264 CRF 16, AAC 192 kbit/s,
+  close to the viewer's own 21 Mbit/s at 1080p60). Measured: the opponent solid
+  from frame 0, the same frame count and picture from then on as a plain render,
+  and no thinner sound (3 of 3 each way). Without ffmpeg the video starts at the
+  shot, and its first second can show a ghost. A skip inside a cut does not
+  bring the fade back. Waiting while paused would fix it too, but a burning
+  aircraft's smoke piles up while film time stands still.
 - **Where a seek lands.** Up to 0.08 s past the time asked for, while `time`
   answers in tenths of a second.
 - **The end of a film.** `open` tells the length rounded to 0.1 s, and `tracks`

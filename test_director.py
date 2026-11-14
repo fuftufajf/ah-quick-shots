@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 import socket
+import subprocess
 import tempfile
 import threading
 import time
@@ -45,6 +46,9 @@ class DeskTests(unittest.TestCase):
         self.viewer = SlowViewer()
         self.desk = Desk(self.temp.name, self.viewer)
         self.desk.pace = 0  # no waiting for a viewer that is not there
+        no_ffmpeg = patch("director_core.shutil.which", return_value=None)  # the fakes write no real video
+        no_ffmpeg.start()
+        self.addCleanup(no_ffmpeg.stop)
         self.desk.data.update(project=copy.deepcopy(PROJECT), connected=True, now=10)
 
     def tearDown(self):
@@ -329,6 +333,33 @@ class DeskTests(unittest.TestCase):
             time.sleep(.01)
         self.assertIn("Aircraft 10", self.desk.snapshot()["job"]["error"])
         self.assertFalse(any(c.startswith("video ") for c in commands))
+
+    def test_with_ffmpeg_a_video_starts_two_seconds_early_and_they_are_cut_off(self):
+        commands, cuts = [], []
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"lead")
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+        def ffmpeg(args, **_options):
+            cuts.append(args)
+            Path(args[-1]).write_bytes(b"cut")
+            return subprocess.CompletedProcess(args, 0, "", "")
+        self.desk.viewer.command = native
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 5, "end": 7, "kind": "cockpit"}]})
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.subprocess.run", ffmpeg):
+            self.run_action({"action": "export_cut", "quality": "draft"})
+        video = next(c for c in commands if c.startswith("video "))
+        self.assertTrue(video.startswith("video 3.00000000 7.00000000 ") and "-lead.mp4" in video)
+        self.assertEqual(cuts[0][cuts[0].index("-ss") + 1], "2.000000")
+        self.assertFalse(Path(video.split()[3]).exists())  # the uncut video is gone
+        self.assertEqual(Path(self.desk.snapshot()["preview"]["file"]).read_bytes(), b"cut")
+        # ffmpeg failing is said, not hidden behind a video two seconds too long.
+        failed = lambda args, **_options: subprocess.CompletedProcess(args, 1, "", "Unknown encoder 'libx264'")
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.subprocess.run", failed):
+            self.desk.start({"action": "export_cut", "expected_revision": 2})
+            self.desk.worker.join(3)
+        self.assertIn("Unknown encoder", self.desk.snapshot()["job"]["error"])
 
     def test_a_shot_s_first_camera_stands_in_the_seconds_before_it(self):
         self.assertEqual(lead("cam 5 2 fixed 1 2 3 4 5 6 7 to 8 9 10 11 12 13 14 curve", 3), ["cam 3 2.00000000 fixed 1 2 3 4 5 6 7"])

@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import subprocess
 import threading
 import time
 import uuid
@@ -28,6 +29,7 @@ SETTLE = 1.0  # what a picture that stays on screen for a while waits of that: m
 # aircraft is new to the viewer. Playing the seconds before a moment through the shot's camera draws them, and a
 # short seek forward keeps them drawn: a still starts solid (Steely, Aces High forum, 14 Nov 2026). Not before a
 # video: a render that follows that playing came out without the engine and guns in 10 renders of 10 (4 of 10 without).
+# A video starts LEAD seconds early instead, and with ffmpeg on the PATH those seconds are cut off again.
 LEAD = 2.0
 # For about as long as a rendered stretch lasts after its render ends, the viewer is still finishing that stretch's
 # sound. A render started in that time can be heard from a point standing still in the sky instead of from the
@@ -36,7 +38,7 @@ LEAD = 2.0
 # that followed a seek; thin renders keep coming until the viewer has rested. Every render started 12 s or more
 # after the one before was full, whatever happened in between (6 of 6). After a 4 s stretch, 3 s were enough.
 TAIL = 1.5  # seconds added to the last rendered stretch's length before the next render may start
-CAMERAS = 7  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
+CAMERAS = 8  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
 
 
 class Conflict(ValueError):
@@ -45,6 +47,21 @@ class Conflict(ValueError):
 
 def camera_key(shot):
     return json.dumps({k: v for k, v in shot.items() if k not in ("id", "name")}, sort_keys=True)
+
+
+def trim(source, target, seconds):
+    """`source` without its first `seconds`, as `target`. Re-encoded so the cut is frame-exact (a stream copy cuts
+    at keyframes), close to the viewer's own quality (about 21 Mbit/s at 1080p60, AAC 192 kbit/s)."""
+    try:
+        done = subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-ss", f"{seconds:.6f}", "-i", str(source), "-c:v", "libx264", "-crf", "16",
+             "-preset", "fast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(target)],
+            capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    finally:
+        source.unlink(missing_ok=True)
+    if done.returncode:
+        target.unlink(missing_ok=True)
+        raise ValueError("ffmpeg could not cut the lead-in off the video: " + (done.stderr.strip().splitlines() or ["no reason given"])[-1])
 
 
 def lead(command, start):
@@ -177,7 +194,10 @@ class Desk:
         return self.viewer.command(command, self.progress)
 
     def _render(self, start, end, path, size, label=""):
-        """One video of a stretch, with the film's sound whole (see TAIL)."""
+        """One video of a stretch, with the film's sound whole (see TAIL) and the aircraft solid from its first frame
+        when ffmpeg is there to cut off the lead-in (see LEAD)."""
+        early = min(LEAD, start) if shutil.which("ffmpeg") else 0
+        early = early if early >= .05 else 0
         with self.lock:  # the wait is part of what this clip takes
             if self.data["job"]["expect"]:
                 self.data["job"]["expect"] = round(self.data["job"]["expect"] + max(0, self.quiet - time.monotonic()), 1)
@@ -185,8 +205,12 @@ class Desk:
             self.progress(f"Film Viewer is finishing the last clip's sound: {math.ceil(self.quiet - time.monotonic())} s, so this one keeps its own")
             time.sleep(.25)
         self.progress(label or f"Rendering {end - start:.1f} s of film")
-        self.command(f"video {start:.8f} {end:.8f} {path.as_posix()} {size}")
-        self.quiet = time.monotonic() + (end - start + TAIL) * self.pace
+        whole = path.with_name(path.stem + "-lead" + path.suffix) if early else path
+        self.command(f"video {start - early:.8f} {end:.8f} {whole.as_posix()} {size}")
+        self.quiet = time.monotonic() + (end - start + early + TAIL) * self.pace
+        if early:
+            self.progress("Cutting off the lead-in with ffmpeg")
+            trim(whole, path, early)
 
     def start(self, raw):
         action = raw.get("action")

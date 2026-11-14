@@ -21,6 +21,9 @@ does not read the viewer's memory or its film files.
 - Windows
 - Aces High III **Film Viewer 3.07 Patch 2 or newer**
 - **Python 3.11 or newer**, on the PATH (no extra packages)
+- optional: **ffmpeg** on the PATH. With it a video is rendered from two
+  seconds early and those seconds are cut off, so the other aircraft are solid
+  from the first frame; without it they can fade in during the first second.
 - a current browser
 
 ## Start
