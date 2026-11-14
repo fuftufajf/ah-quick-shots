@@ -238,6 +238,19 @@ are stronger than the grade's; all are sized to the picture's height. The same
 7 s shot: 82 s with the look and motion blur, a mean change of 6.6 of 255 from
 the plain render.
 
+Haze (`haze()`) lays mist along the horizon, as the same grade does through a
+sky mask and an AI depth map. The viewer tells nothing of its camera to work
+depth out from (and the pilot's view follows a head no one recorded), so the
+horizon is found in the picture: at an eighth of its size, sky (bluish) and
+ground (coloured, not bluish) are told apart by colour, patches of ground too
+small to be land (an aircraft) are opened away, both are blurred, and where both
+are present the picture goes towards a grey-blue that the film look turns into
+the grade's mist. Dark things, such as a canopy frame, keep clear. On the
+grade's stills the far ground and the sky just above it misted much as in
+Resolve; an aircraft against the sky and clouds stayed as they were. An aircraft
+in front of the horizon is misted with it. Haze and film look on 5 s of 4K:
+53 s.
+
 Data overlay (16:9 and 9:16) adds, beside every rendered video, two transparent
 films of the same length and frame rate to lay over it in an editor: a card with
 the lead aircraft's true airspeed (mph), height (ft), climb (ft/min) and G, and,
@@ -429,13 +442,13 @@ most 5 s later). One action runs at a time; a second is refused while
   `state.proposals` gets `{id, score, size, quality}` each: `score` the share of
   the shot with both aircraft in frame, `size` the lead's mean width in the
   picture, `quality` (0 to 1) how well it reads. It ignores terrain
-- `export_cut` `{shot_ids?, quality, apart?, blur?, look?}` — draft|final|4k: the chosen saved shots
+- `export_cut` `{shot_ids?, quality, apart?, blur?, look?, haze?}` — draft|final|4k: the chosen saved shots
   (all when omitted) as one 16:9 MP4 with sound, the gaps left out; with
   `apart: true` an MP4 of each shot, in time order. Overlapping
   shots cannot share a video: `state.preview.files` then lists several,
   `[{url, file, shots}]`; `file` is where the video was kept (`state.videos`
   is that folder). `labels` `{shot id: camera name}` names each shot's camera
-  in its file name; without it the shot's `kind` is used. `blur: true` (needs ffmpeg) adds motion blur, `look: true` (needs ffmpeg) the film look.
+  in its file name; without it the shot's `kind` is used. `blur: true` (needs ffmpeg) adds motion blur, `look: true` (needs ffmpeg) the film look, `haze: true` (needs ffmpeg) haze along the horizon.
   With `overlay: true` (needs ffmpeg, `state.ffmpeg`)
   every entry of `files` also has `overlays`: the 16:9 and the 9:16 data overlay kept beside it
 - POST `/api/folder` `{}` shows the videos folder in Explorer

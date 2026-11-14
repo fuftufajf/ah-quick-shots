@@ -403,8 +403,8 @@ class DeskTests(unittest.TestCase):
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"fast")
             return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
-        def blend(parts, target, seconds, fps, height=None):
-            blends.append(([p.exists() for p in parts], seconds, fps, height))
+        def blend(parts, target, seconds, fps, filters=""):
+            blends.append(([p.exists() for p in parts], seconds, fps, filters))
             Path(target).write_bytes(b"cut")
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 3, "end": 5, "kind": "cockpit"}]})
@@ -413,7 +413,7 @@ class DeskTests(unittest.TestCase):
             self.run_action({"action": "export_cut", "quality": "4k", "blur": True, "look": True})
         videos = [c.split() for c in commands if c.startswith("video ")]
         self.assertEqual([(v[1], v[2], v[4:]) for v in videos[:4]], [(f"{1 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
-        self.assertEqual(blends, [([True] * 4, 2, 60, None), ([True] * 4, 2, 60, 2160)])
+        self.assertEqual(blends, [([True] * 4, 2, 60, ""), ([True] * 4, 2, 60, director_core.style(3840, 2160, film=True))])
 
     def test_the_film_look_goes_on_in_ffmpeg_even_with_no_lead_in_to_cut(self):
         trims = []
@@ -421,15 +421,17 @@ class DeskTests(unittest.TestCase):
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"film")
             return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
-        def trim(source, target, seconds, height=None):
-            trims.append((seconds, height))
+        def trim(source, target, seconds, filters=""):
+            trims.append((seconds, filters))
             Path(target).write_bytes(b"cut")
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 0, "end": 2, "kind": "cockpit"}]})
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", trim):
             self.run_action({"action": "export_cut", "quality": "draft", "look": True})
+            self.run_action({"action": "export_cut", "quality": "draft", "haze": True, "look": True})
             self.run_action({"action": "export_cut", "quality": "draft"})
-        self.assertEqual(trims, [(0, 540)])  # at the film's start there is no lead-in: only the look needs ffmpeg
+        # At the film's start there is no lead-in: only the looks need ffmpeg. The haze goes first, as in the grade.
+        self.assertEqual(trims, [(0, director_core.look(540)), (0, director_core.haze(960, 540) + "," + director_core.look(540))])
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg")
     def test_the_blend_keeps_the_film_s_length_at_its_own_frame_rate(self):
@@ -437,16 +439,33 @@ class DeskTests(unittest.TestCase):
         for part in parts:
             subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=120:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
                             "-c:v", "libx264", "-c:a", "aac", str(part)], check=True)
-        director_core.blend(parts, target, .5, 60, 90)  # with the film look: its filters fit in the blend's graph
+        director_core.blend(parts, target, .5, 60, director_core.style(160, 90, True, True))  # the looks fit in its graph
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
                                 "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.split()
         self.assertEqual(probe[0], "video,60/1,60")
         self.assertTrue(probe[1].startswith("audio,"))
         self.assertFalse(any(p.exists() for p in parts))
-        director_core.trim(target, parts[0], .5, 90)  # and on their own, as the lead-in is cut
+        director_core.trim(target, parts[0], .5, director_core.style(160, 90, True, True))  # and as the lead-in is cut
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,nb_frames",
                                 "-of", "csv=p=0", str(parts[0])], capture_output=True, text=True).stdout.split()
         self.assertEqual(probe[0], "video,30")
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
+    def test_haze_lies_along_the_horizon_and_not_on_an_aircraft_in_the_sky(self):
+        # Sky over ground; in the sky a small grey aircraft and a small olive one (coloured like ground).
+        w, h = 320, 180
+        scene = (f"color=c=0x4A6FA5:s={w}x{h // 2}[s];color=c=0x5A7A2A:s={w}x{h // 2}[g];[s][g]vstack,"
+                 "drawbox=x=40:y=20:w=24:h=12:c=0x707070:t=fill,drawbox=x=240:y=20:w=24:h=12:c=0x556B2F:t=fill,format=gbrp")
+        def picture(filters):
+            raw = subprocess.run(["ffmpeg", "-v", "error", "-filter_complex", scene + ("," + filters if filters else ""),
+                                  "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
+            return [[raw[(y * w + x) * 3:(y * w + x) * 3 + 3] for x in range(w)] for y in range(h)]
+        before, after = picture(""), picture(director_core.haze(w, h))
+        moved = lambda x, y: max(abs(a - b) for a, b in zip(before[y][x], after[y][x]))
+        self.assertGreater(moved(160, h // 2 - 2), 15)  # the sky just above the horizon
+        self.assertGreater(moved(160, h // 2 + 2), 15)  # the far ground just below it
+        for x, y in ((160, 3), (160, h - 3), (52, 26), (252, 26)):  # high sky, near ground, both aircraft
+            self.assertLess(moved(x, y), 4, (x, y))
 
     def test_take_offs_and_touchdowns_are_found_in_the_filmer_s_path(self):
         # Parked, a roll, a lift-off at 18 s, a flight, a landing at 60 s that stops at 64 s; then a second sortie
