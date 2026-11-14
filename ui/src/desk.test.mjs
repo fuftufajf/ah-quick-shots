@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, fitShot, killSequence, ownKills, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
+import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, fitShot, killSequence, landingSequence, ownKills, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
 const event = {time:199, kind:'kill', text:'Hawk Raven 1 19 10', fields:['Hawk','Raven','1','19','10']};
 assert.equal(formatTime(195.3), '03:15.3');
 assert.equal(filterMoments([event], 'Raven 03:19', 'kill').length, 1);
@@ -29,6 +29,17 @@ assert.deepEqual(killSequence({length:294.8}, [], event, burst).map(s => [s.kind
 // So near the start of the film that the fall has no room: it is left out, and nothing overlaps.
 assert.deepEqual(killSequence({length:20}, [], {...event, time:1.5}).map(s => [s.kind, s.start, s.end]),
   [['pair', 0, 1], ['shoulder', 1, 2.5], ['follow', 2.5, 5]]);
+
+// A take-off and a landing as the desk finds them in your flight path.
+assert.deepEqual(takeoffSequence({length:536}, {kind:'takeoff', time:18, roll:9, hero:88}).map(s => [s.kind, s.start, s.end]),
+  [['fixed', 9, 12], ['gear', 12, 17], ['escort', 17, 24], ['follow', 24, 30]]);
+const lift = takeoffSequence({length:536}, {kind:'takeoff', time:18, roll:9, hero:88})[2];
+assert.deepEqual([lift.watch, lift.sweep, lift.closer, lift.hero, lift.target], ['hero', 100, 100, 88, null]);
+// Rolled for less than a second: no picture of the roll, the rest as usual.
+assert.deepEqual(takeoffSequence({length:536}, {kind:'takeoff', time:18, roll:17.6, hero:88}).map(s => s.kind), ['escort', 'follow']);
+assert.deepEqual(landingSequence({length:536}, {kind:'touchdown', time:531, stop:536, hero:88}).map(s => [s.kind, s.start, s.end]),
+  [['follow', 519, 529], ['gear', 529, 534], ['escort', 534, 536]]);
+assert.ok(landingSequence({length:536}, {kind:'touchdown', time:531, stop:536, hero:88})[0].name.startsWith('Landing 08:51'));
 
 const me = {id:19, name:'Hawk'}, elsewhere = {kind:'kill', text:'', fields:['Falcon','Kestrel','1','28','34']};
 assert.deepEqual(filterMoments([event, elsewhere, {kind:'impact', text:'', fields:[]}, {kind:'guns', text:'', fields:[]}], '', 'mine', me).map(e => e.kind), ['kill', 'impact']);

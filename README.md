@@ -50,7 +50,9 @@ does not read the viewer's memory or its film files.
 4. **The cut** — tick the shots you want and Render selected: 1080p60, 4K or a
    quick draft, with the gaps between shots left out. Add my kills makes four
    shots for every kill of yours: you closing in, your guns, him going down,
-   you flying on.
+   you flying on. Take-offs & landings finds yours in your flight path and adds
+   a few shots for each: the roll, the wheels, the lift-off with the camera
+   swinging round you, the climb; the approach, the touchdown, the roll-out.
 
 Finished videos are in **Videos\AH Quick Shots**, each named after its film,
 time, shot and camera; Videos folder, under The cut, opens it.

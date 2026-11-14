@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from director_api import make_server, videos_folder, working_folder
 from director_core import Conflict, Desk, framing, lead
-from shot_plan import camera_pose, compile_shot, escort_poses, nearby, passes, probe_cameras, validate_plan, validate_shot
+from shot_plan import camera_pose, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows
 
 SHOT = {"id": "one", "name": "Pair", "start": 1, "end": 3, "kind": "pair",
@@ -360,6 +360,46 @@ class DeskTests(unittest.TestCase):
             self.desk.start({"action": "export_cut", "expected_revision": 2})
             self.desk.worker.join(3)
         self.assertIn("Unknown encoder", self.desk.snapshot()["job"]["error"])
+
+    def test_take_offs_and_touchdowns_are_found_in_the_filmer_s_path(self):
+        # Parked, a roll, a lift-off at 18 s, a flight, a landing at 60 s that stops at 64 s; then a second sortie
+        # (a new id) that never leaves the ground.
+        alt = lambda t: 2134.4 + (0 if t <= 18 else min(500, (t - 18) * 40) if t < 40 else max(0, (60 - t) * 25) - 3.5)
+        x = lambda t: 0 if t <= 8 else sum(min(150, 20 * (u - 8)) if u < 60 else max(0, 180 - 45 * (u - 60)) for u in range(9, int(t) + 1))
+        path = [(float(t), 88, x(t), alt(t), 0.0) for t in range(1, 70)] + [(float(t), 90, 0.0, 300.0, 0.0) for t in range(70, 80)]
+        found = ground_moments(path)
+        self.assertEqual([(m["kind"], m["time"], m["hero"]) for m in found], [("takeoff", 18.0, 88), ("touchdown", 60.0, 88)])
+        self.assertEqual((found[0]["roll"], found[1]["stop"], found[1]["ground"]), (8.0, 64.0, 2130.9))  # roll: the last still moment
+        # The filmer is whoever sits at the recorded cockpit's eye; while the view is outside, the last one found.
+        lines = ["track 1 88 0 100 0 0 0 0", "track 1 7 50 100 0 0 0 0", "view 1 internal 1 103 0 0 0 0 rel 0 0 0 0 0 0",
+                 "track 2 88 9 100 0 0 0 0", "track 2 7 2 100 0 0 0 0", "view 2 external rel 0 0 0 0 0 0"]
+        self.assertEqual(filmer_path(lines), [(1.0, 88, 0.0, 100.0, 0.0), (2.0, 88, 9.0, 100.0, 0.0)])
+
+    def test_a_camera_ship_can_swing_round_its_hero_and_close_in(self):
+        tracks = {t: {19: (0, 100, 50 * t, 0, 0, 0)} for t in range(5)}
+        plain = {**SHOT, "kind": "escort", "watch": "hero", "target": None, "orbit": 90, "distance": 200, "height": 10}
+        swung = validate_shot({**plain, "sweep": 90, "closer": 100}, 20)
+        self.assertEqual((swung["sweep"], swung["closer"]), (90, 100))
+        self.assertNotIn("sweep", validate_shot(plain, 20))  # a shot without them is saved as before
+        before, after = escort_poses(validate_shot(plain, 20), tracks), escort_poses(swung, tracks)
+        self.assertEqual(before[0][:3], after[0][:3])  # it starts where the plain one stands
+        gap = lambda pose, t: math.dist(pose[:3], (0, 100, 50 * t))
+        self.assertAlmostEqual(gap(after[-1], 4), math.hypot(100, 10), delta=1)
+        self.assertGreater(abs(after[-1][0] - before[-1][0]) + abs(after[-1][2] - before[-1][2]), 50)
+
+    def test_airfield_reads_the_whole_film_and_keeps_what_it_found(self):
+        commands = []
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("tracks "):
+                return ["track 1 88 0 100 0 0 0 0", "view 1 internal 0 103 0 0 0 0 rel 0 0 0 0 0 0"]
+            return []
+        self.desk.viewer.command = native
+        self.desk.data["project"]["length"] = 1300
+        self.run_action({"action": "airfield"})
+        self.assertEqual([c for c in commands if c.startswith("tracks")],
+                         ["tracks 0.00 600.00 1", "tracks 600.00 1200.00 1", "tracks 1200.00 1300.00 1"])
+        self.assertEqual(self.desk.snapshot()["airfield"], {"film": "films/test.ahf", "moments": []})
 
     def test_a_shot_s_first_camera_stands_in_the_seconds_before_it(self):
         self.assertEqual(lead("cam 5 2 fixed 1 2 3 4 5 6 7 to 8 9 10 11 12 13 14 curve", 3), ["cam 3 2.00000000 fixed 1 2 3 4 5 6 7"])

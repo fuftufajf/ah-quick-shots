@@ -14,10 +14,10 @@ import threading
 import time
 import uuid
 
-from shot_plan import RIDES, compile_shot, nearby, passes, probe_cameras, track_rows, validate_plan, validate_shot
+from shot_plan import RIDES, compile_shot, filmer_path, ground_moments, nearby, passes, probe_cameras, track_rows, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows, number, plane_rows
 
-ACTIONS = ("connect", "open", "seek", "preview", "clip", "around", "icons", "suggest", "export_cut")
+ACTIONS = ("connect", "open", "seek", "preview", "clip", "around", "airfield", "icons", "suggest", "export_cut")
 RENDERS = {"draft": "960 540 30", "final": "1920 1080 60", "4k": "3840 2160 60"}
 # The viewer renders in about real time whatever the size (measured: 5 s of film in 5 s at 480x270 and at 960x540).
 CLIP = "960 540 30"
@@ -114,7 +114,7 @@ class Desk:
         self.pace = 1  # how long this desk waits for the viewer's own timing, as a share; tests have no viewer to wait for
         self.stills = deque()
         self.data = {"connected": False, "films": [], "project": None, "planes": [],
-                     "now": 0, "icons": False, "problems": {}, "nearby": None,
+                     "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None,
                      "preview": None, "proposals": [], "job": None, "videos": str(self.videos)}
 
     @staticmethod
@@ -288,7 +288,7 @@ class Desk:
         self.progress("Opening film and reading its moments")
         self.compiled, self.paths, self.applied = {}, {}, None
         with self.lock:
-            self.data.update(project=None, preview=None, planes=[], problems={}, nearby=None)
+            self.data.update(project=None, preview=None, planes=[], problems={}, nearby=None, airfield=None)
         reply = self.command("open " + film)
         match = re.search(r" length ([\d.]+) s", reply[0])
         if not match or "no ground" in reply[0]:
@@ -340,6 +340,16 @@ class Desk:
         aircraft = [{**row, "name": names.get(row["id"])} for row in nearby(self._tracks(start, end), int(hero))]
         with self.lock:
             self.data["nearby"] = {"start": start, "end": end, "hero": int(hero), "aircraft": aircraft}
+
+    def _airfield(self, project):
+        """Your take-offs and touchdowns in the whole film, from your flight path a second apart (see
+        ground_moments): about 5 s for a 9 minute film, read ten minutes at a time."""
+        length, lines = project["length"], []
+        for start in range(0, math.ceil(length), 600):
+            self.progress(f"Reading your flight path for take-offs and landings: {start / length:.0%}")
+            lines += self.command(f"tracks {start:.2f} {min(length, start + 600):.2f} 1")
+        with self.lock:
+            self.data["airfield"] = {"film": project["film"], "moments": ground_moments(filmer_path(lines))}
 
     def _plan(self, project, raw):
         """The saved shots, with an unsaved draft (if one was sent) standing in for whatever it overlaps,
@@ -538,6 +548,8 @@ class Desk:
         project = self.snapshot()["project"]
         if action == "suggest":
             return self._suggest(raw, project)
+        if action == "airfield":
+            return self._airfield(project)
         if action == "around":
             return self._around(raw, project)
         if action == "clip":

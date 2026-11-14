@@ -199,6 +199,23 @@ the message, where he leaves the film; between the guns and that the cut skips.
 Seen on a real kill: he hit the ground about a second before the message, so the
 end of his fall shows grass. The cameras stay yours to change.
 
+Take-offs & landings reads your flight path for the whole film, a second
+apart (about 5 s for 9 minutes), and adds shots for each take-off and landing
+that has none yet. You are the aircraft at the eye of the recorded cockpit view
+(3 to 5 ft from it). A take-off starts from standing (under 8 ft/s); the
+lift-off is the last moment within 1.5 ft of that height before you are 8 ft
+up (measured: parked to 8 s, rolling from 8.5 s, off at 18.5 s). A landing ends
+standing; the touchdown is the first moment back from the stop within 2 ft of
+that height, after being 20 ft higher in the minute before (measured: down at
+531 s at 178 ft/s, stopped at 536 s). The film has no event for either: the
+host's landing message comes for other pilots, not reliably for you. The shots:
+for a take-off the roll from a camera standing beside the runway ahead, the
+wheels, the lift-off from a camera ship that swings 100 degrees round you while
+closing from 250 to 100 ft (`sweep` and `closer`), and the climb from behind;
+for a landing the approach from a camera ahead of you looking back, the wheels
+and the roll-out from a camera ship swinging round. Every camera is at or above
+your height, because the ground's height is known only under your wheels.
+
 ## Under the desk
 
 Each film has a local JSON project under `.quickshots/`, with an integer revision.

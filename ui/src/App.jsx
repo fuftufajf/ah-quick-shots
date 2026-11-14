@@ -1,6 +1,6 @@
 import {useEffect, useMemo, useRef, useState} from "react";
 import {ArrowClockwise, CaretLeft, CaretRight, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Trash} from "@phosphor-icons/react";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, killSequence, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
+import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, killSequence, landingSequence, takeoffSequence, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
@@ -35,7 +35,8 @@ export function App() {
   const [looking, setLooking] = useState(false);  // a quick look in flight: it holds the next one back and shows nothing
   const scrubbing = useRef(false);
   const autoConnect = useRef(true);
-  const casting = useRef(null);  // a moment waiting to learn who was around, then which framing reads best
+  const casting = useRef(null);
+  const airfieldAsked = useRef(false);  // Take-offs & landings waits for the desk to read your flight path  // a moment waiting to learn who was around, then which framing reads best
   // What this page asked to see moving: a clip's [start, end], or "cut". The desk is shared, so a second open page
   // (another tab or window) gets the same picture; playing it there too is heard as a doubled voice.
   const asking = useRef(null);
@@ -132,6 +133,10 @@ export function App() {
     if (!job || job.running) return;
     const own = clip && Array.isArray(asking.current) && clip.start === asking.current[0] && clip.end === asking.current[1];
     if (job.action === "clip" && !job.error && own && player && !trimGrab.current && (!draft || (clip.start === draft.start && clip.end === draft.end))) { asking.current = null; player.currentTime = 0; player.play().catch(() => {}); }
+    if (job.action === "airfield" && airfieldAsked.current) {
+      airfieldAsked.current = false;
+      if (!job.error) airfieldReel(desk.airfield?.moments || []);
+    }
     const want = casting.current;
     if (!want || !["around", "suggest"].includes(job.action)) return;
     if (!draft || draft.id !== want.id) { casting.current = null; return; }
@@ -374,6 +379,25 @@ export function App() {
     if (window.confirm("Remove this shot from the cut?") && await save(shots.filter(s => s.id !== draft.id))) { setDraft(null); setDirty(false); }
   }
   // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
+  // Your take-offs and landings that have no shot yet, a few shots each. The flight path is read once per film.
+  function airfield() {
+    if (desk.airfield?.film === project.film) return airfieldReel(desk.airfield.moments);
+    airfieldAsked.current = true;
+    action("airfield");
+  }
+  async function airfieldReel(found) {
+    const made = [];
+    for (const m of found) {
+      if (shots.some(s => m.time >= s.start && m.time <= s.end)) continue;
+      for (const part of (m.kind === "takeoff" ? takeoffSequence : landingSequence)(project, m)) {
+        const shot = fitShot(part, [...shots, ...made]);
+        if (shot.end - shot.start >= .5) made.push(shot);
+      }
+    }
+    if (made.length) await save([...shots, ...made]);
+    else setError(found.length ? "Your take-offs and landings in this film already have shots" : "No take-off or landing of yours in this film");
+  }
+
   async function reel() {
     const made = [];
     for (const e of uncovered) {
@@ -547,6 +571,7 @@ export function App() {
         </div>
         <div className="cut-actions">
           <button disabled={working || dirty || !uncovered.length} onClick={reel} title="Four shots for every kill of yours that has none yet: closing in, the guns, him going down, you flying on">Add my kills ({uncovered.length})</button>
+          <button disabled={working || dirty || !project} onClick={airfield} title="A few shots for every take-off and landing of yours that has none yet, found in your flight path">Take-offs & landings</button>
           <select aria-label="Render quality" value={quality} onChange={e => setQuality(e.target.value)}><option value="final">1080p60</option><option value="4k">4K · 2160p60</option><option value="draft">Quick draft</option></select>
           <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; action("export_cut", {shot_ids: chosen, quality, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))}); }} title={dirty ? "Add or update the shot first" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>
           <button onClick={openVideos} title={`Finished videos are kept in ${desk.videos}`}><FolderOpen/> Videos folder</button></div>

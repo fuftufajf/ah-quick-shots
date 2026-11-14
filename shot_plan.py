@@ -42,6 +42,10 @@ def validate_shot(raw, length):
         if parsed is not None and not parsed.is_integer():
             raise ValueError("Aircraft ids must be whole numbers")
         shot[key] = None if parsed is None else int(parsed)
+    # A camera ship watching its hero can swing `sweep` degrees round it and close in to `closer` feet over the shot.
+    for key, low, high in (("sweep", -360, 360), ("closer", 20, 10000)):
+        if raw.get(key) is not None:
+            shot[key] = number(raw[key], low, high, key)
     shot["watch"] = raw.get("watch", "both")
     if shot["watch"] not in WATCH:
         raise ValueError("A camera ship watches both aircraft, its hero or its target")
@@ -58,6 +62,54 @@ def track_rows(lines):
             row = line.split()
             result.setdefault(float(row[1]), {})[int(row[2])] = tuple(map(float, row[3:9]))
     return result
+
+
+def filmer_path(lines):
+    """The recording pilot's aircraft through `tracks` lines: [(t, id, x, alt, z)]. It is the aircraft nearest the
+    eye of the recorded cockpit view (measured: 3 to 5 ft from it); while the view is outside, the last one found."""
+    tracks, path, filmer = track_rows(lines), [], None
+    eyes = {float(row[1]): tuple(map(float, row[3:6])) for row in (line.split() for line in lines)
+            if row[0] == "view" and len(row) > 5 and row[2] == "internal"}
+    for t in sorted(tracks):
+        if t in eyes and tracks[t]:
+            ident, row = min(tracks[t].items(), key=lambda item: math.dist(item[1][:3], eyes[t]))
+            if math.dist(row[:3], eyes[t]) < 15:
+                filmer = ident
+        if filmer in tracks[t]:
+            path.append((t, filmer, *tracks[t][filmer][:3]))
+    return path
+
+
+def ground_moments(path):
+    """Take-offs and touchdowns along the filmer's path [(t, id, x, alt, z)], about a second apart.
+    A take-off starts from standing (under 8 ft/s): the roll, then the lift-off, the last moment within 1.5 ft of
+    the ground before it is 8 ft up. Measured on a real film: parked to 8 s, rolling from 8.5 s, lift-off at 18.5 s.
+    A touchdown ends in standing: back from the stop, the first moment the aircraft was within 2 ft of where it
+    stopped, after being 20 ft higher in the minute before. `ground` is the aircraft's height on the ground there."""
+    found, runs = [], [[]]
+    for point in path:
+        if runs[-1] and (point[1] != runs[-1][-1][1] or point[0] - runs[-1][-1][0] > 2.5):
+            runs.append([])  # another sortie, or the film skipped
+        runs[-1].append(point)
+    for run in runs:
+        still = [True] + [math.dist(b[2:], a[2:]) / (b[0] - a[0]) < 8 for a, b in zip(run, run[1:])]
+        for i in range(1, len(run)):
+            if still[i - 1] and not still[i]:
+                ground = run[i - 1][3]
+                for k in range(i, len(run)):
+                    if still[k] or run[k][0] - run[i][0] > 120:
+                        break
+                    if run[k][3] > ground + 8:
+                        lift = max(m for m in range(i - 1, k) if run[m][3] <= ground + 1.5)
+                        found.append({"kind": "takeoff", "time": run[lift][0], "roll": run[i - 1][0], "ground": ground, "hero": run[i][1]})
+                        break
+            if not still[i - 1] and still[i]:
+                ground, down = run[i][3], i
+                while down > 0 and abs(run[down - 1][3] - ground) <= 2:
+                    down -= 1
+                if any(run[j][3] > ground + 20 and run[down][0] - run[j][0] <= 60 for j in range(down)):
+                    found.append({"kind": "touchdown", "time": run[down][0], "stop": run[i][0], "ground": ground, "hero": run[i][1]})
+    return found
 
 
 def nearby(tracks, hero, limit=8):
@@ -224,11 +276,11 @@ def escort_poses(shot, tracks, step=None, seen=None):
     if watch == "hero" or other is None:
         heading = _smooth([(lead[min(last, i + 1)][0] - lead[max(0, i - 1)][0], lead[min(last, i + 1)][2] - lead[max(0, i - 1)][2])
                            for i in range(len(times))], reach)
-        behind = 0
-        for move in heading:
+        behind, sweep = 0, math.radians(shot.get("sweep", 0))
+        for i, move in enumerate(heading):
             if math.hypot(*move) > 1e-6:  # standing still, it keeps the heading it had
                 behind = math.atan2(-move[0], -move[1])
-            stations.append((behind - turn, 0))
+            stations.append((behind - turn - sweep * (i / last if last else 0), 0))
     else:
         # Where the line from the other aircraft through the hero points, turning the short way round from one
         # moment to the next: when the two pass each other the ship swings round in its own time.
@@ -244,8 +296,9 @@ def escort_poses(shot, tracks, step=None, seen=None):
         stations = [(angle + turn, climb) for angle, climb in _smooth(line, max(1, round(max(1.5, weight) / per)))]
     places = []
     for i, (bearing, climb) in enumerate(stations):
-        up = math.sin(climb) * math.cos(turn) * shot["distance"]
-        flat = math.sqrt(shot["distance"] ** 2 - up ** 2)
+        distance = shot["distance"] + (shot.get("closer", shot["distance"]) - shot["distance"]) * (i / last if last else 0)
+        up = math.sin(climb) * math.cos(turn) * distance
+        flat = math.sqrt(distance ** 2 - up ** 2)
         places.append((path[i][0] + math.sin(bearing) * flat, path[i][1] + up + shot["height"], path[i][2] + math.cos(bearing) * flat))
     fov, both = math.radians(shot["fov"]), watch == "both" and other is not None
     lenses = [(fov,)] * len(places)
