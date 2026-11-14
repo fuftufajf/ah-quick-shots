@@ -22,7 +22,11 @@ ROOT = Path(__file__).resolve().parent
 HOST, PORT = "127.0.0.1", 8766
 # A desk keeps running with the code it started with. When a new version is unzipped over it, the page (read
 # from disk) is new and the desk is not: the page's newer actions came back "Unknown action". The desk notices.
-CODE = [ROOT / name for name in ("director_api.py", "director_core.py", "flight_data.py", "shot_plan.py", "viewer_socket.py")] + [ROOT / "ui" / "dist" / "index.html"]
+# Every module beside this one, not a list kept by hand: a list had missed the overlay and the trails.
+CODE = sorted(path for path in ROOT.glob("*.py") if path.name != "test_director.py") + [
+    ROOT / "ui" / "dist" / "index.html", ROOT / "looks" / "film.cube"]
+# Which release this copy is: the Windows package says so in VERSION; a copy of the source is its own.
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip() if (ROOT / "VERSION").exists() else "source"
 
 
 # Python takes file types from the Windows registry, where some programs make .js plain text: the browser then runs
@@ -69,7 +73,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         relative = unquote(urlsplit(self.path).path)
         if relative == "/api/state":
-            return self.send_json(200, {**self.server.desk.snapshot(), "stale": code_stamp() != self.server.code, "folder": str(ROOT)})
+            return self.send_json(200, {**self.server.desk.snapshot(), "stale": code_stamp() != self.server.code, "folder": str(ROOT),
+                                        "version": VERSION})
         if relative == "/api/flight":
             data = self.server.desk.flight_data()
             return self.send_json(200, data) if data else self.send_json(404, {"message": "Read a stretch's flight first"})
@@ -113,8 +118,8 @@ class Handler(BaseHTTPRequestHandler):
                         break
                     self.wfile.write(chunk)
                     remaining -= len(chunk)
-        except (BrokenPipeError, ConnectionResetError):
-            pass  # Seeking in the browser replaces its previous media request.
+        except ConnectionError:
+            pass  # Seeking in the browser replaces its previous media request; a download can be given up.
 
     def do_POST(self):
         if not self.allowed():
@@ -186,6 +191,9 @@ class Server(ThreadingHTTPServer):
     # Windows lets servers that allow reuse share a port: a second start would split the page and the viewer
     # between two desks. Without it the second start fails and the page opens the desk that is running.
     allow_reuse_address = False
+
+    def handle_error(self, request, client_address):
+        self.desk._log()  # a request that failed in a way nobody foresaw: the desk has no window to print it in
 
 
 def make_server(port=PORT, root=ROOT / ".quickshots", media_root=None, videos=None):

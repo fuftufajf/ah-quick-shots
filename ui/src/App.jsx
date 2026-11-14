@@ -50,8 +50,8 @@ export function App() {
   const [looking, setLooking] = useState(false);  // a quick look in flight: it holds the next one back and shows nothing
   const scrubbing = useRef(false);
   const autoConnect = useRef(true);
-  const casting = useRef(null);
-  const airfieldAsked = useRef(false);  // Take-offs & landings waits for the desk to read your flight path  // a moment waiting to learn who was around, then which framing reads best
+  const casting = useRef(null);  // a moment waiting to learn who was around, then which framing reads best
+  const airfieldAsked = useRef(false);  // Take-offs & landings waits for the desk to read your flight path
   // What this page asked to see moving: a clip's [start, end], or "cut". The desk is shared, so a second open page
   // (another tab or window) gets the same picture; playing it there too is heard as a doubled voice.
   const asking = useRef(null);
@@ -454,7 +454,6 @@ export function App() {
     if (!made.length) return setError("This moment is already in the cut");
     if (await save([...shots, ...made])) select(made[0]);
   }
-  // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
   // The new desk takes the port a moment after the old one lets it go; the page is then read again, new too.
   async function restartDesk() {
     try { await request("/api/restart", {}); setTimeout(() => window.location.reload(), 3000); }
@@ -480,6 +479,7 @@ export function App() {
     else if (!made.length) setError(found.length ? "Your take-offs and landings in this film already have shots" : "No take-off or landing of yours in this film");
   }
 
+  // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
   async function reel() {
     const made = [];
     for (const e of uncovered) {
@@ -533,7 +533,7 @@ export function App() {
 
   return <main className="desk">
     <header className="topbar">
-      <div className="brand"><FilmStrip size={26} weight="duotone"/><h1>AH <span>QUICK SHOTS</span></h1></div>
+      <div className="brand"><FilmStrip size={26} weight="duotone"/><h1>AH <span>QUICK SHOTS</span></h1>{desk.version && <small className="version" title="The version of AH Quick Shots this desk runs: say it when you report a problem">{desk.version}</small>}</div>
       <div className="open-film"><select aria-label="Film" value={filmChoice || project?.film || ""} onChange={e => setFilmChoice(e.target.value)}><option value="">Choose a replay</option>{desk.films.map(f => <option key={f.path} value={f.path}>{f.name}{f.modified ? ` · ${new Date(f.modified * 1000).toLocaleDateString()}` : ""}</option>)}</select><button disabled={!(filmChoice || project?.film) || (running && desk.job.action === "export_cut")} onClick={load} title="Open this replay; an operation in progress finishes first">Open</button>
         <button className="danger" aria-label="Delete this replay" disabled={!filmChoice || filmChoice === project?.film || working} onClick={() => setTrashing(desk.films.find(f => f.path === filmChoice))} title={filmChoice && filmChoice === project?.film ? "Open another replay first: Film Viewer holds the one that is open" : "Move the chosen replay to the Recycle Bin"}><Trash/></button></div>
       <div className={`operation ${working ? "working" : desk.job?.error ? "failed" : ""}`} role="status" aria-live="polite">

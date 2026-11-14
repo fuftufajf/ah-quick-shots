@@ -10,6 +10,9 @@ libass blurring each piece (42 s against 200 s for 7 s at 1080p60)."""
 import math
 import re
 
+from finishing import graph_path
+from flight_data import _axes, _cross
+
 STYLE = {
     "seconds": 2.5,      # how far back a trail reaches
     "span": .88,         # the wingtip's offset as a share of the aircraft's visible radius (a Yak's radius 17.9 ft, its tips 15.8 ft out)
@@ -75,18 +78,10 @@ def at(rows, t, step):
 
 
 def wingtips(pos, yaw, pitch, roll, half):
-    """Left and right wingtip in the world. Yaw 0 looks toward +z and +pi/2 toward -x, pitch up and roll right are
-    positive (as flight_data._axes)."""
-    nose = (-math.sin(yaw) * math.cos(pitch), math.sin(pitch), math.cos(yaw) * math.cos(pitch))
-    flat = (math.cos(yaw), 0.0, math.sin(yaw))
-    level = _cross(nose, flat)
-    lift = tuple(level[i] * math.cos(roll) + flat[i] * math.sin(roll) for i in range(3))
+    """Left and right wingtip in the world, by the same axes as the flight data (flight_data._axes)."""
+    nose, lift = _axes(yaw, pitch, roll)
     right = _cross(lift, nose)
     return [tuple(pos[i] + side * half * right[i] for i in range(3)) for side in (-1, 1)]
-
-
-def _cross(a, b):
-    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
 
 
 def camera(eye):
@@ -112,6 +107,12 @@ def to_screen(cam, p, w, h, near=10.0):
     return ((sx + 1) / 2 * w, (1 - sy) / 2 * h)
 
 
+def _curve(p0, p1, p2, p3, f):
+    """The point a share `f` of the way from p1 to p2 on the uniform Catmull-Rom curve through the four."""
+    return [.5 * (2 * p1[c] + (p2[c] - p0[c]) * f + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * f * f
+                  + (3 * p1[c] - p0[c] - 3 * p2[c] + p3[c]) * f ** 3) for c in range(len(p1))]
+
+
 def between(points, t):
     """A chained `curve` camera at t: [(time, pose)] through a uniform Catmull-Rom curve, as the viewer moves it
     (measured: within 0.05 ft halfway between points 0.5 s apart; a straight line was 1 to 4 ft off)."""
@@ -120,9 +121,7 @@ def between(points, t):
         i += 1
     (a, p1), (b, p2) = points[i], points[i + 1]
     p0, p3 = points[max(0, i - 1)][1], points[min(len(points) - 1, i + 2)][1]
-    f = min(1.0, max(0.0, (t - a) / (b - a)))
-    return [.5 * (2 * p1[c] + (p2[c] - p0[c]) * f + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * f * f
-                  + (3 * p1[c] - p0[c] - 3 * p2[c] + p3[c]) * f ** 3) for c in range(len(p1))]
+    return _curve(p0, p1, p2, p3, min(1.0, max(0.0, (t - a) / (b - a))))
 
 
 def _smooth(points, reach):
@@ -144,9 +143,7 @@ def _catmull(points, per=3):
     for i in range(len(points) - 1):
         p0, p1, p2, p3 = points[max(0, i - 1)], points[i], points[i + 1], points[min(len(points) - 1, i + 2)]
         for s in range(per):
-            f = s / per
-            out.append(tuple(.5 * (2 * p1[c] + (p2[c] - p0[c]) * f + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * f * f
-                                   + (3 * p1[c] - p0[c] - 3 * p2[c] + p3[c]) * f ** 3) for c in range(3)))
+            out.append(tuple(_curve(p0, p1, p2, p3, s / per)))
     out.append(points[-1])
     return out
 
@@ -195,17 +192,23 @@ def _samples(rows, t, step, style):
     return times + [t], edge
 
 
-def script(frames, tracks, radii, colours, step, fps, w, h, style=STYLE):
-    """An ASS script drawing the trails of the aircraft in `colours` ({id: (r, g, b)}) on every frame. frames: [(film
-    time, eye or None)], one per video frame from its first; tracks: {id: kept rows}; radii: {id: visible radius in
-    feet}."""
+def script(*args, **options):
+    """The whole ASS script of `lines` as one text."""
+    return "\n".join(lines(*args, **options)) + "\n"
+
+
+def lines(frames, tracks, radii, colours, step, fps, w, h, style=STYLE):
+    """The lines of an ASS script drawing the trails of the aircraft in `colours` ({id: (r, g, b)}) on every frame,
+    one after another, so a long script can go to its file without being held whole (measured: 1.5 to 3.4 MB a second
+    of video). frames: [(film time, eye or None)], one per video frame from its first; tracks: {id: kept rows};
+    radii: {id: visible radius in feet}."""
     unit = h / 1080
-    lines = ["[Script Info]", "ScriptType: v4.00+", f"PlayResX: {w}", f"PlayResY: {h}", "WrapStyle: 2", "ScaledBorderAndShadow: yes",
-             "YCbCr Matrix: None", "", "[V4+ Styles]",
-             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, "
-             "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-             "Style: T,Arial,20,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1", "",
-             "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+    yield from ("[Script Info]", "ScriptType: v4.00+", f"PlayResX: {w}", f"PlayResY: {h}", "WrapStyle: 2", "ScaledBorderAndShadow: yes",
+                "YCbCr Matrix: None", "", "[V4+ Styles]",
+                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, "
+                "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+                "Style: T,Arial,20,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1", "",
+                "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text")
     tips = {}  # (id, film time): the two wingtips, worked out once for every frame that draws through them
     for k, (t, eye) in enumerate(frames):
         # Frame k shows at k / fps: an event from floor(100 k / fps) to floor(100 (k + 1) / fps) centiseconds covers
@@ -238,8 +241,7 @@ def script(frames, tracks, radii, colours, step, fps, w, h, style=STYLE):
                         run.append((q[0], q[1], (t - s) / style["seconds"]))
                 runs.append(run)
                 for run in (r for r in runs if len(r) > 1):
-                    lines += _bands(_thin(_catmull(run), style["thin"] * unit), span, fill, unit, style)
-    return "\n".join(lines) + "\n"
+                    yield from _bands(_thin(_catmull(run), style["thin"] * unit), span, fill, unit, style)
 
 
 def _bands(curve, span, fill, unit, style):
@@ -265,8 +267,7 @@ def _bands(curve, span, fill, unit, style):
 def filters(path, height, style=STYLE):
     """ffmpeg filters laying the trails of the ASS script at `path` over a video `height` pixels high, with their
     glow: one input, one output."""
-    ass = path.as_posix().replace(":", r"\:")  # a filter graph reads a colon as the end of an option
     gain = f"min(255,val*{style['glow_gain']:g})"
-    return (f"format=gbrp,split[tr0][tr1];[tr1]lutrgb=r=0:g=0:b=0,subtitles=filename='{ass}',split[tr2][tr3];"
+    return (f"format=gbrp,split[tr0][tr1];[tr1]lutrgb=r=0:g=0:b=0,subtitles=filename='{graph_path(path)}',split[tr2][tr3];"
             f"[tr3]gblur=sigma={style['glow'] * height / 1080:.1f},lutrgb=r='{gain}':g='{gain}':b='{gain}'[tr4];"
             f"[tr2][tr4]blend=all_mode=addition[tr5];[tr0][tr5]blend=all_mode=screen")

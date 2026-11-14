@@ -18,11 +18,12 @@ import director_api
 from director_api import listener, make_server, take_port, videos_folder, working_folder
 import director_core
 from director_core import Conflict, Desk, framing, lead
+import finishing
 import flight_data
 import overlay
 import trails
 from shot_plan import _last_seen, _steady, camera_pose, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
-from viewer_socket import Viewer, film_rows
+from viewer_socket import Viewer, film_rows, plane_rows
 
 SHOT = {"id": "one", "name": "Pair", "start": 1, "end": 3, "kind": "pair",
         "hero": 19, "target": 10, "side": "right", "distance": 280, "height": 60, "fov": 60}
@@ -383,7 +384,7 @@ class DeskTests(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0, "", "")
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 5, "end": 7, "kind": "cockpit"}]})
-        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.subprocess.run", ffmpeg):
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("finishing.subprocess.run", ffmpeg):
             self.run_action({"action": "export_cut", "quality": "draft"})
         video = next(c for c in commands if c.startswith("video "))
         self.assertTrue(video.startswith("video 3.00000000 7.00000000 ") and "-lead.mp4" in video)
@@ -392,7 +393,7 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(Path(self.desk.snapshot()["preview"]["file"]).read_bytes(), b"cut")
         # ffmpeg failing is said, not hidden behind a video two seconds too long.
         failed = lambda args, **_options: subprocess.CompletedProcess(args, 1, "", "Unknown encoder 'libx264'")
-        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.subprocess.run", failed):
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("finishing.subprocess.run", failed):
             self.desk.start({"action": "export_cut", "expected_revision": 2})
             self.desk.worker.join(3)
         self.assertIn("Unknown encoder", self.desk.snapshot()["job"]["error"])
@@ -414,7 +415,7 @@ class DeskTests(unittest.TestCase):
             self.run_action({"action": "export_cut", "quality": "4k", "blur": True, "look": True})
         videos = [c.split() for c in commands if c.startswith("video ")]
         self.assertEqual([(v[1], v[2], v[4:]) for v in videos[:4]], [(f"{1 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
-        self.assertEqual(blends, [([True] * 4, 2, 60, ""), ([True] * 4, 2, 60, director_core.style(3840, 2160, film=True))])
+        self.assertEqual(blends, [([True] * 4, 2, 60, ""), ([True] * 4, 2, 60, finishing.style(3840, 2160, film=True))])
 
     def test_the_film_look_goes_on_in_ffmpeg_even_with_no_lead_in_to_cut(self):
         trims = []
@@ -432,7 +433,7 @@ class DeskTests(unittest.TestCase):
             self.run_action({"action": "export_cut", "quality": "draft", "haze": True, "look": True})
             self.run_action({"action": "export_cut", "quality": "draft"})
         # At the film's start there is no lead-in: only the looks need ffmpeg. The haze goes first, as in the grade.
-        self.assertEqual(trims, [(0, director_core.look(540)), (0, director_core.haze(960, 540) + "," + director_core.look(540))])
+        self.assertEqual(trims, [(0, finishing.look(540)), (0, finishing.haze(960, 540) + "," + finishing.look(540))])
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg")
     def test_the_blend_keeps_the_film_s_length_at_its_own_frame_rate(self):
@@ -440,13 +441,13 @@ class DeskTests(unittest.TestCase):
         for part in parts:
             subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=120:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
                             "-c:v", "libx264", "-c:a", "aac", str(part)], check=True)
-        director_core.blend(parts, target, .5, 60, director_core.style(160, 90, True, True))  # the looks fit in its graph
+        finishing.blend(parts, target, .5, 60, finishing.style(160, 90, True, True))  # the looks fit in its graph
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
                                 "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.split()
         self.assertEqual(probe[0], "video,60/1,60")
         self.assertTrue(probe[1].startswith("audio,"))
         self.assertFalse(any(p.exists() for p in parts))
-        director_core.trim(target, parts[0], .5, director_core.style(160, 90, True, True))  # and as the lead-in is cut
+        finishing.trim(target, parts[0], .5, finishing.style(160, 90, True, True))  # and as the lead-in is cut
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,nb_frames",
                                 "-of", "csv=p=0", str(parts[0])], capture_output=True, text=True).stdout.split()
         self.assertEqual(probe[0], "video,30")
@@ -461,7 +462,7 @@ class DeskTests(unittest.TestCase):
             raw = subprocess.run(["ffmpeg", "-v", "error", "-filter_complex", scene + ("," + filters if filters else ""),
                                   "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
             return [[raw[(y * w + x) * 3:(y * w + x) * 3 + 3] for x in range(w)] for y in range(h)]
-        before, after = picture(""), picture(director_core.haze(w, h))
+        before, after = picture(""), picture(finishing.haze(w, h))
         moved = lambda x, y: max(abs(a - b) for a, b in zip(before[y][x], after[y][x]))
         self.assertGreater(moved(160, h // 2 - 2), 15)  # the sky just above the horizon
         self.assertGreater(moved(160, h // 2 + 2), 15)  # the far ground just below it
@@ -529,13 +530,147 @@ class DeskTests(unittest.TestCase):
     def test_the_trail_filters_lay_a_light_line_over_the_picture(self):
         rows = [(t / 50, 0.0, 1000.0, 300 * t / 50, 0.0, 0.0, 0.0, 0.0, 0.0, 300.0) for t in range(0, 200)]
         eye = (-400.0, 1000.0, 300.0 * 3.5, -math.pi / 2, 0.0, 0.0, 1.2)
-        ass = Path(self.temp.name) / "t.ass"
+        folder = Path(self.temp.name) / "O'Brien"  # an apostrophe would end the quotes round the path
+        folder.mkdir()
+        ass = folder / "t.ass"
         ass.write_text(trails.script([(3.5, eye)], {7: rows}, {7: 18}, {7: (255, 255, 255)}, .02, 30, 320, 180), encoding="utf-8")
         raw = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=0x203040:s=320x180:d=0.03:r=30",
                               "-vf", trails.filters(ass, 180), "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"],
                              capture_output=True, check=True).stdout
         brightest = max(sum(raw[i:i + 3]) for i in range(0, len(raw), 3))
         self.assertGreater(brightest, 0x20 + 0x30 + 0x40 + 200)  # a trail lit the dark blue
+
+    def trail_viewer(self, projects):
+        """A viewer for trails: kept tracks of two aircraft over 12 s, and `project` answering where the camera is."""
+        path = Path(self.temp.name) / "fight.ahftracks"
+        write_kept(path, {19: [turn_row(t / 10, 0, 0) for t in range(0, 121)],
+                          10: [(t / 10, 0, 500, 1000 + 250 * t / 10, 0, 0, 0, 0, 0, 250) for t in range(0, 121)]}, {19: "Pilot", 10: "Other"})
+        def native(command, progress):
+            if command.startswith("tracks ") and " keep " in command:
+                return [f"tracks kept file {path}"]
+            if command.startswith("tracks "):
+                start, end, step = map(float, command.split()[1:4])
+                return [f"track {start + i * step:.4f} {ident} {x} 200 {300 * (start + i * step):.1f} 0 0 0"  # both fly on, toward +z
+                        for i in range(round((end - start) / step) + 1) for ident, x in ((19, 0), (10, 300))]
+            if command.startswith("project "):
+                parts = command.split()
+                begin, end, step = map(float, parts[1:4])
+                projects.append((begin, end, step, Path(parts[4]).read_text().strip(), " " in parts[4] + parts[5]))
+                times = [begin] if end - begin < 1e-9 else [begin, end]
+                Path(parts[5]).write_text("".join(f"eye {t:.4f} 1 0 500 -400 0 0 0 1.2\n" for t in times))  # behind them, looking +z
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"film")
+            return []
+        return native
+
+    def test_trails_ask_the_viewer_where_the_camera_is_at_every_frame_and_leave_no_script_behind(self):
+        projects, scripts = [], []
+        def trim(source, target, seconds, filters=""):
+            name = filters.split("subtitles=filename='")[1].split("'")[0].replace("\\:", ":")
+            scripts.append(Path(name).read_text(encoding="utf-8"))
+            Path(target).write_bytes(b"cut")
+        self.desk.viewer.command = self.trail_viewer(projects)
+        # A camera on the airframe from the film's very first moment, and a moving camera for two.
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "id": "seat", "start": 0, "end": 1, "kind": "cockpit", "target": None},
+                                                          {**SHOT, "id": "two", "start": 5, "end": 6}]})
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", trim):
+            self.run_action({"action": "export_cut", "quality": "draft", "apart": True, "trails": {"seconds": 2.5}})
+        seat, two = projects[:31], projects[31:]
+        self.assertEqual((len(seat), len(two)), (31, 31))  # every frame of a second at 30 a second, both ends
+        # Never before the film's start: its first frame is asked in one step, the next from the start up to it.
+        self.assertEqual(seat[0][:3], (0, 0, .15))
+        self.assertEqual([round(v, 4) for v in seat[1][:3]], [0, .0333, .0333])
+        self.assertEqual([round(v, 4) for v in seat[30][:3]], [.85, 1, .15])
+        self.assertTrue(all(row[3].startswith("mount 19 ") and "outside" not in row[3] for row in seat))
+        # The moving camera is placed on its curve and asked as a still one; the files have no space in their path.
+        self.assertTrue(all(row[3].startswith("fixed ") and " to " not in row[3] and len(row[3].split()) == 8 for row in two))
+        self.assertNotEqual(two[0][3], two[15][3])
+        self.assertFalse(any(row[4] for row in projects))
+        self.assertTrue(all("Dialogue:" in script for script in scripts) and len(scripts) == 2)
+        self.assertEqual(list(self.desk.media_root.glob("*.ass")), [])
+
+    def test_a_render_that_fails_leaves_no_trail_script_and_long_trails_are_refused(self):
+        def trim(source, target, seconds, filters=""):
+            raise ValueError("ffmpeg could not cut the lead-in off the video: no room")
+        self.desk.viewer.command = self.trail_viewer([])
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 5, "end": 6}, {**SHOT, "id": "two", "start": 8, "end": 9}]})
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", trim):
+            self.desk.start({"action": "export_cut", "quality": "draft", "apart": True, "trails": True, "expected_revision": 2})
+            self.desk.worker.join(5)
+        self.assertIn("no room", self.desk.snapshot()["job"]["error"])
+        self.assertEqual(list(self.desk.media_root.glob("*.ass")), [])  # the second video's script went too
+        with self.assertRaises(ValueError):  # the script grows with the video: a long one is asked for shot by shot
+            self.desk._trails(PROJECT, [{**SHOT, "start": 0, "end": 121}], 960, 540, 30, {}, trails.STYLE)
+
+    def test_a_full_disk_is_not_a_lost_viewer_and_the_error_is_written_down(self):
+        def native(command, progress):
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"film")
+            return []
+        self.desk.viewer.command = native
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "kind": "cockpit", "target": None}]})
+        with patch("director_core.shutil.copyfile", side_effect=OSError("disk full")):
+            self.desk.start({"action": "export_cut", "quality": "draft", "expected_revision": 2})
+            self.desk.worker.join(5)
+        state = self.desk.snapshot()
+        self.assertEqual((state["job"]["error"], state["connected"]), ("disk full", True))
+        log = (self.desk.root / "errors.log").read_text(encoding="utf-8")
+        self.assertIn("Traceback", log)
+        self.assertIn("OSError: disk full", log)
+
+    def test_a_long_render_is_given_longer_to_answer(self):
+        waited = []
+        def native(command, progress):
+            if command.startswith("video "):
+                waited.append(self.desk.viewer.patience)
+                Path(command.split()[3]).write_bytes(b"film")
+            return []
+        self.desk.viewer.command = native
+        self.desk.data["project"]["length"] = 100
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 10, "end": 70, "kind": "cockpit", "target": None},
+                                                          {**SHOT, "id": "two", "start": 80, "end": 82, "kind": "cockpit", "target": None}]})
+        self.run_action({"action": "export_cut", "quality": "draft", "apart": True})
+        self.assertEqual((waited, self.desk.viewer.patience), ([1200, 600], 600))  # twenty times a minute, then as before
+
+    def test_a_file_windows_will_not_let_go_leaves_the_plan_as_it_was(self):
+        def native(command, progress):
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"film")
+            return []
+        self.desk.viewer.command = native
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "kind": "cockpit", "target": None}]})
+        self.run_action({"action": "export_cut", "quality": "draft"})
+        def refuse(paths):
+            raise OSError("Windows did not move the files to the Recycle Bin")
+        with patch("director_core.to_recycle_bin", refuse), self.assertRaises(OSError):
+            self.desk.forget({"expected_revision": 2, "shot_ids": ["one"], "files": True})
+        state = self.desk.snapshot()
+        self.assertEqual(([s["id"] for s in state["project"]["shots"]], len(state["renders"]), state["project"]["revision"]), (["one"], 1, 2))
+
+    def test_what_has_no_recycle_bin_is_not_deleted_for_good(self):
+        import ctypes
+        video = Path(self.temp.name) / "video.mp4"
+        video.write_bytes(b"film")
+        with patch.object(ctypes.windll.kernel32, "GetDriveTypeW", return_value=4):  # a network drive
+            with self.assertRaises(OSError) as refused:
+                director_core.to_recycle_bin([video])
+        self.assertIn("no Recycle Bin", str(refused.exception))
+        self.assertTrue(video.exists())
+
+    def test_a_line_the_viewer_quoted_badly_is_left_out(self):
+        self.assertEqual([p["id"] for p in plane_rows(['plane 19 "Pil\\" 0 0 0 0 0 0', 'plane 10 "Other" 1 2 3 0 0 0', "plane"])], [10])
+        def native(command, progress):
+            if command.startswith("open "):
+                return ["opened films/test.ahf length 20.0 s in 0.1 s"]
+            if command.startswith("events "):
+                return ['event 3.5 land "Pil\\" "ditched"', 'event 4.5 kill "you" "Other" 1 19 10', "2 events"]
+            if command.startswith("shot "):
+                Path(command[5:]).write_bytes(b"test")
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+        self.desk.viewer.command = native
+        self.desk.data["films"] = [{"path": "films/test.ahf", "name": "test.ahf", "mb": 1, "modified": 0}]
+        self.run_action({"action": "open", "film": "films/test.ahf"})
+        self.assertEqual([e["kind"] for e in self.desk.snapshot()["project"]["events"]], ["kill"])
 
     def test_take_offs_and_touchdowns_are_found_in_the_filmer_s_path(self):
         # Parked, a roll, a lift-off at 18 s, a flight, a landing at 60 s that stops at 64 s; then a second sortie
@@ -1090,6 +1225,8 @@ class DeskTests(unittest.TestCase):
             self.assertTrue(json.loads(body)["job"]["running"])
             # The desk says when its code on disk is no longer the code it runs, and does not restart mid-operation.
             self.assertFalse(json.loads(body)["stale"])
+            self.assertEqual(json.loads(body)["version"], "source")  # no VERSION file: not a package
+            self.assertLessEqual({director_api.ROOT / name for name in ("trails.py", "finishing.py", "overlay.py")}, set(director_api.CODE))
             server.code = [None]
             self.assertTrue(json.loads(call("GET", "/api/state")[1])["stale"])
             status, body = call("POST", "/api/restart", {})

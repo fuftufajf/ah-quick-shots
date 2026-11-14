@@ -129,6 +129,12 @@ time, shot and camera; Videos folder, under The cut, opens it.
   renders into a working folder without spaces and the desk copies the
   finished video to your Videos folder; keep the app's own folder free of
   spaces too.
+- **Deleting goes through the Recycle Bin.** A replay or a video on a drive
+  that has none (a network share, a USB stick) is left where it is, and the
+  page says so: delete it in its folder yourself.
+- **Reporting a problem.** The page shows its version beside its name, and
+  `.quickshots/errors.log` in the app's folder holds each operation that
+  failed. Send both.
 - The server has no window. It runs until you sign out of Windows or end
   `pythonw.exe` in Task Manager. Starting AH Quick Shots from another folder
   stops the one left running (unless it is rendering), so the page is always

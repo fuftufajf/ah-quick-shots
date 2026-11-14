@@ -18,7 +18,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - run: python dev/build_package.py
+      - run: python dev/build_package.py  # runs the tests on the packaged Python first: a failure stops the release
+        env:
+          TAG: ${{ github.event.release.tag_name }}
       - uses: actions/attest@v4
         with:
           subject-path: build/AH-Quick-Shots-Windows.zip

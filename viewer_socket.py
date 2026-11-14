@@ -4,6 +4,10 @@ import socket
 
 
 class Viewer:
+    # Seconds the viewer may take to answer one command. A render answers only when it is done, so the desk gives a
+    # long one more (Desk._render): cut off at ten minutes, a long cut was lost with its file half made.
+    patience = 600
+
     def __init__(self):
         self.sock = self.reader = None
 
@@ -58,6 +62,7 @@ class Viewer:
         if not self.sock:
             self.connect(progress)
         try:
+            self.sock.settimeout(self.patience)
             self.sock.sendall((command + "\n").encode("utf-8"))
             return self._reply(progress)
         except (OSError, ConnectionError, UnicodeError):
@@ -89,9 +94,12 @@ def plane_rows(lines):
     planes = []
     for line in lines:
         if line.startswith("plane "):
-            row = shlex.split(line)
-            planes.append({"id": int(row[1]), "name": row[2], "position": list(map(float, row[3:6])),
-                           "recorder": row[-1] == "recorder"})
+            try:
+                row = shlex.split(line)
+                planes.append({"id": int(row[1]), "name": row[2], "position": list(map(float, row[3:6])),
+                               "recorder": row[-1] == "recorder"})
+            except (ValueError, IndexError):
+                pass  # a line that cannot be read is one aircraft less in the list, not a seek that fails
     return planes
 
 

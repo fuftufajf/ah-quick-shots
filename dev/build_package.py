@@ -6,6 +6,7 @@ build/downloads and must match the SHA-256 written here, so every build packs ex
 GitHub builds it when a release is published (.github/workflows/package.yml); by hand: python dev/build_package.py.
 The zip and its .sha256 land in build/."""
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -68,6 +69,13 @@ def main():
     subprocess.run([str(stage / "python" / "python.exe"), "-c", "import director_api, overlay"], cwd=BUILD, check=True)
     filters = subprocess.run([str(stage / "ffmpeg" / "ffmpeg.exe"), "-hide_banner", "-filters"], capture_output=True, text=True, check=True)
     assert " subtitles " in filters.stdout, "this ffmpeg cannot draw the data overlay (no libass)"
+    # The tests, on the Python and the ffmpeg the pilot gets: a fault only those show must stop the release.
+    subprocess.run([str(stage / "python" / "python.exe"), str(ROOT / "director_api.py"), "--check"], cwd=ROOT, check=True,
+                   env={**os.environ, "PATH": f"{stage / 'ffmpeg'}{os.pathsep}{os.environ['PATH']}"})
+    # The release this package is, shown on the page: the tag GitHub builds it for, else what git calls this commit.
+    tag = os.environ.get("TAG") or subprocess.run(["git", "describe", "--tags", "--always"], cwd=ROOT, capture_output=True,
+                                                 text=True, check=True).stdout.strip()
+    (stage / "VERSION").write_text(tag + "\n", encoding="utf-8")
 
     package = BUILD / NAME
     with zipfile.ZipFile(package, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as out:

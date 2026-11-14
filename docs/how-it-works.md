@@ -269,7 +269,10 @@ the aircraft's visible radius out (a Yak's tips matched at 75 ft). libass draws
 the lines; ffmpeg blurs a copy for the glow and lays the light over the picture.
 A 7 s shot at 1080p60: 65 s with trails, 17 s without. Not in the pilot's view
 or the weapon ride, which the projection does not know; a trail is not hidden
-behind what stands in front of it.
+behind what stands in front of it. The script is written line by line and
+grows with the video (measured: 1.5 to 3.4 MB a second), so trails go on one
+video of up to 120 s whose shots lie within ten minutes of film; beyond that
+the desk asks for A file per shot.
 
 Data overlay (16:9 and 9:16) adds, beside every rendered video, two transparent
 films of the same length and frame rate to lay over it in an editor: a card with
@@ -351,7 +354,11 @@ aircraft tracks of a stretch are read once for every camera tried on it. The
 desk controls only the offline viewer, never the live game.
 
 `.quickshots/current.ahs` is the most recently applied native plan; JSON is the
-editable project.
+editable project. `.quickshots/errors.log` gets every operation that failed,
+with where in the code it failed: the desk has no window to print it in, so
+this is the file to send with a report, together with the version the page
+shows beside its name (`state.version`: the release of a Windows package,
+`source` for a copy of the code).
 
 Files go to two places. **Finished videos** are kept in `AH Quick Shots` in
 your Videos folder, each under a name that says what it is: the film, where
@@ -364,7 +371,8 @@ somewhere else, write that folder's absolute path into
 
 Everything else is working material in an `AHQuickShots` folder under the
 system temp directory: the stills, the preview clips (`clips/`, the newest 80:
-a cache) and the copy of a render that the page plays. The viewer writes there
+a cache), the copy of a render that the page plays, and the small files the
+viewer's `project` reads and writes. The viewer writes there
 and takes no spaces in a video path, so when the temp directory has one (a
 Windows account name with a space) the desk uses `.quickshots/media` instead,
 or `AHQuickShots` under the Public folder; a finished render is then copied to
@@ -400,8 +408,8 @@ yourself: that disconnects the desk.
 **GET /api/state** — everything: `connected`, `films`, `project` (`film`,
 `length`, `revision`, `shots`, `events`), `planes`, `now`, `preview`, `nearby`,
 `proposals`, `problems`, `job` (`running`, `message`, `elapsed`, `expect`,
-`error`), `stale` (the code on disk is newer) and `folder` (where this desk
-runs from). Poll it; it never waits for the viewer.
+`error`), `stale` (the code on disk is newer), `folder` (where this desk
+runs from) and `version`. Poll it; it never waits for the viewer.
 
 **POST /api/project** `{expected_revision, shots}` — saves the whole plan
 atomically. Merge the current shots and keep their ids. A 409 means the plan
