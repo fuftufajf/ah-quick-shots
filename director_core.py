@@ -1,4 +1,5 @@
 """Shared editing desk. One worker owns the viewer; HTTP only reads snapshots."""
+import bisect
 from collections import deque
 import copy
 import hashlib
@@ -40,7 +41,8 @@ LEAD = 2.0
 # that followed a seek; thin renders keep coming until the viewer has rested. Every render started 12 s or more
 # after the one before was full, whatever happened in between (6 of 6). After a 4 s stretch, 3 s were enough.
 TAIL = 1.5  # seconds added to the last rendered stretch's length before the next render may start
-CAMERAS = 8  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
+FINE = .02  # the step aircraft paths are read at (see Desk._tracks)
+CAMERAS = 9  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
 
 
 class Conflict(ValueError):
@@ -337,7 +339,20 @@ class Desk:
         key = (round(start, 3), round(end, 3), round(step, 6))
         if key not in self.paths:
             self.progress("Reading aircraft paths")
-            self.paths[key] = track_rows(self.command(f"tracks {start:.8f} {end:.8f} {step:.10f}"))
+            # Read every 0.02 s and the snapshots wanted picked out. Read every 0.5 s, the recording pilot was 25 to
+            # 51 ft off his own path (measured on a Me 163): 7 degrees seen from an observer 390 ft away, nearly the
+            # whole picture on a 9-degree lens, and the camera shook. The first snapshots of a read are off as well.
+            early = min(.1, start)
+            fine = track_rows(self.command(f"tracks {start - early:.8f} {end:.8f} {FINE:.10f}"))
+            grid = sorted(fine)
+            picked = {}
+            for k in range(round((end - start) / step) + 1):
+                t = start + k * step
+                at = bisect.bisect_left(grid, t)
+                near = min(grid[max(0, at - 1):at + 1], key=lambda g: abs(g - t), default=None)
+                if near is not None and abs(near - t) <= FINE / 2 + 1e-6:
+                    picked[t] = fine[near]
+            self.paths[key] = picked
             while len(self.paths) > 12:
                 del self.paths[next(iter(self.paths))]
         return self.paths[key]

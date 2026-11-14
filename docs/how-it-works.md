@@ -125,6 +125,11 @@ the two-aircraft cameras then take whoever comes nearest.
   itself, up to 100 degrees, to hold you both (in that fight both were in the
   picture 43% of the time on a fixed lens at 400 ft, 92% on this one). When
   even that cannot hold him, the lens goes back and you stay in the middle.
+  When he leaves the film (shot down), the observer lets go of him gently: for
+  a second and a half it goes on as if he flew on, then holds you alone, and
+  its lens comes back to yours over three seconds. Held at the place he was
+  last seen, he stopped its turn dead (27 degrees a second, then 0.6) and the
+  lens snapped back from 31 to 9 degrees.
   Its station follows that line up and down too, so an opponent well above or
   below you is not left out of the picture's height. Looks at chooses whom it
   watches: Both, You alone, or the Opponent alone — a long lens on him from a
@@ -423,7 +428,9 @@ turns of the two aircraft told smoothly).
 
 What the film tells, measured:
 
-- **Read at 0.02 s, not 0.1 s.** At a 0.1 s step the recording pilot's own track jittered (a Me 163 at
+- **Read at 0.02 s, not 0.1 s.** The cameras' paths are read so too, and the snapshots they need picked
+  out: read every 0.5 s, the recording pilot was 25 to 51 ft off his path, 7 degrees from an observer
+  390 ft away, which shook a long lens. At a 0.1 s step the recording pilot's own track jittered (a Me 163 at
   618 ft/s moved 0.3 to 114 ft a snapshot, its stored speed 356 to 889 ft/s); at 0.02 s it was smooth,
   12.3 ft every snapshot, the speed steady. The first two snapshots of a read were off too, so the desk
   reads a tenth of a second early and leaves them out.

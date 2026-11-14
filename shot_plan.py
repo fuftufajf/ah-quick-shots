@@ -234,6 +234,12 @@ def _smooth(points, reach):
 
 
 WIDEST = math.radians(100)  # a wider lens bends the edges of the picture
+FADE, LENS_BACK = 1.5, 3.0  # seconds: an aircraft that left the film lets go of the picture, then of the lens
+
+
+def _ease(x):
+    """0 to 1 starting and ending gently."""
+    return x * x * (3 - 2 * x)
 
 
 def _lens(pos, a, b, base):
@@ -273,6 +279,16 @@ def escort_poses(shot, tracks, step=None, seen=None):
     # The other aircraft without the small steps a distant one moves in.
     other = None if shot["target"] is None else _smooth([tracks[t][shot["target"]][:3] for t in times], max(1, round(.5 / per)))
     turn = math.radians(shot["orbit"])
+    # When the other aircraft leaves the film (shot down) the ship lets go of him gently. Held at his last place,
+    # he stopped the picture dead: turning 27 degrees a second, then 0.6 (measured on a kill at 400 ft), and the
+    # lens, open to hold him, snapped back from 31 to 9 degrees in two seconds. Now he flies on as he was going
+    # for as long as the picture still leans toward him (FADE), and the lens comes back over LENS_BACK.
+    gone = (seen or {}).get(shot["target"]) if other is not None else None
+    after = [0.0 if gone is None or when <= gone else (when - gone) * (step or 1) for when in times]
+    if any(after):
+        g = after.index(next(a for a in after if a > 0)) - 1  # his last moment in the film
+        drift = tuple(other[g][k] - other[max(0, g - 1)][k] for k in range(3))
+        other = other[:g + 1] + [tuple(other[g][k] + drift[k] * min(i - g, FADE / per) for k in range(3)) for i in range(g + 1, len(times))]
     stations = []  # where the ship sits from the hero: a bearing (0 toward +z, a quarter turn toward +x) and a climb
     if watch == "hero" or other is None:
         heading = _smooth([(lead[min(last, i + 1)][0] - lead[max(0, i - 1)][0], lead[min(last, i + 1)][2] - lead[max(0, i - 1)][2])
@@ -285,9 +301,9 @@ def escort_poses(shot, tracks, step=None, seen=None):
     else:
         # Where the line from the other aircraft through the hero points, turning the short way round from one
         # moment to the next: when the two pass each other the ship swings round in its own time.
-        line, gone = [], (seen or {}).get(shot["target"])
-        for when, a, b in zip(times, lead, other):
-            if line and gone is not None and when > gone:
+        line = []
+        for since, a, b in zip(after, lead, other):
+            if line and since > FADE:
                 line.append(line[-1])  # the other aircraft has left the film: the line stops turning
                 continue
             angle = math.atan2(a[0] - b[0], a[2] - b[2])
@@ -304,12 +320,20 @@ def escort_poses(shot, tracks, step=None, seen=None):
     fov, both = math.radians(shot["fov"]), watch == "both" and other is not None
     lenses = [(fov,)] * len(places)
     if both:  # the lens moves as gently as the ship does
-        lenses = _smooth([(_lens(pos, lead[i], other[i], fov),) for i, pos in enumerate(places)], max(1, round(1.5 / per)))
+        raw = [_lens(pos, lead[i], other[i], fov) for i, pos in enumerate(places)]
+        if any(after):
+            left = raw[g]
+            raw = [lens if not after[i] else fov + (left - fov) * _ease(1 - min(1, after[i] / LENS_BACK)) for i, lens in enumerate(raw)]
+        lenses = _smooth([(lens,) for lens in raw], max(1, round(1.5 / per)))
     poses = []
     for i, pos in enumerate(places):
         wide = min(WIDEST, max(fov, lenses[i][0]))  # smoothing runs on past either end
         if both:
             look = _hold(pos, lead[i], other[i], math.degrees(wide))
+            pull = 1 - min(1, after[i] / FADE)  # how much he still draws the picture once he has left the film
+            if pull < 1:
+                alone = _aim(pos, lead[i], 0, 0)[3:5]
+                look = (alone[0] + pull * ((look[0] - alone[0] + math.pi) % (2 * math.pi) - math.pi), alone[1] + pull * (look[1] - alone[1]))
         else:
             look = _aim(pos, other[i] if watch == "target" else lead[i], 0, 0)[3:5]
         poses.append([*pos, *look, math.radians(shot["roll"]), wide])

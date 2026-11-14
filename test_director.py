@@ -18,7 +18,7 @@ from director_api import make_server, videos_folder, working_folder
 from director_core import Conflict, Desk, framing, lead
 import flight_data
 import overlay
-from shot_plan import camera_pose, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
+from shot_plan import _last_seen, _steady, camera_pose, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows
 
 SHOT = {"id": "one", "name": "Pair", "start": 1, "end": 3, "kind": "pair",
@@ -253,10 +253,10 @@ class DeskTests(unittest.TestCase):
         commands = []
         def native(command, progress):
             commands.append(command)
-            if command.startswith("tracks "):
-                start = float(command.split()[1])
-                return [f"track {start + i/2} {ident} {x} 200 0 0 0 0"
-                        for i in range(5) for ident, x in ((19, 0), (10, 300))]
+            if command.startswith("tracks "):  # every step asked for, as the viewer answers
+                start, end, step = map(float, command.split()[1:4])
+                return [f"track {start + i * step:.4f} {ident} {x} 200 0 0 0 0"
+                        for i in range(round((end - start) / step) + 1) for ident, x in ((19, 0), (10, 300))]
             if command.startswith("time"):
                 return ["time 4.0 length 20.0 paused 0"]
             if command == "planes":
@@ -276,6 +276,8 @@ class DeskTests(unittest.TestCase):
         self.assertFalse(self.desk.snapshot()["preview"]["fresh"])
         self.assertIn("cam 0 1.00000000 fixed -253.76618037 260.00000000 118.33311329 -1.89422331 -0.15832816 0.00000000 1.04719755", commands)
         self.assertEqual(len([c for c in commands if c.startswith("tracks ")]), 3)
+        # Paths are read every 0.02 s from a tenth of a second early: read every 0.5 s, the recording pilot was off his path.
+        self.assertIn("tracks 0.90000000 3.00000000 0.0200000000", commands)
         plan[0] = {**SHOT, "name": "Renamed"}
         self.desk.save({"expected_revision": 2, "shots": plan})
         self.run_action({"action": "seek", "seconds": 2})
@@ -681,6 +683,23 @@ class DeskTests(unittest.TestCase):
         self.desk.worker.join(2)
         self.assertIn("not in the film", self.desk.snapshot()["job"]["error"])
 
+    def test_the_observer_lets_go_of_an_aircraft_that_leaves_the_film(self):
+        # He crosses ahead of the hero and leaves the film at 6 s (shot down). Held at his last place, he pulled the
+        # lens open to 90 degrees (or, past the widest, snapped it back to the shot's own) and stopped the turn dead.
+        shot = {**SHOT, "start": 0, "end": 12, "kind": "escort", "distance": 400, "height": -80, "orbit": -20, "fov": 9, "roll": 0}
+        tracks = {}
+        for i in range(25):
+            t = i / 2
+            tracks[t] = {19: (0, 1000, 300 * t, 0, 0, 0)}
+            if t <= 6:
+                tracks[t][10] = (600 - 200 * t, 1050, 300 * t + 400, 0, 0, 0)
+        poses = escort_poses(shot, _steady(shot, tracks), None, _last_seen(shot, tracks))
+        rate = [math.degrees((b[3] - a[3] + math.pi) % (2 * math.pi) - math.pi) / .5 for a, b in zip(poses, poses[1:])]
+        lens = [math.degrees(p[6]) for p in poses]
+        self.assertLess(max(abs(b - a) for a, b in zip(rate, rate[1:])), 6)  # degrees a second, from one half second to the next
+        self.assertLess(max(a - b for a, b in zip(lens, lens[1:])), 5)
+        self.assertAlmostEqual(lens[-1], 9, delta=.1)  # back on the shot's own lens
+
     def test_the_data_overlay_card(self):
         hero = [{"t": 10 + i / 50, "tas": 605.8, "alt": 1460.3, "climb": 35.2, "g": 7.76} for i in range(101)]
         near = [{"t": 10 + i / 50, "range": 355, "closure": 376.4} for i in range(51)]  # he leaves the film at 11 s
@@ -726,8 +745,8 @@ class DeskTests(unittest.TestCase):
             if command.startswith("tracks ") and " keep " in command:
                 return [f"tracks kept file {path}"]
             if command.startswith("tracks "):  # the cameras' own read of the stretch
-                start, end = map(float, command.split()[1:3])
-                return [f"track {start + i / 2} {ident} {x} 200 0 0 0 0" for i in range(int((end - start) * 2) + 1)
+                start, end, step = map(float, command.split()[1:4])
+                return [f"track {start + i * step:.4f} {ident} {x} 200 0 0 0 0" for i in range(round((end - start) / step) + 1)
                         for ident, x in ((19, 0), (10, 300))]
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"test")
