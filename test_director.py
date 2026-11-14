@@ -458,6 +458,14 @@ class DeskTests(unittest.TestCase):
         self.assertEqual((found["hero"], found["aircraft"][0]), (19, {"id": 10, "closest": 120, "typical": 310, "name": "YORK"}))
         self.assertIsNone(found["aircraft"][1]["name"])
 
+    def test_a_second_desk_cannot_take_the_port_of_a_running_one(self):
+        server = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)
+        try:
+            with self.assertRaises(OSError):
+                make_server(server.server_port, Path(self.temp.name) / "second", self.desk.media_root)
+        finally:
+            server.server_close()
+
     def test_working_folder_has_no_space_when_the_account_name_does(self):
         with patch("director_api.tempfile.gettempdir", return_value="C:/Users/John Smith/AppData/Local/Temp"):
             self.assertEqual(working_folder("C:/ah-quick-shots/.quickshots"), Path("C:/ah-quick-shots/.quickshots/media"))

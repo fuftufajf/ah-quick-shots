@@ -138,8 +138,14 @@ def videos_folder(root):
     return (videos if videos.is_dir() else Path.home()) / "AH Quick Shots"
 
 
+class Server(ThreadingHTTPServer):
+    # Windows lets servers that allow reuse share a port: a second start would split the page and the viewer
+    # between two desks. Without it the second start fails and the page opens the desk that is running.
+    allow_reuse_address = False
+
+
 def make_server(port=PORT, root=ROOT / ".quickshots", media_root=None, videos=None):
-    server = ThreadingHTTPServer((HOST, port), Handler)
+    server = Server((HOST, port), Handler)
     server.daemon_threads = True
     server.desk = Desk(root, media_root=media_root or working_folder(root), videos=videos or videos_folder(root))
     return server
