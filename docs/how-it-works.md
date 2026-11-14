@@ -374,7 +374,12 @@ each of these; a change in the viewer would make the workaround unnecessary.
   the film was touched 2, 5 or 8 s after a render, full every time 12 s or more
   had passed; after a 4 s stretch 3 s were enough). `open`, a new connection,
   `cams off` or a seek to the start did not help. The desk waits the stretch's
-  length and 1.5 s before each render.
+  length and 1.5 s before each render. Not fixed: the first render after `open`
+  can start with a silent second (measured -49 dB in its first second, twice).
+  Judging the sound: renders back to back keep the viewer from resting, and the
+  same shot's level moved by 9 dB from one series to the next (-21 to -30 dB in
+  the first second). Compare two ways of rendering only inside one series,
+  alternating them, with 30 s of rest before each render.
 - **Aircraft fading in after a seek.** Each aircraft fades in the first time
   it is drawn, each level of detail on its own, and after a seek every other
   aircraft is new to the viewer: `shot` catches them see-through, and so did
