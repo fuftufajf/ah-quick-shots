@@ -1,6 +1,7 @@
 @echo off
-rem Starts the local server without a console window and opens the page. The Windows package brings its own Python
-rem and ffmpeg in the folders python and ffmpeg beside this file; a copy of the source needs Python 3.11 or newer on the PATH.
+rem Starts the local server without a console window; the server opens the page once it listens. The Windows
+rem package brings its own Python and ffmpeg in the folders python and ffmpeg beside this file; a copy of the
+rem source needs Python 3.11 or newer on the PATH.
 cd /d "%~dp0"
 set PY=
 if exist "%~dp0python\pythonw.exe" (
@@ -16,6 +17,4 @@ if not defined PY (
   pause
   exit /b 1
 )
-start "" "%PY%" director_api.py
-timeout /t 1 /nobreak >nul
-start "" "http://127.0.0.1:8766/"
+start "" "%PY%" director_api.py --page

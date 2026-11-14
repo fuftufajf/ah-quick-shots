@@ -125,7 +125,11 @@ time, shot and camera; Videos folder, under The cut, opens it.
   finished video to your Videos folder; keep the app's own folder free of
   spaces too.
 - The server has no window. It runs until you sign out of Windows or end
-  `pythonw.exe` in Task Manager.
+  `pythonw.exe` in Task Manager. Starting AH Quick Shots from another folder
+  stops the one left running (unless it is rendering), so the page is always
+  the copy you started. Version 0.2.0 and older did not: the page came from the
+  old copy, blank or "404 Not Found". Then end `pythonw.exe` in Task Manager
+  once, or restart Windows, and start the new copy again.
 - **Updating.** A new version unzipped over a running desk is not used until
   the desk restarts: the page says so and has a Restart the desk button.
   Version 0.1.5 and older cannot tell, so end `pythonw.exe` in Task Manager once.

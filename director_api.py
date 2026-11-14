@@ -5,12 +5,16 @@ import mimetypes
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
+import urllib.request
+import webbrowser
 
 from director_core import Conflict, Desk
 
@@ -19,6 +23,11 @@ HOST, PORT = "127.0.0.1", 8766
 # A desk keeps running with the code it started with. When a new version is unzipped over it, the page (read
 # from disk) is new and the desk is not: the page's newer actions came back "Unknown action". The desk notices.
 CODE = [ROOT / name for name in ("director_api.py", "director_core.py", "flight_data.py", "shot_plan.py", "viewer_socket.py")] + [ROOT / "ui" / "dist" / "index.html"]
+
+
+# Python takes file types from the Windows registry, where some programs make .js plain text: the browser then runs
+# no script and the page stays blank. The page's own files have their types fixed here.
+TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".mp4": "video/mp4", ".bmp": "image/bmp"}
 
 
 def code_stamp():
@@ -60,7 +69,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         relative = unquote(urlsplit(self.path).path)
         if relative == "/api/state":
-            return self.send_json(200, {**self.server.desk.snapshot(), "stale": code_stamp() != self.server.code})
+            return self.send_json(200, {**self.server.desk.snapshot(), "stale": code_stamp() != self.server.code, "folder": str(ROOT)})
         if relative == "/api/flight":
             data = self.server.desk.flight_data()
             return self.send_json(200, data) if data else self.send_json(404, {"message": "Read a stretch's flight first"})
@@ -86,7 +95,7 @@ class Handler(BaseHTTPRequestHandler):
             if start > end:
                 return self.send_error(416)
         self.send_response(206 if requested else 200)
-        self.send_header("Content-Type", mimetypes.guess_type(path)[0] or "application/octet-stream")
+        self.send_header("Content-Type", TYPES.get(path.suffix.lower()) or mimetypes.guess_type(path)[0] or "application/octet-stream")
         self.send_header("Content-Length", str(end-start+1))
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Cache-Control", "no-store")
@@ -187,9 +196,56 @@ def make_server(port=PORT, root=ROOT / ".quickshots", media_root=None, videos=No
     return server
 
 
+def running_desk(port=PORT):
+    """The state of the desk answering on the port, or None when nothing, or something else, answers there."""
+    try:
+        with urllib.request.urlopen(f"http://{HOST}:{port}/api/state", timeout=5) as reply:
+            state = json.load(reply)
+    except (OSError, ValueError):
+        return None
+    return state if isinstance(state, dict) and "job" in state else None
+
+
+def listener(port=PORT):
+    """The process that listens on the port, from netstat (its state column is in the system's language)."""
+    rows = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True,
+                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.decode("ascii", "replace")
+    for cells in (row.split() for row in rows.splitlines()):
+        if len(cells) == 5 and cells[1] == f"{HOST}:{port}" and cells[2] == "0.0.0.0:0" and cells[4].isdigit():
+            return int(cells[4])
+    return None
+
+
+def take_port(port=PORT):
+    """A server for this desk, or None when the desk on the port is this copy's or busy: then its page is the one.
+    The desk of another copy is stopped first. The server has no window, so a desk started earlier from another
+    folder, often an older version since deleted, kept the port: the new one could not start and the page came from
+    the old one, blank or "404 Not Found"."""
+    try:
+        return make_server(port)
+    except OSError:
+        state = running_desk(port)
+        if state is None:
+            raise
+    if state.get("folder") == str(ROOT) or (state["job"] or {}).get("running"):
+        return None
+    pid = listener(port)
+    if pid is None:
+        raise OSError(f"cannot tell which program holds port {port}")
+    os.kill(pid, signal.SIGTERM)
+    for _ in range(50):
+        time.sleep(.1)
+        try:
+            return make_server(port)
+        except OSError:
+            pass
+    raise OSError(f"the desk of another copy did not let go of port {port}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--page", action="store_true", help="open the page once the desk listens")
     args = parser.parse_args()
     if args.check:
         import unittest
@@ -197,8 +253,19 @@ def main():
         if not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful():
             raise SystemExit(1)
         return
+    try:
+        server = take_port()
+    except OSError as error:  # the server has no window: say it in one
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, f"AH Quick Shots could not start: {error}.\n\nAnother program may use port "
+                                         f"{PORT}. Close it, or restart Windows, and start AH Quick Shots again.", "AH Quick Shots", 0x10)
+        raise SystemExit(1)
+    if args.page:
+        webbrowser.open(f"http://{HOST}:{PORT}/")
+    if server is None:
+        return
     print(f"AH Quick Shots: http://{HOST}:{PORT}", flush=True)
-    with make_server() as server:
+    with server:
         server.serve_forever()
 
 
