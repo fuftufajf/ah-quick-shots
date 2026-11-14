@@ -682,11 +682,11 @@ class Desk:
         elif draft["id"] in self.built:
             raise ValueError(self.built[draft["id"]])
 
-    def _trails(self, project, row, width, height, fps, rgb):
+    def _trails(self, project, row, width, height, fps, colours, style):
         """An ASS script of the wingtip trails over one video of a cut (see trails.py), in the working folder. The
         video runs the row's shots end to end (the gaps between them skipped), from the first one's start."""
         first, last = row[0]["start"], row[-1]["end"]
-        flight = self._read_flight(project, max(0.0, first - trails.STYLE["seconds"]), last)
+        flight = self._read_flight(project, max(0.0, first - style["seconds"]), last)
         spans, offset = [], 0.0
         for shot in row:
             key = camera_key(shot)
@@ -703,9 +703,8 @@ class Desk:
             t = min(shot["end"], shot["start"] + k / fps - begin)
             frames.append((t, self._eye(lines, t, shot)))
         radii = {int(ident): plane["radius"] for ident, plane in flight["data"]["aircraft"].items()}
-        ids = sorted({shot[key] for shot in row for key in ("hero", "target") if shot.get(key) is not None})
         path = self.media_root / (uuid.uuid4().hex + ".ass")
-        path.write_text(trails.script(frames, flight["rows"], radii, ids, flight["data"]["step"], fps, width, height, rgb),
+        path.write_text(trails.script(frames, flight["rows"], radii, colours, flight["data"]["step"], fps, width, height, style),
                         encoding="utf-8")
         return path
 
@@ -996,10 +995,13 @@ class Desk:
         if raw.get("trails"):
             if not shutil.which("ffmpeg"):
                 raise ValueError("Trails need ffmpeg: install it, then try again")
-            rgb = trails.colour(raw.get("trail_colour", "#ffffff"))
+            asked = raw["trails"] if isinstance(raw["trails"], dict) else {}
+            lead, opponent = (trails.colour(asked.get(key, default)) for key, default in (("lead", "#e8f4ff"), ("opponent", "#ff9e6b")))
+            drawing = trails.style_for(number(asked.get("seconds", trails.STYLE["seconds"]), *trails.SECONDS, "trail length"))
             # Worked out before the first render, as the overlay's numbers are: touching the film between renders can
             # thin the next one's sound (TAIL).
-            scripts = [self._trails(project, row, int(width), int(height), int(fps), rgb) for row in rows]
+            scripts = [self._trails(project, row, int(width), int(height), int(fps), trails.paint(row, lead, opponent), drawing)
+                       for row in rows]
         filters = style(int(width), int(height), bool(raw.get("look")), bool(raw.get("haze"))) if shutil.which("ffmpeg") else ""
         for n, row in enumerate(rows, 1):
             self._cut(project, row)

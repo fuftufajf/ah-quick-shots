@@ -252,9 +252,14 @@ in front of the horizon is misted with it. Haze and film look on 5 s of 4K:
 53 s.
 
 Trails (experimental, `trails.py`) draws two smooth lines from the wingtips of
-each shot's aircraft, fading over 2.5 s behind them, with a soft glow, in a
-colour the page picks. Before the first render the desk keeps every aircraft's
-track from 2.5 s before the video, and asks the viewer's `project` where the
+each shot's aircraft with a soft glow: the lead aircraft in one colour, his
+opponent in another. Short (2.5 s) they follow the aircraft; lasting (up to a
+minute) they fade more slowly and narrow less, so the fight's ribbons stay in
+the sky for a wide shot afterwards (halfway back a minute-long trail is still
+three quarters as bright). The newest 1.5 s are drawn through every kept step,
+the rest through about 300 points fixed in film time, so a long trail neither
+shimmers nor slows the render much. Before the first render the desk keeps
+every aircraft's track from the trail's length before the video, and asks the viewer's `project` where the
 shot's camera stands at every frame: a moving camera is first placed on its
 curve (a uniform Catmull-Rom through the shot's points, as the viewer moves it:
 within 0.05 ft halfway between points), then projected as a still one. Its eye
@@ -457,13 +462,13 @@ most 5 s later). One action runs at a time; a second is refused while
   `state.proposals` gets `{id, score, size, quality}` each: `score` the share of
   the shot with both aircraft in frame, `size` the lead's mean width in the
   picture, `quality` (0 to 1) how well it reads. It ignores terrain
-- `export_cut` `{shot_ids?, quality, apart?, blur?, look?, haze?, trails?, trail_colour?}` — draft|final|4k: the chosen saved shots
+- `export_cut` `{shot_ids?, quality, apart?, blur?, look?, haze?, trails?}` — draft|final|4k: the chosen saved shots
   (all when omitted) as one 16:9 MP4 with sound, the gaps left out; with
   `apart: true` an MP4 of each shot, in time order. Overlapping
   shots cannot share a video: `state.preview.files` then lists several,
   `[{url, file, shots}]`; `file` is where the video was kept (`state.videos`
   is that folder). `labels` `{shot id: camera name}` names each shot's camera
-  in its file name; without it the shot's `kind` is used. `blur: true` (needs ffmpeg) adds motion blur, `look: true` (needs ffmpeg) the film look, `haze: true` (needs ffmpeg) haze along the horizon, `trails: true` (needs ffmpeg) wingtip trails in `trail_colour` (`#rrggbb`, white by default).
+  in its file name; without it the shot's `kind` is used. `blur: true` (needs ffmpeg) adds motion blur, `look: true` (needs ffmpeg) the film look, `haze: true` (needs ffmpeg) haze along the horizon, `trails` (needs ffmpeg) wingtip trails: `true`, or `{lead, opponent, seconds}` with colours as `#rrggbb` and 1 to 120 seconds.
   With `overlay: true` (needs ffmpeg, `state.ffmpeg`)
   every entry of `files` also has `overlays`: the 16:9 and the 9:16 data overlay kept beside it
 - POST `/api/folder` `{}` shows the videos folder in Explorer

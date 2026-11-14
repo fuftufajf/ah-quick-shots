@@ -497,8 +497,8 @@ class DeskTests(unittest.TestCase):
         # An aircraft flying +z at 300 ft/s, seen from the side 400 ft off; three frames at 60 fps, the middle one blind.
         rows = [(t / 50, 0.0, 1000.0, 300 * t / 50, 0.0, 0.0, 0.0, 0.0, 0.0, 300.0) for t in range(0, 200)]
         eye = (-400.0, 1000.0, 300.0 * 3.5, -math.pi / 2, 0.0, 0.0, 1.2)  # yaw -pi/2 looks toward +x
-        text = trails.script([(3.5, eye), (3.5 + 1 / 60, None), (3.5 + 2 / 60, eye)], {7: rows}, {7: 18}, [7], .02, 60, 1920, 1080,
-                             trails.colour("#ff8000"))
+        text = trails.script([(3.5, eye), (3.5 + 1 / 60, None), (3.5 + 2 / 60, eye)], {7: rows}, {7: 18}, {7: trails.colour("#ff8000")},
+                             .02, 60, 1920, 1080)
         events = [line for line in text.splitlines() if line.startswith("Dialogue:")]
         firsts = [e for e in events if ",0:00:00.00,0:00:00.01," in e]
         style = trails.STYLE
@@ -511,12 +511,26 @@ class DeskTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             trails.colour("red")
 
+    def test_each_side_has_its_colour_and_a_lasting_trail_keeps_the_fight_in_the_sky(self):
+        shots = [{"hero": 23, "target": 30}, {"hero": 30, "target": None}, {"hero": 23, "target": 45}]
+        self.assertEqual(trails.paint(shots, "you", "them"), {23: "you", 30: "them", 45: "them"})
+        lasting = trails.style_for(60)
+        self.assertEqual(trails.style_for(trails.STYLE["seconds"]), trails.STYLE)
+        self.assertGreater((1 - .5) ** lasting["fade"], .75)  # halfway back a lasting trail is still three quarters as bright
+        # A minute of trail through about 300 points, the newest 1.5 s at every kept step, fixed in film time.
+        rows = [(n / 50, 0.0, 0.0, float(n), 0.0, 0.0, 0.0, 0.0, 0.0, 50.0) for n in range(4000)]
+        times, edge = trails._samples(rows, 70.0, .02, lasting)
+        self.assertEqual((times[0], times[-1], edge), (10.0, 70.0, 68.5))
+        self.assertLess(len(times), 300 + 76 + 3)
+        later, _ = trails._samples(rows, 70.0 + 1 / 60, .02, lasting)
+        self.assertEqual(set(t for t in times if 12 < t < 68) - set(later), set())  # the old part stays where it was
+
     @unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
     def test_the_trail_filters_lay_a_light_line_over_the_picture(self):
         rows = [(t / 50, 0.0, 1000.0, 300 * t / 50, 0.0, 0.0, 0.0, 0.0, 0.0, 300.0) for t in range(0, 200)]
         eye = (-400.0, 1000.0, 300.0 * 3.5, -math.pi / 2, 0.0, 0.0, 1.2)
         ass = Path(self.temp.name) / "t.ass"
-        ass.write_text(trails.script([(3.5, eye)], {7: rows}, {7: 18}, [7], .02, 30, 320, 180), encoding="utf-8")
+        ass.write_text(trails.script([(3.5, eye)], {7: rows}, {7: 18}, {7: (255, 255, 255)}, .02, 30, 320, 180), encoding="utf-8")
         raw = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=0x203040:s=320x180:d=0.03:r=30",
                               "-vf", trails.filters(ass, 180), "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"],
                              capture_output=True, check=True).stdout

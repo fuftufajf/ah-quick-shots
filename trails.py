@@ -1,5 +1,6 @@
 """Trails from the wingtips, drawn over a render: two smooth lines behind each aircraft of the shot, fading with
-age, with a soft glow, in a colour of the user's choosing.
+age, with a soft glow, one colour for the lead aircraft and another for his opponent. Short, they follow the
+aircraft; lasting (up to a minute), they stay in the sky as the ribbons of the fight, to be looked at afterwards.
 
 Where the viewer's camera stands at every frame comes from its own projection (`project`'s eye lines); where the
 wingtips were, from the kept tracks. Checked against the viewer's own placing of the aircraft at 1080p: 0.7 px
@@ -20,7 +21,28 @@ STYLE = {
     "glow_gain": 3.5,    # the blurred line brightened this many times
     "bands": 14,         # steps of opacity along a trail
     "smooth": 2,         # wingtip positions averaged over this many samples either side (not the newest)
+    "fine": 1.5,         # the newest seconds sampled at every kept step; before them, about 300 samples a trail
+    "thin": 1.5,         # screen points nearer than this many pixels to the last one kept are dropped
 }
+SECONDS = (1.0, 120.0)  # the lengths a page may ask for
+
+
+def style_for(seconds):
+    """STYLE for a trail `seconds` long. A lasting one fades more slowly and narrows less, so the fight's ribbons stay
+    to be read: at a minute, its middle is still 0.77 as bright as its newest part."""
+    keep = min(1.0, STYLE["seconds"] / seconds) ** .5
+    return {**STYLE, "seconds": seconds, "fade": STYLE["fade"] * keep, "tail": STYLE["tail"] + (.5 - STYLE["tail"]) * (1 - keep)}
+
+
+def paint(shots, lead, opponent):
+    """{aircraft id: colour}: each shot's lead aircraft in `lead`, its opponent in `opponent` (the first shot to name
+    an aircraft decides)."""
+    colours = {}
+    for shot in shots:
+        for key, rgb in (("hero", lead), ("target", opponent)):
+            if shot.get(key) is not None:
+                colours.setdefault(shot[key], rgb)
+    return colours
 
 
 def colour(text):
@@ -129,6 +151,15 @@ def _catmull(points, per=3):
     return out
 
 
+def _thin(points, gap):
+    """Screen points without those nearer than `gap` pixels to the last one kept; the newest is always kept."""
+    kept = [points[0]]
+    for p in points[1:-1]:
+        if math.hypot(p[0] - kept[-1][0], p[1] - kept[-1][1]) >= gap:
+            kept.append(p)
+    return kept + [points[-1]] if len(points) > 1 else kept
+
+
 def _ribbon(points, widths):
     """A closed outline round a polyline of (x, y), `widths[i]` wide at each point."""
     left, right = [], []
@@ -147,9 +178,27 @@ def _clock(cs):
     return f"{cs // 360000}:{cs // 6000 % 60:02d}:{cs // 100 % 60:02d}.{cs % 100:02d}"
 
 
-def script(frames, tracks, radii, ids, step, fps, w, h, rgb=(255, 255, 255), style=STYLE):
-    """An ASS script drawing the trails of aircraft `ids` on every frame. frames: [(film time, eye or None)], one
-    per video frame from its first; tracks: {id: kept rows}; radii: {id: visible radius in feet}."""
+def _samples(rows, t, step, style):
+    """The times a trail is drawn through at film time t, oldest first: the kept steps of the newest seconds, and
+    before them a coarser grid fixed in film time (so the old part does not shimmer from frame to frame)."""
+    first = max(rows[0][0], t - style["seconds"])
+    coarse = max(step, round((style["seconds"] - style["fine"]) / 300 / step) * step)
+    edge = max(first, t - style["fine"])
+    times = [first]
+    for grid, lo, hi in ((coarse, first, edge), (step, edge, t)):
+        n = math.ceil((lo - rows[0][0]) / grid - 1e-9)
+        while rows[0][0] + n * grid < hi - 1e-6:
+            s = rows[0][0] + n * grid
+            if s > times[-1] + 1e-6:
+                times.append(s)
+            n += 1
+    return times + [t], edge
+
+
+def script(frames, tracks, radii, colours, step, fps, w, h, style=STYLE):
+    """An ASS script drawing the trails of the aircraft in `colours` ({id: (r, g, b)}) on every frame. frames: [(film
+    time, eye or None)], one per video frame from its first; tracks: {id: kept rows}; radii: {id: visible radius in
+    feet}."""
     unit = h / 1080
     lines = ["[Script Info]", "ScriptType: v4.00+", f"PlayResX: {w}", f"PlayResY: {h}", "WrapStyle: 2", "ScaledBorderAndShadow: yes",
              "YCbCr Matrix: None", "", "[V4+ Styles]",
@@ -157,7 +206,7 @@ def script(frames, tracks, radii, ids, step, fps, w, h, rgb=(255, 255, 255), sty
              "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
              "Style: T,Arial,20,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1", "",
              "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
-    fill = f"&H{rgb[2]:02X}{rgb[1]:02X}{rgb[0]:02X}&"
+    tips = {}  # (id, film time): the two wingtips, worked out once for every frame that draws through them
     for k, (t, eye) in enumerate(frames):
         # Frame k shows at k / fps: an event from floor(100 k / fps) to floor(100 (k + 1) / fps) centiseconds covers
         # it and no other frame.
@@ -165,21 +214,22 @@ def script(frames, tracks, radii, ids, step, fps, w, h, rgb=(255, 255, 255), sty
         if eye is None or end <= begin:
             continue
         cam, span = camera(eye), f"{_clock(begin)},{_clock(end)}"
-        for ident in ids:
+        for ident, rgb in colours.items():
             rows = tracks.get(ident)
             if not rows or not rows[0][0] <= t <= rows[-1][0]:
                 continue
-            first = max(rows[0][0], t - style["seconds"])
-            n0, n1 = math.ceil((first - rows[0][0]) / step - 1e-9), math.floor((t - rows[0][0]) / step - 1e-9)
-            times = [first] + [rows[0][0] + n * step for n in range(n0, n1 + 1) if first + 1e-6 < rows[0][0] + n * step < t - 1e-6] + [t]
-            tips = ([], [])
+            fill = f"&H{rgb[2]:02X}{rgb[1]:02X}{rgb[0]:02X}&"
+            times, edge = _samples(rows, t, step, style)
             for s in times:
-                pos, (yaw, pitch, roll) = at(rows, s, step)
-                for side, p in enumerate(wingtips(pos, yaw, pitch, roll, radii.get(ident, 18) * style["span"])):
-                    tips[side].append(p)
-            for side in tips:
+                if (ident, s) not in tips:
+                    pos, (yaw, pitch, roll) = at(rows, s, step)
+                    tips[ident, s] = wingtips(pos, yaw, pitch, roll, radii.get(ident, 18) * style["span"])
+            fine = next(i for i, s in enumerate(times) if s >= edge - 1e-6)
+            for side in (0, 1):
+                points = [tips[ident, s][side] for s in times]
+                points = points[:fine] + _smooth(points[fine:], style["smooth"])  # only the steps fine enough to jitter
                 runs, run = [], []
-                for s, p in zip(times, _smooth(side, style["smooth"])):
+                for s, p in zip(times, points):
                     q = to_screen(cam, p, w, h)
                     if q is None:  # behind the camera: the trail breaks there
                         runs.append(run)
@@ -188,7 +238,7 @@ def script(frames, tracks, radii, ids, step, fps, w, h, rgb=(255, 255, 255), sty
                         run.append((q[0], q[1], (t - s) / style["seconds"]))
                 runs.append(run)
                 for run in (r for r in runs if len(r) > 1):
-                    lines += _bands(_catmull(run), span, fill, unit, style)
+                    lines += _bands(_thin(_catmull(run), style["thin"] * unit), span, fill, unit, style)
     return "\n".join(lines) + "\n"
 
 

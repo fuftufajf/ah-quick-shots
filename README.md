@@ -102,8 +102,10 @@ unzipping.
    a film camera leaves on fast motion; the render takes about four times as
    long. Film look (a film camera's colour, glow, vignette and grain, fitted to
    a DaVinci Resolve grade of this footage), Haze (mist along the horizon) and
-   Trails (two smooth lines from the wingtips of the shot's aircraft, in a
-   colour you pick) are experimental and still being tuned. Add my kills makes four
+   Trails (two smooth lines from the wingtips of the shot's aircraft, yours and
+   your opponent's in colours you pick; short ones follow the aircraft, lasting
+   ones leave the fight's ribbons in the sky for a wide shot afterwards) are
+   experimental and still being tuned. Add my kills makes four
    shots for every kill of yours: you closing in, your guns, him going down,
    you flying on. Take-offs & landings finds yours in your flight path and adds
    a few shots for each: the roll, the wheels, the lift-off with the camera
