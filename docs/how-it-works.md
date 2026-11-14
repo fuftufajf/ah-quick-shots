@@ -225,6 +225,16 @@ streak (two a frame at 120 fps for 60 fps), and ffmpeg's motion interpolation
 took 130 times the film's length. The sound is the first pass's. Measured on a
 7 s shot at 1080p60: 70 s with blur, 17 s without.
 
+Film look is applied by ffmpeg in the same step (`look()` in director_core.py).
+Its colour is `looks/film.cube`, a 17-point LUT fitted to three stills of this
+footage before and after a DaVinci Resolve grade (Film Look Creator, Cinematic,
+colour at half strength): on a still it was not fitted to, it takes the mean
+difference from that grade from 7.5-8.4 to 4.2-5.8 (of 255). The rest of that
+difference is the grade's haze on the horizon, which follows depth, not colour.
+Then bloom, a red halation round highlights, a vignette (corners 10% darker) and
+grain, sized to the picture's height. The same 7 s shot: 31 s with the look,
+85 s with the look and motion blur.
+
 Data overlay (16:9 and 9:16) adds, beside every rendered video, two transparent
 films of the same length and frame rate to lay over it in an editor: a card with
 the lead aircraft's true airspeed (mph), height (ft), climb (ft/min) and G, and,
@@ -416,13 +426,13 @@ most 5 s later). One action runs at a time; a second is refused while
   `state.proposals` gets `{id, score, size, quality}` each: `score` the share of
   the shot with both aircraft in frame, `size` the lead's mean width in the
   picture, `quality` (0 to 1) how well it reads. It ignores terrain
-- `export_cut` `{shot_ids?, quality, apart?, blur?}` — draft|final|4k: the chosen saved shots
+- `export_cut` `{shot_ids?, quality, apart?, blur?, look?}` — draft|final|4k: the chosen saved shots
   (all when omitted) as one 16:9 MP4 with sound, the gaps left out; with
   `apart: true` an MP4 of each shot, in time order. Overlapping
   shots cannot share a video: `state.preview.files` then lists several,
   `[{url, file, shots}]`; `file` is where the video was kept (`state.videos`
   is that folder). `labels` `{shot id: camera name}` names each shot's camera
-  in its file name; without it the shot's `kind` is used. `blur: true` (needs ffmpeg) adds motion blur.
+  in its file name; without it the shot's `kind` is used. `blur: true` (needs ffmpeg) adds motion blur, `look: true` (needs ffmpeg) the film look.
   With `overlay: true` (needs ffmpeg, `state.ffmpeg`)
   every entry of `files` also has `overlays`: the 16:9 and the 9:16 data overlay kept beside it
 - POST `/api/folder` `{}` shows the videos folder in Explorer

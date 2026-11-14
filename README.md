@@ -100,7 +100,8 @@ unzipping.
    to your opponent, to lay over it in DaVinci Resolve or another editor: one
    for a 16:9 timeline, one for a 9:16 reel. Tick Motion blur for the streak
    a film camera leaves on fast motion; the render takes about four times as
-   long. Add my kills makes four
+   long. Tick Film look for a film camera's colour, glow, vignette and grain,
+   fitted to a DaVinci Resolve grade of this footage. Add my kills makes four
    shots for every kill of yours: you closing in, your guns, him going down,
    you flying on. Take-offs & landings finds yours in your flight path and adds
    a few shots for each: the roll, the wheels, the lift-off with the camera

@@ -403,16 +403,33 @@ class DeskTests(unittest.TestCase):
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"fast")
             return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
-        def blend(parts, target, seconds, fps):
-            blends.append(([p.exists() for p in parts], seconds, fps))
+        def blend(parts, target, seconds, fps, height=None):
+            blends.append(([p.exists() for p in parts], seconds, fps, height))
             Path(target).write_bytes(b"cut")
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 3, "end": 5, "kind": "cockpit"}]})
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.blend", blend):
             self.run_action({"action": "export_cut", "quality": "final", "blur": True})
+            self.run_action({"action": "export_cut", "quality": "4k", "blur": True, "look": True})
         videos = [c.split() for c in commands if c.startswith("video ")]
-        self.assertEqual([(v[1], v[2], v[4:]) for v in videos], [(f"{1 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
-        self.assertEqual(blends, [([True] * 4, 2, 60)])
+        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[:4]], [(f"{1 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
+        self.assertEqual(blends, [([True] * 4, 2, 60, None), ([True] * 4, 2, 60, 2160)])
+
+    def test_the_film_look_goes_on_in_ffmpeg_even_with_no_lead_in_to_cut(self):
+        trims = []
+        def native(command, progress):
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"film")
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+        def trim(source, target, seconds, height=None):
+            trims.append((seconds, height))
+            Path(target).write_bytes(b"cut")
+        self.desk.viewer.command = native
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 0, "end": 2, "kind": "cockpit"}]})
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", trim):
+            self.run_action({"action": "export_cut", "quality": "draft", "look": True})
+            self.run_action({"action": "export_cut", "quality": "draft"})
+        self.assertEqual(trims, [(0, 540)])  # at the film's start there is no lead-in: only the look needs ffmpeg
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg")
     def test_the_blend_keeps_the_film_s_length_at_its_own_frame_rate(self):
@@ -420,12 +437,16 @@ class DeskTests(unittest.TestCase):
         for part in parts:
             subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=120:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
                             "-c:v", "libx264", "-c:a", "aac", str(part)], check=True)
-        director_core.blend(parts, target, .5, 60)
+        director_core.blend(parts, target, .5, 60, 90)  # with the film look: its filters fit in the blend's graph
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
                                 "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.split()
         self.assertEqual(probe[0], "video,60/1,60")
         self.assertTrue(probe[1].startswith("audio,"))
         self.assertFalse(any(p.exists() for p in parts))
+        director_core.trim(target, parts[0], .5, 90)  # and on their own, as the lead-in is cut
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,nb_frames",
+                                "-of", "csv=p=0", str(parts[0])], capture_output=True, text=True).stdout.split()
+        self.assertEqual(probe[0], "video,30")
 
     def test_take_offs_and_touchdowns_are_found_in_the_filmer_s_path(self):
         # Parked, a roll, a lift-off at 18 s, a flight, a landing at 60 s that stops at 64 s; then a second sortie
@@ -843,7 +864,7 @@ class DeskTests(unittest.TestCase):
             return target
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [SHOT, {**SHOT, "id": "two", "start": 5, "end": 7, "target": None, "kind": "cockpit"}]})
-        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", lambda a, b, s: Path(b).write_bytes(b"cut")), \
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", lambda a, b, s, h=None: Path(b).write_bytes(b"cut")), \
                 patch("director_core.overlay.render", draw):
             self.run_action({"action": "export_cut", "quality": "final", "overlay": True})
             # The overlays are drawn while the desk goes on: the render's job is over, the viewer free.

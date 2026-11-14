@@ -30,6 +30,10 @@ CLIP = "960 540 30"
 # a frame at 120 showed a double image, not a streak; ffmpeg's motion interpolation took 130 times the film's length.
 FASTEST = 120
 PASSES = 4
+# The film look: the colour of a DaVinci Resolve grade (Film Look Creator), fitted as a LUT to stills of the same
+# footage before and after it, then bloom, a red halation round highlights, a vignette and grain much as it adds them:
+# corners 10% darker, grain about 1/255 in a flat sky. Sizes scale with the picture's height.
+LOOK = Path(__file__).resolve().parent / "looks" / "film.cube"
 # After a jump in the film the viewer fades the aircraft in over about two seconds of real time, however many frames
 # it draws (measured: nearly invisible at once, solid after 1.7 s). A still taken sooner shows them see-through.
 FADE = 2.0
@@ -75,19 +79,32 @@ def camera_key(shot):
     return json.dumps({k: v for k, v in shot.items() if k not in ("id", "name")}, sort_keys=True)
 
 
-def trim(source, target, seconds):
-    """`source` without its first `seconds`, as `target`. Re-encoded so the cut is frame-exact (a stream copy cuts
-    at keyframes), close to the viewer's own quality (about 21 Mbit/s at 1080p60, AAC 192 kbit/s)."""
-    encode(["-ss", f"{seconds:.6f}", "-i", str(source)], [], [source], target, "cut the lead-in off the video")
+def look(height):
+    """ffmpeg filters giving a video `height` pixels high the film look (see LOOK): one input, one output."""
+    cube = LOOK.as_posix().replace(":", r"\:")  # a filter graph reads a colon as the end of an option
+    return (f"lut3d=file='{cube}':interp=tetrahedral,format=gbrp,split=3[lk0][lk1][lk2];"
+            f"[lk1]curves=all='0/0 0.6/0 1/1',gblur=sigma={height / 108:.1f}[lkb];"
+            f"[lk2]curves=all='0/0 0.75/0 1/1',gblur=sigma={height / 270:.1f},colorchannelmixer=gg=.4:bb=.15[lkh];"
+            f"[lk0][lkb]blend=all_mode=screen:all_opacity=.15[lkm];[lkm][lkh]blend=all_mode=screen:all_opacity=.2,"
+            f"vignette=angle=.22,format=yuv420p,noise=c0s=3:c0f=t+u")
 
 
-def blend(sources, target, seconds, fps):
+def trim(source, target, seconds, height=None):
+    """`source` without its first `seconds`, as `target`, with the film look when `height` is given. Re-encoded so
+    the cut is frame-exact (a stream copy cuts at keyframes), close to the viewer's own quality (about 21 Mbit/s at
+    1080p60, AAC 192 kbit/s)."""
+    encode(["-ss", f"{seconds:.6f}", "-i", str(source)], ["-vf", look(height)] if height else [], [source], target,
+           "cut the lead-in off the video")
+
+
+def blend(sources, target, seconds, fps, height=None):
     """The passes of a blurred video (see PASSES), as `target` at `fps` with the first pass's sound: as `trim`."""
     rate = FASTEST * len(sources)
     each = rate // fps  # woven frames in one frame's time; the first half of them make it
     weave = "".join(f"[{n}:v]setpts=PTS+{n}/{rate}/TB[w{n}];" for n in range(len(sources)))
     graph = (weave + "".join(f"[w{n}]" for n in range(len(sources))) + f"interleave=nb_inputs={len(sources)},"
-             f"tmix=frames={each // 2},select='eq(mod(n,{each}),{each // 2 - 1})',setpts=N/{fps}/TB[v]")
+             f"tmix=frames={each // 2},select='eq(mod(n,{each}),{each // 2 - 1})',setpts=N/{fps}/TB"
+             + (f",{look(height)}" if height else "") + "[v]")
     encode([a for s in sources for a in ("-ss", f"{seconds:.6f}", "-i", str(s))],
            ["-filter_complex", graph, "-map", "[v]", "-map", "0:a?", "-r", str(fps)], sources, target, "blend the motion blur")
 
@@ -302,10 +319,10 @@ class Desk:
     def command(self, command):
         return self.viewer.command(command, self.progress)
 
-    def _render(self, start, end, path, size, label="", blur=None):
+    def _render(self, start, end, path, size, label="", blur=None, styled=False):
         """One video of a stretch, with the film's sound whole (see TAIL) and the aircraft solid from its first frame
         when ffmpeg is there to cut off the lead-in (see LEAD). `blur`: the frame rate to blend the passes of a `size`
-        at FASTEST down to (see PASSES)."""
+        at FASTEST down to (see PASSES). `styled`: with the film look (see LOOK)."""
         early = min(LEAD, start) if shutil.which("ffmpeg") else 0
         early = early if early >= .05 else 0
         with self.lock:  # the wait is part of what this clip takes
@@ -321,7 +338,8 @@ class Desk:
             # with a still drawn, did not. Paused, not playing: playing before a render thins its sound (see LEAD).
             self._seek(start - early)
             time.sleep(2 * self.pace)
-        whole = path.with_name(path.stem + "-lead" + path.suffix) if early or blur else path
+        height = int(size.split()[1]) if styled else None
+        whole = path.with_name(path.stem + "-lead" + path.suffix) if early or blur or styled else path
         parts = [whole.with_name(f"{whole.stem}{n}{whole.suffix}") for n in range(PASSES)] if blur else [whole]
         for n, part in enumerate(parts):  # only the first pass's sound is kept: the others need not wait for quiet
             if n:
@@ -331,10 +349,10 @@ class Desk:
         self.quiet = time.monotonic() + (end - start + early + TAIL) * self.pace
         if blur:
             self.progress("Blending the motion blur with ffmpeg")
-            blend(parts, path, early, blur)
-        elif early:
-            self.progress("Cutting off the lead-in with ffmpeg")
-            trim(whole, path, early)
+            blend(parts, path, early, blur, height)
+        elif early or styled:
+            self.progress("Giving it the film look with ffmpeg" if styled else "Cutting off the lead-in with ffmpeg")
+            trim(whole, path, early, height)
 
     def start(self, raw):
         action = raw.get("action")
@@ -887,12 +905,13 @@ class Desk:
                 self.data["job"]["expect"] = round(sum(s["end"] - s["start"] for s in shots) + 2 * len(rows), 1)
         width, height, fps = RENDERS[quality].split()
         blur = int(fps) if raw.get("blur") and shutil.which("ffmpeg") else None
+        styled = bool(raw.get("look")) and bool(shutil.which("ffmpeg"))
         for n, row in enumerate(rows, 1):
             self._cut(project, row)
             path = self.media_root / (uuid.uuid4().hex + ".mp4")
             self._render(row[0]["start"], row[-1]["end"], path, f"{width} {height} {FASTEST}" if blur else RENDERS[quality],
                          f"Rendering {len(row)} shot{'s' * (len(row) > 1)} at {size}" + (" with motion blur" if blur else "")
-                         + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""), blur)
+                         + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""), blur, styled)
             saved = self._keep(path, project, row, raw.get("labels"))
             files.append({"url": "/media/" + path.name, "file": str(saved), "shots": [s["id"] for s in row]})
             record = {"file": str(saved), "shots": [s["id"] for s in row]}

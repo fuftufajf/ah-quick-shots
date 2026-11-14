@@ -23,11 +23,11 @@ FFMPEG = ("https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9
 
 
 def wanted(path):
-    """What a player needs: the app, its ready page, its font, the documents. Not dev/, the tests or ui/src."""
+    """What a player needs: the app, its ready page, its font, its look, the documents. Not dev/, the tests or ui/src."""
     if "/" not in path:
         return path.endswith(".py") and path != "test_director.py" or path in (
             "AH Quick Shots.bat", "LICENSE", "README.md", "THIRD-PARTY-NOTICES.md")
-    return path.startswith(("ui/dist/", "fonts/", "docs/"))
+    return path.startswith(("ui/dist/", "fonts/", "docs/", "looks/"))
 
 
 def download(url, sha256):

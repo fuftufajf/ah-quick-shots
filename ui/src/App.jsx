@@ -38,6 +38,7 @@ export function App() {
   const [apart, setApart] = useState(false);
   const [withOverlay, setWithOverlay] = useState(false);
   const [withBlur, setWithBlur] = useState(false);
+  const [withLook, setWithLook] = useState(false);
   const [hidden, setHidden] = useState("");
   const [closedVideo, setClosedVideo] = useState("");
   const [sending, setSending] = useState(false);
@@ -657,7 +658,8 @@ export function App() {
           <select aria-label="Render as" value={apart ? "apart" : "one"} onChange={e => setApart(e.target.value === "apart")} title="One video with the gaps left out, or a file for every shot to cut in an editor"><option value="one">One video</option><option value="apart">A file per shot</option></select>
           <label className="option" title={desk.ffmpeg ? "Beside every video, a transparent film of your speed, height, climb and G and the range to your opponent, to lay over it in an editor: one for a 16:9 timeline, one for a 9:16 reel" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withOverlay && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithOverlay(e.target.checked)}/> Data overlay (16:9 and 9:16)</label>
           <label className="option" title={desk.ffmpeg ? "Film Viewer renders the video four times, a quarter of a frame apart, and ffmpeg blends them like a camera's shutter: real blur on fast motion. Takes about four times as long" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withBlur && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithBlur(e.target.checked)}/> Motion blur</label>
-          <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; action("export_cut", {shot_ids: chosen, quality, apart, overlay: withOverlay && !!desk.ffmpeg, blur: withBlur && !!desk.ffmpeg, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))}); }} title={dirty ? "Add or update the shot first" : apart ? "A video of each ticked shot, in its own file" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>
+          <label className="option" title={desk.ffmpeg ? "Colour, bloom, a red glow round highlights, a vignette and grain, like a film camera: fitted to a DaVinci Resolve grade of this footage" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withLook && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithLook(e.target.checked)}/> Film look</label>
+          <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; action("export_cut", {shot_ids: chosen, quality, apart, overlay: withOverlay && !!desk.ffmpeg, blur: withBlur && !!desk.ffmpeg, look: withLook && !!desk.ffmpeg, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))}); }} title={dirty ? "Add or update the shot first" : apart ? "A video of each ticked shot, in its own file" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>
           <button onClick={openVideos} title={`Finished videos are kept in ${desk.videos}`}><FolderOpen/> Videos folder</button></div>
       </aside>
     </section>
