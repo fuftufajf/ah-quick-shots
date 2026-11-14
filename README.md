@@ -93,6 +93,7 @@ time, shot and camera; Videos folder, under The cut, opens it.
 
 - `viewer_socket.py` — the viewer's text protocol
 - `shot_plan.py` — shot geometry and the viewer's camera commands
+- `flight_data.py` — speed, height, G, energy and the geometry between two aircraft, from the viewer's kept tracks
 - `director_core.py` — saved plans, revision checks, the one worker that owns the viewer
 - `director_api.py` — loopback-only HTTP, same-origin gate, media serving
 - `ui/src/` — the page; `ui/dist/` is its ready build, so Node is not needed to run

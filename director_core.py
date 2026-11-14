@@ -14,10 +14,11 @@ import threading
 import time
 import uuid
 
+from flight_data import derive, pair, read_kept
 from shot_plan import RIDES, compile_shot, filmer_path, ground_moments, nearby, passes, probe_cameras, track_rows, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows, number, plane_rows
 
-ACTIONS = ("connect", "open", "seek", "preview", "clip", "live", "around", "airfield", "icons", "suggest", "export_cut")
+ACTIONS = ("connect", "open", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "export_cut")
 RENDERS = {"draft": "960 540 30", "final": "1920 1080 60", "4k": "3840 2160 60"}
 # The viewer renders in about real time whatever the size (measured: 5 s of film in 5 s at 480x270 and at 960x540).
 CLIP = "960 540 30"
@@ -108,13 +109,14 @@ class Desk:
         self.lock = threading.RLock()
         self.compiled = {}  # camera_key -> cam commands, so an unchanged shot never rereads its tracks
         self.paths = {}  # (start, end, step) -> aircraft tracks: every angle tried on one stretch reads them once
+        self.flight = None  # the last stretch's flight data in full; state["flight"] only says what it holds
         self.applied, self.built = None, {}  # which plan the viewer holds, and what could not be built in it
         self.jumped = 0.0  # when the film last jumped, for the aircraft fading in after it
         self.quiet = 0.0  # when the viewer has finished the last render's sound and the next render may start
         self.pace = 1  # how long this desk waits for the viewer's own timing, as a share; tests have no viewer to wait for
         self.stills = deque()
         self.data = {"connected": False, "films": [], "project": None, "planes": [],
-                     "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None,
+                     "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None, "flight": None,
                      "preview": None, "proposals": [], "job": None, "videos": str(self.videos)}
 
     @staticmethod
@@ -292,9 +294,9 @@ class Desk:
         if film not in {row["path"] for row in self.data["films"]}:
             raise ValueError("Choose a film from the viewer library")
         self.progress("Opening film and reading its moments")
-        self.compiled, self.paths, self.applied = {}, {}, None
+        self.compiled, self.paths, self.applied, self.flight = {}, {}, None, None
         with self.lock:
-            self.data.update(project=None, preview=None, planes=[], problems={}, nearby=None, airfield=None)
+            self.data.update(project=None, preview=None, planes=[], problems={}, nearby=None, airfield=None, flight=None)
         reply = self.command("open " + film)
         match = re.search(r" length ([\d.]+) s", reply[0])
         if not match or "no ground" in reply[0]:
@@ -356,6 +358,50 @@ class Desk:
             lines += self.command(f"tracks {start:.2f} {min(length, start + 600):.2f} 1")
         with self.lock:
             self.data["airfield"] = {"film": project["film"], "moments": ground_moments(filmer_path(lines))}
+
+    def _flight(self, raw, project):
+        """What every aircraft did in a stretch, and the lead and his opponent to each other (flight_data.py), from
+        the viewer's kept tracks with their speeds: `tracks ... keep` writes them to a file in its trackcache folder,
+        documented for reading directly. The whole of it is at GET /api/flight; the state says what it holds."""
+        start, end = number(raw.get("start"), 0, project["length"], "start"), number(raw.get("end"), 0, project["length"], "end")
+        # Read at 0.1 s, the recording pilot's own track jitters (measured on a Me 163 at 618 ft/s: steps of 0.3 to 114 ft
+        # a snapshot, stored speeds 356 to 889 ft/s); at 0.02 s it is smooth, 12.3 ft every snapshot. The first two
+        # snapshots of a read are off as well, so the read starts a tenth of a second early and those are left out.
+        step = number(raw.get("step", .02), .02, 1, "step")
+        if not .1 <= end - start <= 600:
+            raise ValueError("Choose a stretch of 0.1 to 600 seconds")
+        ids = []
+        for key in ("hero", "target"):
+            value = raw.get(key)
+            ids.append(None if value in (None, "") else int(number(value, 0, 1000000, key)))
+        hero, target = ids
+        key = (project["film"], round(start, 3), round(end, 3), round(step, 3))
+        if not self.flight or self.flight["key"] != key:
+            self.progress("Reading every aircraft's flight")
+            reply = self.command(f"tracks {max(0, start - .1):.8f} {end:.8f} {step:.10f} keep speed on pos double")
+            found = next((m[1] for line in reply if (m := re.search(r" file (.+\.ahftracks)$", line))), None)
+            if not found:
+                raise ValueError("Film Viewer did not say where it kept the tracks")
+            kept = read_kept(found)
+            kept["tracks"] = {ident: [row for row in rows if row[0] >= start - 1e-6] for ident, rows in kept["tracks"].items()}
+            aircraft = {str(ident): {"id": ident, **kept["aircraft"].get(ident, {"name": "", "radius": 0}), **derive(rows, kept["step"])}
+                        for ident, rows in kept["tracks"].items() if rows}
+            self.flight = {"key": key, "rows": kept["tracks"], "data": {"film": project["film"], "start": start, "end": end,
+                                                                         "step": kept["step"], "aircraft": aircraft}}
+        data = self.flight["data"]
+        for ident in ids:
+            if ident is not None and str(ident) not in data["aircraft"]:
+                raise ValueError(f"Aircraft {ident} is not in the film in that stretch")
+        rows = self.flight["rows"]
+        data.update(hero=hero, target=target, pair=pair(rows[hero], rows[target]) if hero is not None and target is not None else [])
+        with self.lock:
+            self.data["flight"] = {**{k: data[k] for k in ("film", "start", "end", "step", "hero", "target")},
+                                   "aircraft": [{k: row[k] for k in ("id", "name", "radius", "quality", "update")} for row in data["aircraft"].values()]}
+
+    def flight_data(self):
+        """The last stretch's flight data in full, for GET /api/flight; None before one was read."""
+        with self.lock:
+            return copy.deepcopy(self.flight["data"]) if self.flight else None
 
     def _plan(self, project, raw):
         """The saved shots, with an unsaved draft (if one was sent) standing in for whatever it overlaps,
@@ -614,6 +660,8 @@ class Desk:
             return self._airfield(project)
         if action == "around":
             return self._around(raw, project)
+        if action == "flight":
+            return self._flight(raw, project)
         if action == "clip":
             return self._clip(raw, project)
         if action == "live":

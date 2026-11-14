@@ -355,6 +355,12 @@ most 5 s later). One action runs at a time; a second is refused while
 - `around` `{start, end, hero}` — `state.nearby.aircraft`: who comes how close
   to hero in that stretch, nearest first. Pick a shot's target from it, not
   from a kill message
+- `flight` `{start, end, hero?, target?, step?}` — what every aircraft did in a stretch of up to 600 s
+  (see "Flight data" below). `state.flight` says what was read (`aircraft`: id, name, radius, quality,
+  update); GET `/api/flight` has all of it: per aircraft `samples` every `step` (0.02 s unless asked) with
+  `t`, `x`/`alt`/`z`, `yaw`/`pitch`/`roll`, `tas`, `climb`, `path`, `g`, `turn`, `radius`, `energy`,
+  `power`, and, with hero and target, `pair` (`range`, `closure`, `above`, `off_nose`, `off_tail`,
+  `crossing`, `behind`). A stretch already read is not read again; another hero or target is
 - `suggest` `{shots}` — 1 to 64 candidates sharing one start and end;
   `state.proposals` gets `{id, score, size, quality}` each: `score` the share of
   the shot with both aircraft in frame, `size` the lead's mean width in the
@@ -377,6 +383,34 @@ still fading in): ask for the same moment again to get them solid.
 `state.problems` maps a shot id to why it could not be filmed (an aircraft
 absent for the whole shot); such a shot is skipped in playback and refuses to
 render.
+
+## Flight data
+
+`flight_data.py` reads the file the viewer writes for `tracks ... keep speed on pos double` (its layout is
+in the viewer's `help`, for reading directly) and works out, for every aircraft and snapshot: true airspeed
+(`tas`, ft/s), `climb` (ft/s) and the flight path's angle, the load factor along the lift (`g`, from the
+change of velocity less gravity's, so a push shows below zero), how fast the flight path turns (`turn`,
+degrees a second) and its `radius` (ft), specific energy (`energy` = height + v²/2g, ft) and its rate
+(`power`, ft/s: below zero, energy bleeds). For two aircraft, `pair` gives the range, the closure
+(positive while closing), how far above the hero the target is, the target's angle off the hero's nose,
+the hero's angle off the target's tail (0 dead astern), the angle between their noses and whether the hero
+is behind the target's wing line. Angles follow the viewer: yaw grows to the left, pitch up and roll right
+are positive (roll checked on a kept track: the lift leaned the way of a positive roll in 186 of 186 hard
+turns of the two aircraft told smoothly).
+
+What the film tells, measured:
+
+- **Read at 0.02 s, not 0.1 s.** At a 0.1 s step the recording pilot's own track jittered (a Me 163 at
+  618 ft/s moved 0.3 to 114 ft a snapshot, its stored speed 356 to 889 ft/s); at 0.02 s it was smooth,
+  12.3 ft every snapshot, the speed steady. The first two snapshots of a read were off too, so the desk
+  reads a tenth of a second early and leaves them out.
+- **Far aircraft are told coarsely.** Their speed was held, then changed over 0.3 to 0.4 s, every 2 s;
+  near ones changed every snapshot. Accelerations are taken over half a second, or over two of the
+  aircraft's own updates when they come rarer, and such an aircraft is marked `coarse`: its speed and
+  height are good, its `g`, `turn` and `radius` only an average over seconds.
+- **Not in the film:** indicated airspeed, throttle, fuel, ammunition left, flaps, gear, angle of attack,
+  damage, the controls, the aircraft type and side, the terrain's height, the wind, and other players'
+  rounds and hits.
 
 ## What was measured in the viewer, and what would help
 

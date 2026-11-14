@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 import socket
+import struct
 import subprocess
 import tempfile
 import threading
@@ -14,12 +15,32 @@ from unittest.mock import patch
 
 from director_api import make_server, videos_folder, working_folder
 from director_core import Conflict, Desk, framing, lead
+import flight_data
 from shot_plan import camera_pose, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows
 
 SHOT = {"id": "one", "name": "Pair", "start": 1, "end": 3, "kind": "pair",
         "hero": 19, "target": 10, "side": "right", "distance": 280, "height": 60, "fov": 60}
 PROJECT = {"film": "films/test.ahf", "length": 20, "revision": 1, "shots": [], "events": []}
+
+
+def turn_row(t, rate, bank):
+    """A kept-tracks row of an aircraft at 300 ft/s and 500 ft, its heading turning `rate` rad/s to the left."""
+    yaw = rate * t
+    return (t, 0.0, 500.0, 0.0, yaw, 0.0, math.radians(bank), -300 * math.sin(yaw), 0.0, 300 * math.cos(yaw))
+
+
+def write_kept(path, tracks, names):
+    """A kept-tracks file as the viewer's help lays it out: speeds on, double positions, one entry per aircraft."""
+    times = sorted({row[0] for rows in tracks.values() for row in rows})
+    body = b""
+    for t in times:
+        rows = [(ident, row) for ident, rows in tracks.items() for row in rows if row[0] == t]
+        body += struct.pack("<di", t, len(rows)) + b"".join(struct.pack("<idddffffff", ident, *row[1:]) for ident, row in rows)
+    table = b"".join(struct.pack("<ii16sffff", ident, 0, names[ident].encode(), 20, 0, 0, 0) for ident in tracks)
+    header = flight_data.HEADER.pack(b"AHTRACKS", 1, 3, 0, 0, 20.0, times[0], times[-1], .1, len(times), len(tracks),
+                                     struct.calcsize("<idddffffff"), 0, flight_data.HEADER.size + len(body))
+    path.write_bytes(header + body + table)
 
 
 class SlowViewer:
@@ -593,6 +614,70 @@ class DeskTests(unittest.TestCase):
         found = self.desk.snapshot()["nearby"]
         self.assertEqual((found["hero"], found["aircraft"][0]), (19, {"id": 10, "closest": 120, "typical": 310, "name": "YORK"}))
         self.assertIsNone(found["aircraft"][1]["name"])
+
+    def test_flight_data_of_a_level_turn_and_of_two_aircraft(self):
+        # A right turn at 300 ft/s banked 60 degrees: 2 G, 10.6 degrees a second, a radius of 1,615 ft. Yaw grows to
+        # the left, so a right turn makes it smaller; a positive roll is a right bank.
+        rate = flight_data.G * math.tan(math.radians(60)) / 300
+        turn = [turn_row(t / 10, -rate, 60) for t in range(40)]
+        samples = flight_data.derive(turn, .1)["samples"][5:-5]
+        for row in samples:
+            self.assertAlmostEqual(row["g"], 2.0, delta=.02)
+            self.assertAlmostEqual(row["turn"], math.degrees(rate), delta=.1)
+            self.assertAlmostEqual(row["radius"], 300 / rate, delta=5)
+            self.assertEqual((row["tas"], row["climb"]), (300, 0))
+            self.assertAlmostEqual(row["power"], 0, delta=.5)
+        left = [turn_row(t / 10, rate, -60) for t in range(40)]
+        self.assertAlmostEqual(flight_data.derive(left, .1)["samples"][20]["g"], 2.0, delta=.02)
+        # A far aircraft's speed is told every 2 s and held between: its numbers are marked coarse.
+        held = [(*row[:7], *turn[int(row[0] // 2) * 20][7:]) for row in turn]
+        self.assertEqual(flight_data.derive(held, .1)["quality"], "coarse")
+        self.assertEqual(flight_data.derive(turn, .1)["quality"], "fine")
+        # Two aircraft flying north (+z), the target 1,000 ft ahead and 50 ft/s slower; then coming head-on.
+        hero = [(t, 0, 500, 300 * t, 0, 0, 0, 0, 0, 300) for t in (0, .1)]
+        ahead = [(t, 0, 500, 1000 + 250 * t, 0, 0, 0, 0, 0, 250) for t in (0, .1)]
+        first = flight_data.pair(hero, ahead)[0]
+        self.assertEqual({k: first[k] for k in ("range", "closure", "off_nose", "off_tail", "crossing", "behind")},
+                         {"range": 1000, "closure": 50, "off_nose": 0, "off_tail": 0, "crossing": 0, "behind": True})
+        facing = [(t, 0, 500, 1000 - 250 * t, math.pi, 0, 0, 0, 0, -250) for t in (0, .1)]
+        first = flight_data.pair(hero, facing)[0]
+        self.assertEqual((first["closure"], first["off_tail"], first["behind"]), (550, 180, False))
+
+    def test_kept_tracks_are_read_and_checked(self):
+        path = Path(self.temp.name) / "fight.ahftracks"
+        write_kept(path, {19: [turn_row(t / 10, 0, 0) for t in range(5)]}, {19: "Pilot"})
+        kept = flight_data.read_kept(path)
+        self.assertEqual((kept["step"], kept["aircraft"][19]["name"], len(kept["tracks"][19])), (.1, "Pilot", 5))
+        self.assertEqual(kept["tracks"][19][2][9], 300)
+        path.write_bytes(path.read_bytes()[:150])
+        with self.assertRaises(ValueError):
+            flight_data.read_kept(path)
+        with self.assertRaises(ValueError):
+            flight_data.read_kept(Path(self.temp.name) / "fight.bmp")
+
+    def test_flight_of_a_stretch_is_read_once_and_served_whole(self):
+        path = Path(self.temp.name) / "fight.ahftracks"
+        write_kept(path, {19: [turn_row(t / 10, 0, 0) for t in range(9, 31)],
+                          10: [(t / 10, 0, 500, 1000 + 250 * t / 10, 0, 0, 0, 0, 0, 250) for t in range(9, 31)]},
+                   {19: "Pilot", 10: "Other"})
+        commands = []
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("tracks "):
+                return [f"tracks kept 1 to 3 step 0.1 speed double: 21 snapshots 0.0 MB in 0.1 s file {path}"]
+            return []
+        self.desk.viewer.command = native
+        self.run_action({"action": "flight", "start": 1, "end": 3, "hero": 19, "target": 10})
+        self.run_action({"action": "flight", "start": 1, "end": 3, "hero": 10, "target": 19})
+        self.assertEqual(commands, ["tracks 0.90000000 3.00000000 0.0200000000 keep speed on pos double"])
+        state = self.desk.snapshot()["flight"]
+        self.assertEqual((state["hero"], sorted(row["name"] for row in state["aircraft"])), (10, ["Other", "Pilot"]))
+        whole = self.desk.flight_data()
+        self.assertEqual(len(whole["aircraft"]["19"]["samples"]), 21)
+        self.assertEqual((whole["aircraft"]["19"]["samples"][0]["t"], whole["pair"][0]["range"]), (1, 1250))
+        self.desk.start({"action": "flight", "start": 1, "end": 3, "hero": 7, "expected_revision": 1})
+        self.desk.worker.join(2)
+        self.assertIn("not in the film", self.desk.snapshot()["job"]["error"])
 
     def test_a_second_desk_cannot_take_the_port_of_a_running_one(self):
         server = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)

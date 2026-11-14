@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent
 HOST, PORT = "127.0.0.1", 8766
 # A desk keeps running with the code it started with. When a new version is unzipped over it, the page (read
 # from disk) is new and the desk is not: the page's newer actions came back "Unknown action". The desk notices.
-CODE = [ROOT / name for name in ("director_api.py", "director_core.py", "shot_plan.py", "viewer_socket.py")] + [ROOT / "ui" / "dist" / "index.html"]
+CODE = [ROOT / name for name in ("director_api.py", "director_core.py", "flight_data.py", "shot_plan.py", "viewer_socket.py")] + [ROOT / "ui" / "dist" / "index.html"]
 
 
 def code_stamp():
@@ -61,6 +61,9 @@ class Handler(BaseHTTPRequestHandler):
         relative = unquote(urlsplit(self.path).path)
         if relative == "/api/state":
             return self.send_json(200, {**self.server.desk.snapshot(), "stale": code_stamp() != self.server.code})
+        if relative == "/api/flight":
+            data = self.server.desk.flight_data()
+            return self.send_json(200, data) if data else self.send_json(404, {"message": "Read a stretch's flight first"})
         if relative.startswith("/media/"):
             if not re.fullmatch(r"/media/(clips/)?[a-f0-9]{32}\.(bmp|mp4)", relative):
                 return self.send_error(404)
