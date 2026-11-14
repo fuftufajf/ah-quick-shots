@@ -26,7 +26,8 @@ FADE = 2.0
 SETTLE = 1.0  # what a picture that stays on screen for a while waits of that: mostly solid, without doubling the wait
 # Each aircraft fades in the first time it is drawn, each level of detail on its own, and after a seek every other
 # aircraft is new to the viewer. Playing the seconds before a moment through the shot's camera draws them, and a
-# short seek forward keeps them drawn: a still or a video starts solid (Steely, Aces High forum, 14 Nov 2026).
+# short seek forward keeps them drawn: a still starts solid (Steely, Aces High forum, 14 Nov 2026). Not before a
+# video: a render that follows that playing came out without the engine and guns in 10 renders of 10 (4 of 10 without).
 LEAD = 2.0
 # For about as long as a rendered stretch lasts after its render ends, the viewer is still finishing that stretch's
 # sound. A render started in that time can be heard from a point standing still in the sky instead of from the
@@ -183,7 +184,6 @@ class Desk:
         while time.monotonic() < self.quiet:
             self.progress(f"Film Viewer is finishing the last clip's sound: {math.ceil(self.quiet - time.monotonic())} s, so this one keeps its own")
             time.sleep(.25)
-        self._preroll(start)
         self.progress(label or f"Rendering {end - start:.1f} s of film")
         self.command(f"video {start:.8f} {end:.8f} {path.as_posix()} {size}")
         self.quiet = time.monotonic() + (end - start + TAIL) * self.pace
@@ -426,7 +426,8 @@ class Desk:
                 self.data["job"]["expect"] = round(end - start + 1.5, 1)
             self._apply(project, raw)
             if raw.get("still") is not None:  # something to look at while the clip renders
-                self._preroll(number(raw["still"], 0, length, "time"), rough=True)
+                self._seek(number(raw["still"], 0, length, "time"), rough=True)
+                self._settle()
                 self._frame(project["revision"])
             self._render(start, end, path, CLIP)  # the film is back where it was afterwards
             for old in sorted(folder.glob("*.mp4"), key=lambda p: p.stat().st_mtime)[:-80]:

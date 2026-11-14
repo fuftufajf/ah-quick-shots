@@ -257,7 +257,7 @@ class DeskTests(unittest.TestCase):
         self.run_action({"action": "export_cut", "shot_ids": ["one", "three"], "quality": "draft"})
         self.assertIn("skip 3.00000000 9.00000000", commands)
         self.assertTrue(commands[-1].startswith("video 1.00000000 11.00000000 ") and commands[-1].endswith(" 960 540 30"))
-        self.assertEqual(commands[-8:-1], ["seek 0.00000000", "planes", "play", "wait 5", "pause", "seek 1.00000000", "planes"])
+        self.assertNotIn("play", commands)  # playing just before a render takes the engine and guns out of its sound
         self.run_action({"action": "icons", "on": True})
         self.assertIn("icons on", commands)
         self.assertTrue(self.desk.snapshot()["icons"])
@@ -371,7 +371,7 @@ class DeskTests(unittest.TestCase):
         cams = [c for c in commands if c.startswith("cam ")]
         self.assertEqual(len(cams), 7)  # with each shot's camera standing in the two seconds before it
         self.assertFalse(any(c.startswith("cam 2 2 mount") for c in cams))
-        self.assertLess(commands.index("seek 2.50000000"), commands.index(next(c for c in commands if c.startswith("video "))))
+        self.assertLess(commands.index("seek 2.50000000 rough"), commands.index(next(c for c in commands if c.startswith("video "))))
         first = self.desk.snapshot()["preview"]
         self.assertEqual((first["kind"], first["start"], first["end"]), ("clip", 1, 3))
         self.assertTrue((self.desk.media_root / "clips" / Path(first["url"]).name).exists())

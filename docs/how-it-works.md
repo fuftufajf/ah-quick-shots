@@ -357,11 +357,13 @@ each of these; a change in the viewer would make the workaround unnecessary.
   the first frame, half there at 0.5 s, solid at about 1 s). Steely's fix
   (Aces High forum, 14 Nov 2026): play the two seconds before the moment
   through the shot's camera, then a short seek forward, which keeps them drawn.
-  The desk does this before every still and every video, with each shot's
-  first camera standing in the two seconds before it; measured on the same
-  shot, the opponent is solid from the first frame and the sound is whole.
-  Waiting while paused would fix it too, but a burning aircraft's smoke piles up
-  while film time stands still.
+  The desk does this before every still, with each shot's first camera
+  standing in the two seconds before it. Not before a video: on a rested
+  viewer, a render that followed that playing lost its engine and guns every
+  time (3 of 3; 0 of 2 without), so the first second of a video can still show
+  a ghost. A skip inside a cut does not bring the fade back. Waiting while
+  paused would fix it too, but a burning aircraft's smoke piles up while film
+  time stands still.
 - **Where a seek lands.** Up to 0.08 s past the time asked for, while `time`
   answers in tenths of a second.
 - **The end of a film.** `open` tells the length rounded to 0.1 s, and `tracks`
