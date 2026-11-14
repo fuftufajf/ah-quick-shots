@@ -683,6 +683,38 @@ class DeskTests(unittest.TestCase):
         self.desk.worker.join(2)
         self.assertIn("not in the film", self.desk.snapshot()["job"]["error"])
 
+    def test_shots_are_removed_with_or_without_their_videos(self):
+        def native(command, progress):
+            if command.startswith("tracks "):
+                start, end, step = map(float, command.split()[1:4])
+                return [f"track {start + i * step:.4f} {ident} {x} 200 0 0 0 0" for i in range(round((end - start) / step) + 1)
+                        for ident, x in ((19, 0), (10, 300))]
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"test")
+            return []
+        self.desk.viewer.command = native
+        plan = [SHOT, {**SHOT, "id": "two", "start": 5, "end": 7}, {**SHOT, "id": "three", "start": 9, "end": 11}]
+        self.desk.save({"expected_revision": 1, "shots": plan})
+        self.run_action({"action": "export_cut", "shot_ids": ["one", "two"], "quality": "draft", "apart": True})
+        self.run_action({"action": "export_cut", "shot_ids": ["three"], "quality": "draft"})
+        # Each finished video is on record with its shots, beside the plan, and read again with the film.
+        renders = self.desk.snapshot()["renders"]
+        self.assertEqual([r["shots"] for r in renders], [["one"], ["two"], ["three"]])
+        self.assertEqual(self.desk._load_renders("films/test.ahf"), renders)
+        recycled = []
+        with patch("director_core.to_recycle_bin", lambda paths: [recycled.extend(paths), *(p.unlink() for p in paths)]):
+            kept = self.desk.forget({"expected_revision": 2, "shot_ids": ["two"], "files": False})
+            self.assertEqual(([s["id"] for s in kept["project"]["shots"]], len(kept["renders"]), recycled), (["one", "three"], 3, []))
+            Path(renders[0]["file"]).unlink()  # deleted by hand: nothing to move, nothing to fail on
+            gone = self.desk.forget({"expected_revision": 3, "shot_ids": ["one", "three"], "files": True})
+        self.assertEqual(([s["id"] for s in gone["project"]["shots"]], gone["recycled"]), ([], 1))
+        self.assertEqual([p.name for p in recycled], [Path(renders[2]["file"]).name])
+        self.assertEqual([r["shots"] for r in self.desk.snapshot()["renders"]], [["two"]])  # kept when its shot went alone
+        with self.assertRaises(Conflict):
+            self.desk.forget({"expected_revision": 3, "shot_ids": ["two"]})
+        with self.assertRaises(ValueError):
+            self.desk.forget({"expected_revision": 4, "shot_ids": []})
+
     def test_the_observer_lets_go_of_an_aircraft_that_leaves_the_film(self):
         # He crosses ahead of the hero and leaves the film at 6 s (shot down). Held at his last place, he pulled the
         # lens open to 90 degrees (or, past the widest, snapped it back to the shot's own) and stopped the turn dead.

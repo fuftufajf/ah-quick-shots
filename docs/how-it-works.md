@@ -190,7 +190,15 @@ after it waits at least 12 s, because playing just before a render thins its
 sound (measured with that wait: the same sound as a rested render, 2 of 2). Shot details holds exact times, the lead
 aircraft and the name.
 
-**The cut.** Saved shots, each with a tick box. Render selected makes one 16:9
+**The cut.** Saved shots, each with a tick box. The x beside a shot (where the
+pointer is) and Clear above the list take shots out of it; when videos of them
+were rendered, the page lists the files and asks whether they go too, to the
+Recycle Bin, or stay. The desk keeps a record of every finished video and the
+shots in it beside the plan (`.quickshots/<film>.renders.json`); a video of
+several shots goes with any of them, and videos rendered before that record
+existed are not on it. The green arrow beside a moment adds it to the cut
+without opening it: a kill, or a fight you won, as the four shots of Add my
+kills, anything else as one shot with its first camera. Render selected makes one 16:9
 video of the ticked shots with the film's sound, at 1080p60, 4K (2160p60) or as
 a quick draft (960×540, 30 fps), leaving out everything between them; set to
 A file per shot, it makes a video of every ticked shot instead, each starting
@@ -401,6 +409,9 @@ most 5 s later). One action runs at a time; a second is refused while
   in its file name; without it the shot's `kind` is used. With `overlay: true` (needs ffmpeg, `state.ffmpeg`)
   every entry of `files` also has `overlays`: the 16:9 and the 9:16 data overlay kept beside it
 - POST `/api/folder` `{}` shows the videos folder in Explorer
+- POST `/api/forget` `{expected_revision, shot_ids, files}` takes shots out of the plan; with `files: true`
+  their finished videos and overlays on record (`state.renders`: `file`, `shots`, `overlays`) go to the
+  Recycle Bin. Answers `{project, renders, recycled}`
 
 `seek`, `clip` and `icons` also take `shot`, an unsaved shot object: it stands
 in for the saved shots it overlaps, so a camera can be looked at before it is

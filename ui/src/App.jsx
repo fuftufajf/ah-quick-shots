@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useRef, useState} from "react";
-import {ArrowClockwise, CaretLeft, CaretRight, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Trash} from "@phosphor-icons/react";
+import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Trash, X} from "@phosphor-icons/react";
 import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
@@ -32,6 +32,7 @@ export function App() {
   const [zoom, setZoom] = useState(false);
   const [rated, setRated] = useState("");
   const [skipped, setSkipped] = useState(() => new Set());
+  const [forgetting, setForgetting] = useState(null);  // {ids, label}: shots asked to be removed, waiting for a choice
   const [quality, setQuality] = useState("final");
   const [apart, setApart] = useState(false);
   const [withOverlay, setWithOverlay] = useState(false);
@@ -408,8 +409,32 @@ export function App() {
     const saved = await save([...shots.filter(s => s.id !== draft.id), draft], isSaved && dirty ? baseRevision : project.revision);
     if (saved) { setDraft(saved.shots.find(s => s.id === draft.id)); setDirty(false); setBaseRevision(saved.revision); }
   }
-  async function remove() {
-    if (window.confirm("Remove this shot from the cut?") && await save(shots.filter(s => s.id !== draft.id))) { setDraft(null); setDirty(false); }
+  function remove() { setForgetting({ids: [draft.id], label: draft.name}); }
+  // The finished videos (and their overlays) the desk kept of these shots and that are still on disk.
+  function filesOf(ids) {
+    return (desk.renders || []).filter(r => r.shots.some(id => ids.includes(id))).flatMap(r => [r.file, ...(r.overlays || [])]);
+  }
+  async function forget(files) {
+    const ids = forgetting.ids;
+    setSending(true); setError("");
+    try {
+      const result = await request("/api/forget", {expected_revision: project.revision, shot_ids: ids, files});
+      setDesk(s => ({...s, project: result.project, renders: result.renders}));
+      if (draft && ids.includes(draft.id)) { setDraft(null); setDirty(false); }
+    } catch (e) { setError(e.message); }
+    finally { setSending(false); setForgetting(null); }
+  }
+  // One moment straight into the cut: a kill (or a fight you won) as its four shots, anything else as one shot.
+  async function addMoment(e) {
+    if (keepDraft()) return;
+    const kill = e.kind === "kill" ? e : e.fight?.kills.length ? ownKills(events, you.current).find(k => Math.abs(k.time - e.time) < .05) : null;
+    const made = [];
+    for (const part of kill ? killSequence(project, desk.planes, kill, events) : [newShot(project, desk.planes, e, e.time)]) {
+      const shot = fitShot(part, [...shots, ...made]);
+      if (shot.end - shot.start >= .5) made.push(shot);
+    }
+    if (!made.length) return setError("This moment is already in the cut");
+    if (await save([...shots, ...made])) select(made[0]);
   }
   // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
   // The new desk takes the port a moment after the old one lets it go; the page is then read again, new too.
@@ -505,7 +530,8 @@ export function App() {
         <div className="panel-heading"><h2>1 <span>Moments</span></h2><span>{moments.length}</span></div>
         <label className="search"><MagnifyingGlass/><input aria-label="Search moments" placeholder="Pilot, weapon or 03:15…" value={query} onChange={e => setQuery(e.target.value)}/></label>
         <div className="filters" aria-label="Event type">{KINDS.map(([value, label]) => <button key={value} aria-pressed={kind === value} onClick={() => setKind(value)}>{label}</button>)}</div>
-        <div className="moment-list">{moments.slice(0, 300).map(e => <button key={e.id} className={`moment ${moment?.id === e.id ? "selected" : ""}`} onClick={() => pick(e)}><time>{formatTime(e.time)}</time><span><b>{e.kind}</b><small>{momentLabel(e)}</small></span></button>)}
+        <div className="moment-list">{moments.slice(0, 300).map(e => <div key={e.id} className="moment-row"><button className={`moment ${moment?.id === e.id ? "selected" : ""}`} onClick={() => pick(e)}><time>{formatTime(e.time)}</time><span><b>{e.kind}</b><small>{momentLabel(e)}</small></span></button>
+          {!shots.some(s => e.time >= s.start && e.time <= s.end) && <button className="add-take" disabled={working} onClick={() => addMoment(e)} aria-label={`Add ${momentLabel(e)} to the cut`} title={e.kind === "kill" || e.fight?.kills.length ? "Add this kill to the cut: closing in, the guns, him going down, flying on" : "Add this moment to the cut as one shot"}><ArrowRight weight="bold"/></button>}</div>)}
           {!moments.length && <p className="empty-small">{!project ? "Start Film Viewer and open a replay. Its moments appear here." : kind === "fight" ? "No fights of yours in this film. Try All, or press New shot at the playhead." : "No matching moments. Try another filter, or press New shot at the playhead."}</p>}
           {moments.length > 300 && <p className="hint">Showing 300 of {moments.length}. Narrow your search.</p>}
         </div>
@@ -603,10 +629,11 @@ export function App() {
       </section>
 
       <aside className="cut panel" aria-label="Shots to render">
-        <div className="panel-heading"><h2>4 <span>The cut</span></h2><span>{shots.length} shots</span></div>
+        <div className="panel-heading"><h2>4 <span>The cut</span></h2><span className="heading-actions">{shots.length} shots<button className="danger small" disabled={working || !shots.length} onClick={() => setForgetting({ids: shots.map(s => s.id), label: "all"})} title="Remove every shot from the cut, and choose whether their videos go too"><Trash/> Clear</button></span></div>
         <div className="cut-list">{shots.map(s => <div key={s.id} className={`cut-row ${draft?.id === s.id ? "selected" : ""}`}>
           <input type="checkbox" aria-label={`Render ${s.name}`} checked={!skipped.has(s.id)} onChange={() => setSkipped(old => { const next = new Set(old); if (!next.delete(s.id)) next.add(s.id); return next; })}/>
           <button onClick={() => choose(s)}><strong>{s.name}</strong><small>{formatTime(s.start)} — {formatTime(s.end)} · {camera(s)}</small>{problems[s.id] && <small className="problem">Cannot be filmed: open it for the reason</small>}</button>
+          <button className="forget" disabled={working} onClick={() => setForgetting({ids: [s.id], label: s.name})} aria-label={`Remove ${s.name}`} title="Remove this shot from the cut"><X weight="bold"/></button>
         </div>)}
           {!shots.length && <p className="hint">Shots you add appear here. Tick the ones to render.</p>}
         </div>
@@ -620,5 +647,20 @@ export function App() {
           <button onClick={openVideos} title={`Finished videos are kept in ${desk.videos}`}><FolderOpen/> Videos folder</button></div>
       </aside>
     </section>
+    {forgetting && (() => {
+      const files = filesOf(forgetting.ids), many = forgetting.ids.length > 1;
+      return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="forget-title" onKeyDown={e => e.key === "Escape" && setForgetting(null)}>
+        <div className="modal-box">
+          <h2 id="forget-title">{many ? `Remove all ${forgetting.ids.length} shots from the cut?` : `Remove “${forgetting.label}” from the cut?`}</h2>
+          {files.length ? <><p>{many ? "Their" : "Its"} finished videos on disk{files.length > 1 ? ` (${files.length} files)` : ""}:</p><ul>{files.map(f => <li key={f}>{baseName(f)}</li>)}</ul></>
+            : <p className="hint">No finished video of {many ? "them" : "it"} is on record. Videos rendered before this version are not tracked: delete them in the Videos folder.</p>}
+          <div className="modal-actions">
+            <button autoFocus onClick={() => setForgetting(null)}>Cancel</button>
+            <button className={files.length ? "" : "danger"} disabled={sending} onClick={() => forget(false)}>{files.length ? "Remove, keep the files" : "Remove"}</button>
+            {files.length > 0 && <button className="danger" disabled={sending} onClick={() => forget(true)}><Trash/> Remove and move {files.length === 1 ? "the file" : `${files.length} files`} to the Recycle Bin</button>}
+          </div>
+        </div>
+      </div>;
+    })()}
   </main>;
 }

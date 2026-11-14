@@ -45,6 +45,22 @@ FINE = .02  # the step aircraft paths are read at (see Desk._tracks)
 CAMERAS = 9  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
 
 
+def to_recycle_bin(paths):
+    """Move files to the Windows Recycle Bin, from where a deletion on the page can be undone."""
+    import ctypes
+    from ctypes import wintypes
+
+    class Operation(ctypes.Structure):  # SHFILEOPSTRUCTW
+        _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT), ("pFrom", ctypes.c_void_p), ("pTo", ctypes.c_void_p),
+                    ("fFlags", ctypes.c_uint16), ("fAnyOperationsAborted", wintypes.BOOL), ("hNameMappings", ctypes.c_void_p),
+                    ("lpszProgressTitle", ctypes.c_void_p)]
+    names = ctypes.create_unicode_buffer("".join(str(Path(p).resolve()) + "\0" for p in paths) + "\0")
+    # FO_DELETE with FOF_ALLOWUNDO (to the bin), no dialog, no confirmation, no error box
+    operation = Operation(None, 3, ctypes.cast(names, ctypes.c_void_p), None, 0x40 | 0x4 | 0x10 | 0x400, False, None, None)
+    if ctypes.windll.shell32.SHFileOperationW(ctypes.byref(operation)) or operation.fAnyOperationsAborted:
+        raise OSError("Windows did not move the files to the Recycle Bin")
+
+
 class Conflict(ValueError):
     pass
 
@@ -122,7 +138,7 @@ class Desk:
         self.drawer = None
         self.data = {"connected": False, "films": [], "project": None, "planes": [],
                      "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None, "flight": None,
-                     "preview": None, "proposals": [], "job": None, "videos": str(self.videos),
+                     "preview": None, "proposals": [], "job": None, "videos": str(self.videos), "renders": [],
                      "ffmpeg": bool(shutil.which("ffmpeg")), "overlays": None}
 
     @staticmethod
@@ -183,6 +199,49 @@ class Desk:
             f.flush()
             os.fsync(f.fileno())
         os.replace(temp, path)
+
+    def _renders_file(self, film):
+        return self.root / (hashlib.sha256(film.encode()).hexdigest()[:20] + ".renders.json")
+
+    def _load_renders(self, film):
+        """The finished videos of a film that are still on disk, with the shots in each and their overlays."""
+        path = self._renders_file(film)
+        rows = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        return [row for row in rows if Path(row["file"]).exists() or any(Path(o).exists() for o in row.get("overlays", []))]
+
+    def _record_render(self, film, row):
+        with self.lock:
+            renders = self.data["renders"] + [row]
+            path = self._renders_file(film)
+            temp = path.with_suffix(".new")
+            temp.write_text(json.dumps(renders, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(temp, path)
+            self.data["renders"] = renders
+
+    def forget(self, raw):
+        """Take shots out of the plan; with `files`, move their finished videos and overlays to the Recycle Bin.
+        A video of several shots goes with any of them: the page lists every file before asking."""
+        with self.lock:
+            self._idle()
+            old = self._revision(raw)
+            ids = raw.get("shot_ids")
+            if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
+                raise ValueError("Choose the shots to remove")
+            project = {**old, "shots": [s for s in old["shots"] if s["id"] not in ids], "revision": old["revision"] + 1}
+            self._persist(project)
+            self.data["project"] = project
+            gone, kept = [], []
+            for row in self.data["renders"]:
+                (gone if raw.get("files") is True and set(row["shots"]) & set(ids) else kept).append(row)
+            paths = [Path(f) for row in gone for f in [row["file"], *row.get("overlays", [])]]
+            paths = [f for f in paths if f.suffix.lower() in (".mp4", ".mov") and f.exists()]
+            if paths:
+                to_recycle_bin(paths)
+            if gone:
+                path = self._renders_file(project["film"])
+                path.write_text(json.dumps(kept, ensure_ascii=False, indent=2), encoding="utf-8")
+                self.data["renders"] = kept
+            return {"project": copy.deepcopy(project), "renders": copy.deepcopy(self.data["renders"]), "recycled": len(paths)}
 
     def save(self, raw):
         with self.lock:
@@ -328,7 +387,7 @@ class Desk:
                    "shots": shots, "events": events}
         self._persist(project)
         with self.lock:
-            self.data.update(project=project, now=1, preview=None, proposals=[])
+            self.data.update(project=project, now=1, preview=None, proposals=[], renders=self._load_renders(film))
         self._seek(min(1, length))
         self._settle()
         self._frame(project["revision"])
@@ -780,8 +839,10 @@ class Desk:
                          f"Rendering {len(row)} shot{'s' * (len(row) > 1)} at {size}" + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""))
             saved = self._keep(path, project, row, raw.get("labels"))
             files.append({"url": "/media/" + path.name, "file": str(saved), "shots": [s["id"] for s in row]})
+            record = {"file": str(saved), "shots": [s["id"] for s in row]}
             if segments:
-                files[-1]["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality)
+                files[-1]["overlays"] = record["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality)
+            self._record_render(project["film"], record)
         self._tidy()
         with self.lock:
             self.data["preview"] = {"url": files[0]["url"], "kind": "video", "time": shots[0]["start"],

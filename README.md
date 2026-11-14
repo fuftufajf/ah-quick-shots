@@ -55,7 +55,10 @@ does not read the viewer's memory or its film files.
    behind you, a fly-by, the pilot's own view, cameras on the airframe, riding
    the bomb. Sliders or a drag adjust it (a lift-off or roll-out also has
    Swing round and Ends at). Add to cut keeps the shot.
-4. **The cut** — tick the shots you want and Render selected: 1080p60, 4K or a
+4. **The cut** — the green arrow beside a moment adds it straight to the cut
+   (a kill as four shots); the x beside a shot, or Clear, takes shots out, and
+   asks whether their videos go to the Recycle Bin too. Tick the shots you
+   want and Render selected: 1080p60, 4K or a
    quick draft, as one video with the gaps between shots left out or as a file
    per shot for cutting in an editor. Tick Data overlay to get, beside each
    video, a transparent film of your speed, height, climb and G and the range

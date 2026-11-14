@@ -119,6 +119,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Request must be an object")
             if self.path == "/api/project":
                 return self.send_json(200, self.server.desk.save(raw))
+            if self.path == "/api/forget":
+                return self.send_json(200, self.server.desk.forget(raw))
             if self.path == "/api/action":
                 job = self.server.desk.start(raw)
                 if raw.get("wait") is True:  # a quick look: the finished state in one round trip, no poll
