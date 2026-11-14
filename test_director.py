@@ -605,6 +605,12 @@ class DeskTests(unittest.TestCase):
             before = time.monotonic(); status, body = call("GET", "/api/state")
             self.assertLess(time.monotonic()-before, .2)
             self.assertTrue(json.loads(body)["job"]["running"])
+            # The desk says when its code on disk is no longer the code it runs, and does not restart mid-operation.
+            self.assertFalse(json.loads(body)["stale"])
+            server.code = [None]
+            self.assertTrue(json.loads(call("GET", "/api/state")[1])["stale"])
+            status, body = call("POST", "/api/restart", {})
+            self.assertEqual(status, 400); self.assertIn("Wait", json.loads(body)["message"])
             self.assertEqual(call("POST", "/api/project", {"expected_revision": 1, "shots": []})[0], 409)
             self.assertEqual(call("POST", "/api/action", {}, {"Origin": "https://example.com"})[0], 403)
             self.assertEqual(call("GET", "/api/state", headers={"Host": "evil.example"})[0], 403)
@@ -616,6 +622,20 @@ class DeskTests(unittest.TestCase):
             self.assertEqual(call("GET", "/media/clips/../"+media.name)[0], 404)
         finally:
             self.viewer.release.set(); server.shutdown(); server.server_close()
+
+    def test_an_idle_desk_restarts_with_the_code_on_disk(self):
+        server = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        started = threading.Event()
+        try:
+            with patch("director_api.restart", lambda s: started.set()):
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+                connection.request("POST", "/api/restart", "{}")
+                self.assertEqual(connection.getresponse().status, 202)
+                connection.close()
+                self.assertTrue(started.wait(1))
+        finally:
+            server.shutdown(); server.server_close()
 
 
 if __name__ == "__main__":

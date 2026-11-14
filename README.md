@@ -74,6 +74,9 @@ time, shot and camera; Videos folder, under The cut, opens it.
   spaces too.
 - The server has no window. It runs until you sign out of Windows or end
   `pythonw.exe` in Task Manager.
+- **Updating.** A new version unzipped over a running desk is not used until
+  the desk restarts: the page says so and has a Restart the desk button.
+  Versions before 0.1.6 cannot tell, so end `pythonw.exe` in Task Manager once.
 - Camera ratings know nothing of terrain: watch the shot before you render it.
 
 ## How it is built

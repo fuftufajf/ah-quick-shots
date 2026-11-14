@@ -379,6 +379,12 @@ export function App() {
     if (window.confirm("Remove this shot from the cut?") && await save(shots.filter(s => s.id !== draft.id))) { setDraft(null); setDirty(false); }
   }
   // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
+  // The new desk takes the port a moment after the old one lets it go; the page is then read again, new too.
+  async function restartDesk() {
+    try { await request("/api/restart", {}); setTimeout(() => window.location.reload(), 3000); }
+    catch (e) { setError(e.message); }
+  }
+
   // Your take-offs and landings that have no shot yet, a few shots each. The flight path is read once per film.
   function airfield() {
     if (desk.airfield?.film === project.film) return airfieldReel(desk.airfield.moments);
@@ -458,6 +464,7 @@ export function App() {
       </div>
       <button disabled={working} onClick={() => action("connect")}><ArrowClockwise/> {desk.connected ? "Reconnect" : "Connect viewer"}</button>
     </header>
+    {desk.stale && <div className="notice" role="alert">AH Quick Shots was updated while it was running: the desk still runs the old version, and the page may ask it for things it cannot do. An unsaved shot is lost on restart.<button onClick={restartDesk}>Restart the desk</button></div>}
     {(error || conflict) && <div className="notice" role="alert">{conflict ? "The shared plan changed while you were editing. Discard your changes to load it, then redo them." : error}{!conflict && <button onClick={() => setError("")} aria-label="Dismiss message">×</button>}</div>}
 
     <section className="workspace">

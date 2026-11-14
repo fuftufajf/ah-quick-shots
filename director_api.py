@@ -5,7 +5,10 @@ import mimetypes
 import os
 from pathlib import Path
 import re
+import subprocess
+import sys
 import tempfile
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
 
@@ -13,6 +16,22 @@ from director_core import Conflict, Desk
 
 ROOT = Path(__file__).resolve().parent
 HOST, PORT = "127.0.0.1", 8766
+# A desk keeps running with the code it started with. When a new version is unzipped over it, the page (read
+# from disk) is new and the desk is not: the page's newer actions came back "Unknown action". The desk notices.
+CODE = [ROOT / name for name in ("director_api.py", "director_core.py", "shot_plan.py", "viewer_socket.py")] + [ROOT / "ui" / "dist" / "index.html"]
+
+
+def code_stamp():
+    return [path.stat().st_mtime_ns if path.exists() else None for path in CODE]
+
+
+def restart(server):
+    """Start this desk again with the code now on disk: the port is let go first, so the new one can take it."""
+    server.shutdown()
+    server.server_close()
+    subprocess.Popen([sys.executable, str(ROOT / "director_api.py")], cwd=ROOT,
+                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    os._exit(0)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -41,7 +60,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         relative = unquote(urlsplit(self.path).path)
         if relative == "/api/state":
-            return self.send_json(200, self.server.desk.snapshot())
+            return self.send_json(200, {**self.server.desk.snapshot(), "stale": code_stamp() != self.server.code})
         if relative.startswith("/media/"):
             if not re.fullmatch(r"/media/(clips/)?[a-f0-9]{32}\.(bmp|mp4)", relative):
                 return self.send_error(404)
@@ -103,6 +122,13 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.desk.worker.join(5)
                     return self.send_json(200, self.server.desk.snapshot())
                 return self.send_json(202, job)
+            if self.path == "/api/restart":
+                job = self.server.desk.snapshot()["job"]
+                if job and job["running"]:
+                    raise ValueError("Wait for the operation in progress to finish, then restart")
+                self.send_json(202, {"restarting": True})
+                threading.Thread(target=restart, args=(self.server,), daemon=True).start()
+                return
             if self.path == "/api/folder":  # the videos folder, shown in Explorer: a page cannot open a folder itself
                 folder = self.server.desk.videos
                 folder.mkdir(parents=True, exist_ok=True)
@@ -147,6 +173,7 @@ class Server(ThreadingHTTPServer):
 def make_server(port=PORT, root=ROOT / ".quickshots", media_root=None, videos=None):
     server = Server((HOST, port), Handler)
     server.daemon_threads = True
+    server.code = code_stamp()
     server.desk = Desk(root, media_root=media_root or working_folder(root), videos=videos or videos_folder(root))
     return server
 
