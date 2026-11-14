@@ -237,6 +237,15 @@ export function App() {
     if (!project) return;
     const player = film.current;
     if (player && !player.paused && !player.ended) return player.pause();
+    // A saved shot of a kill, take-off or landing: Play shows the whole sequence, as the cut renders it (clicking
+    // the shot in the cut already plays the shot alone). Changed and not yet updated, it plays that shot.
+    if (sequence.length > 1 && !dirty) {
+      if (player && clip && asked === "sequence" && clip.start === sequence[0].start && clip.end === sequence.at(-1).end) {
+        if (player.ended) player.currentTime = 0;
+        return player.play();
+      }
+      return playSequence();
+    }
     if (player && (draft ? asked === clipKey(draft.start, draft.end, draft, flags) : !player.ended)) {
       if (player.ended) player.currentTime = 0;
       return player.play();
@@ -276,6 +285,10 @@ export function App() {
     if (inside || shot.hero == null || AS_FLOWN.includes(shot.kind)) return show(shot, e.time, lead);
     casting.current = {id: shot.id, still: e.time};
     setWanted({action: "around", body: {start: shot.start, end: shot.end, hero: lead}});
+  }
+  // A sequence just added: its first shot selected and shown as a still, so Play shows the whole sequence.
+  function select(shot) {
+    open({...shot}, false); setCursor(shot.start); look(shot);
   }
   function choose(shot) {
     if (keepDraft()) return;
@@ -409,8 +422,8 @@ export function App() {
         if (shot.end - shot.start >= .5) made.push(shot);
       }
     }
-    if (made.length) await save([...shots, ...made]);
-    else setError(found.length ? "Your take-offs and landings in this film already have shots" : "No take-off or landing of yours in this film");
+    if (made.length && await save([...shots, ...made])) select(made[0]);
+    else if (!made.length) setError(found.length ? "Your take-offs and landings in this film already have shots" : "No take-off or landing of yours in this film");
   }
 
   async function reel() {
@@ -421,7 +434,7 @@ export function App() {
         if (shot.end - shot.start >= .5) made.push(shot);
       }
     }
-    if (made.length) await save([...shots, ...made]);
+    if (made.length && await save([...shots, ...made])) select(made[0]);
   }
 
   const battles = useMemo(() => fights(events, you.current), [project?.film, events.length, you.current?.id, you.current?.name]);
@@ -529,8 +542,7 @@ export function App() {
             }}/>
           </div>
           <div className="transport">
-            <button className="play" disabled={!project} onClick={play} aria-label={rolling ? "Pause" : "Play"} title={draft ? "Play this shot (Space)" : `Play the next ${CHUNK} seconds (Space)`}>{rolling ? <Pause weight="fill"/> : <Play weight="fill"/>}</button>
-            {sequence.length > 1 && <button disabled={working || dirty} onClick={playSequence} title={dirty ? "Update the shot first" : "The whole sequence as one preview, as the cut will show it"}><Play/> Sequence ({sequence.length})</button>}
+            <button className="play" disabled={!project} onClick={play} aria-label={rolling ? "Pause" : "Play"} title={sequence.length > 1 && !dirty ? `Play the whole sequence, ${sequence.length} shots (Space)` : draft ? "Play this shot (Space)" : `Play the next ${CHUNK} seconds (Space)`}>{rolling ? <Pause weight="fill"/> : <Play weight="fill"/>}</button>
             <strong>{formatTime(cursor)}</strong><span>/ {formatTime(project?.length)}</span>
             <button disabled={!project || conflict} onClick={another} title={again ? "Another shot of this same stretch: pick a camera, then Add to cut" : "Start a new six-second shot at the playhead"}><Plus/> New shot</button>
             <button disabled={!project} onClick={() => mark("start")} title="Shot starts at the playhead (I)">Set in</button>

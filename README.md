@@ -42,8 +42,9 @@ does not read the viewer's memory or its film files.
    after that it replays and scrubs from its file. Set in / Set out (I / O)
    mark the shot at the playhead; drag the ends of the highlighted range to
    trim it. Drag the picture to walk the camera round the aircraft. With a
-   shot of a kill, take-off or landing selected, Sequence previews all its
-   shots in a row, as the cut will render them.
+   shot of a kill, take-off or landing selected, Play shows all its shots in
+   a row, as the cut will render them; clicking the shot in the cut plays it
+   alone.
 3. **Cameras** — one click shows the moment through that camera, before
    anything is saved: you or the opponent in front, an observer flying along
    like a third aircraft, close views, over your shoulder, from your wing,
