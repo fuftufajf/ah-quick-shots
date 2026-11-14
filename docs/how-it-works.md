@@ -198,6 +198,24 @@ ones in the next. Three shots of one stretch come out as three videos of the
 same length, each saved under its shot's name and camera. On the desk, the
 first shot of a stretch is the one that plays until another is selected.
 
+Data overlay (16:9 and 9:16) adds, beside every rendered video, two transparent
+films of the same length and frame rate to lay over it in an editor: a card with
+the lead aircraft's true airspeed (mph), height (ft), climb (ft/min) and G, and,
+when the shot has an opponent, his range (ft) and how fast you close on him (mph).
+`... - overlay 16x9.mov` is the video's size, the card in the lower left corner;
+`... - overlay 9x16.mov` is 1080×1920 for a reel, the card at the top, clear of
+the apps' own bars, and half as large again to be read on a phone. In DaVinci
+Resolve put the video on V1 and the overlay that fits the timeline on V2: on a
+9:16 timeline the overlay stays put however the video under it is moved or
+cropped. They are ProRes 4444 with transparency (Resolve reads it as Straight),
+BT.709, drawn by ffmpeg with libass in Source Sans Pro when it is installed;
+without ffmpeg the option is off. The numbers change ten times a second; while
+the opponent is out of the film his are a dash. The flights are read before the
+first render (see "Flight data" below), because touching the film between
+renders can thin the next one's sound; the overlays are drawn after each render,
+about half as long as the video plays at 1080p and twice as long at 4K, and
+take about 6 MB a second at 1080p60.
+
 Add my kills makes four shots for every kill of yours that has none yet, after
 the kill sequence in Steely's Aces High film companion: you closing in (you in
 front, him beyond), your guns (over your shoulder at him), him going down (close
@@ -371,7 +389,8 @@ most 5 s later). One action runs at a time; a second is refused while
   shots cannot share a video: `state.preview.files` then lists several,
   `[{url, file, shots}]`; `file` is where the video was kept (`state.videos`
   is that folder). `labels` `{shot id: camera name}` names each shot's camera
-  in its file name; without it the shot's `kind` is used
+  in its file name; without it the shot's `kind` is used. With `overlay: true` (needs ffmpeg, `state.ffmpeg`)
+  every entry of `files` also has `overlays`: the 16:9 and the 9:16 data overlay kept beside it
 - POST `/api/folder` `{}` shows the videos folder in Explorer
 
 `seek`, `clip` and `icons` also take `shot`, an unsaved shot object: it stands

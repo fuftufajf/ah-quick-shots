@@ -34,6 +34,7 @@ export function App() {
   const [skipped, setSkipped] = useState(() => new Set());
   const [quality, setQuality] = useState("final");
   const [apart, setApart] = useState(false);
+  const [withOverlay, setWithOverlay] = useState(false);
   const [hidden, setHidden] = useState("");
   const [closedVideo, setClosedVideo] = useState("");
   const [sending, setSending] = useState(false);
@@ -524,7 +525,7 @@ export function App() {
             {working && <div className="preview-busy"><span className="spinner"/><span>{desk.job?.message || "Working…"}</span>{desk.job?.expect && <span className="meter"><i style={{width: `${Math.min(100, (desk.job.elapsed || 0) / desk.job.expect * 100)}%`}}/></span>}</div>}
             {failure && <div className="preview-busy failed" role="alert"><span>{failure}</span><button onClick={() => setHidden(desk.job.id)} aria-label="Dismiss message">×</button></div>}
           </div>
-          <div className="caption"><span title={video ? (video.files || [video]).map(f => baseName(f.file)).join("\n") : undefined}>{video ? `Rendered by Film Viewer · original sound · ${(video.files || []).length > 1 ? `${video.files.length} videos saved` : `saved as ${baseName(video.file)}`} in ${desk.videos}`
+          <div className="caption"><span title={video ? (video.files || [video]).map(f => baseName(f.file)).join("\n") : undefined}>{video ? `Rendered by Film Viewer · original sound · ${(video.files || []).length > 1 ? `${video.files.length} videos saved` : `saved as ${baseName(video.file)}`}${(video.files || []).some(f => f.overlays) ? " with data overlays" : ""} in ${desk.videos}`
             : clip ? `Preview ${formatTime(clip.start)} — ${formatTime(clip.end)}${movable ? " · drag the picture to move the camera" : ""}`
             : still && draft ? `Still at ${formatTime(still.time)} through this camera${movable ? ` · drag to ${turnable(draft) ? "turn" : "move"} it, wheel to zoom` : ""} · Play shows it moving`
             : still ? `Still at ${formatTime(still.time)} · press Play for a moving preview` : "A preview takes about as long to render as it plays."}</span>{video && <span><button onClick={openVideos}>Open folder</button><button onClick={() => setClosedVideo(video.url)}>Back to the film</button></span>}</div>
@@ -614,7 +615,8 @@ export function App() {
           <button disabled={working || dirty || !project} onClick={airfield} title="A few shots for every take-off and landing of yours that has none yet, found in your flight path">Take-offs & landings</button>
           <select aria-label="Render quality" value={quality} onChange={e => setQuality(e.target.value)}><option value="final">1080p60</option><option value="4k">4K · 2160p60</option><option value="draft">Quick draft</option></select>
           <select aria-label="Render as" value={apart ? "apart" : "one"} onChange={e => setApart(e.target.value === "apart")} title="One video with the gaps left out, or a file for every shot to cut in an editor"><option value="one">One video</option><option value="apart">A file per shot</option></select>
-          <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; action("export_cut", {shot_ids: chosen, quality, apart, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))}); }} title={dirty ? "Add or update the shot first" : apart ? "A video of each ticked shot, in its own file" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>
+          <label className="option" title={desk.ffmpeg ? "Beside every video, a transparent film of your speed, height, climb and G and the range to your opponent, to lay over it in an editor: one for a 16:9 timeline, one for a 9:16 reel" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withOverlay && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithOverlay(e.target.checked)}/> Data overlay (16:9 and 9:16)</label>
+          <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; action("export_cut", {shot_ids: chosen, quality, apart, overlay: withOverlay && !!desk.ffmpeg, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))}); }} title={dirty ? "Add or update the shot first" : apart ? "A video of each ticked shot, in its own file" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>
           <button onClick={openVideos} title={`Finished videos are kept in ${desk.videos}`}><FolderOpen/> Videos folder</button></div>
       </aside>
     </section>

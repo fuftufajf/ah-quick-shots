@@ -24,6 +24,7 @@ does not read the viewer's memory or its film files.
 - optional: **ffmpeg** on the PATH. With it a video is rendered from two
   seconds early and those seconds are cut off, so the other aircraft are solid
   from the first frame; without it they can fade in during the first second.
+  It also draws the data overlay (below).
 - a current browser
 
 ## Start
@@ -56,7 +57,10 @@ does not read the viewer's memory or its film files.
    Swing round and Ends at). Add to cut keeps the shot.
 4. **The cut** — tick the shots you want and Render selected: 1080p60, 4K or a
    quick draft, as one video with the gaps between shots left out or as a file
-   per shot for cutting in an editor. Add my kills makes four
+   per shot for cutting in an editor. Tick Data overlay to get, beside each
+   video, a transparent film of your speed, height, climb and G and the range
+   to your opponent, to lay over it in DaVinci Resolve or another editor: one
+   for a 16:9 timeline, one for a 9:16 reel. Add my kills makes four
    shots for every kill of yours: you closing in, your guns, him going down,
    you flying on. Take-offs & landings finds yours in your flight path and adds
    a few shots for each: the roll, the wheels, the lift-off with the camera
@@ -94,6 +98,7 @@ time, shot and camera; Videos folder, under The cut, opens it.
 - `viewer_socket.py` — the viewer's text protocol
 - `shot_plan.py` — shot geometry and the viewer's camera commands
 - `flight_data.py` — speed, height, G, energy and the geometry between two aircraft, from the viewer's kept tracks
+- `overlay.py` — the data overlay: a transparent ProRes film of those numbers to lay over a render in an editor
 - `director_core.py` — saved plans, revision checks, the one worker that owns the viewer
 - `director_api.py` — loopback-only HTTP, same-origin gate, media serving
 - `ui/src/` — the page; `ui/dist/` is its ready build, so Node is not needed to run

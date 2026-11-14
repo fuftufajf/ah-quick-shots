@@ -15,6 +15,7 @@ import time
 import uuid
 
 from flight_data import derive, pair, read_kept
+import overlay
 from shot_plan import RIDES, compile_shot, filmer_path, ground_moments, nearby, passes, probe_cameras, track_rows, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows, number, plane_rows
 
@@ -117,7 +118,8 @@ class Desk:
         self.stills = deque()
         self.data = {"connected": False, "films": [], "project": None, "planes": [],
                      "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None, "flight": None,
-                     "preview": None, "proposals": [], "job": None, "videos": str(self.videos)}
+                     "preview": None, "proposals": [], "job": None, "videos": str(self.videos),
+                     "ffmpeg": bool(shutil.which("ffmpeg"))}
 
     @staticmethod
     def _drop(path):
@@ -375,6 +377,19 @@ class Desk:
             value = raw.get(key)
             ids.append(None if value in (None, "") else int(number(value, 0, 1000000, key)))
         hero, target = ids
+        flight = self._read_flight(project, start, end, step)
+        data = flight["data"]
+        for ident in ids:
+            if ident is not None and str(ident) not in data["aircraft"]:
+                raise ValueError(f"Aircraft {ident} is not in the film in that stretch")
+        rows = flight["rows"]
+        data.update(hero=hero, target=target, pair=pair(rows[hero], rows[target]) if hero is not None and target is not None else [])
+        with self.lock:
+            self.data["flight"] = {**{k: data[k] for k in ("film", "start", "end", "step", "hero", "target")},
+                                   "aircraft": [{k: row[k] for k in ("id", "name", "radius", "quality", "update")} for row in data["aircraft"].values()]}
+
+    def _read_flight(self, project, start, end, step=.02):
+        """Every aircraft's flight in a stretch, kept as the last one read: {key, rows, data}."""
         key = (project["film"], round(start, 3), round(end, 3), round(step, 3))
         if not self.flight or self.flight["key"] != key:
             self.progress("Reading every aircraft's flight")
@@ -383,20 +398,32 @@ class Desk:
             if not found:
                 raise ValueError("Film Viewer did not say where it kept the tracks")
             kept = read_kept(found)
-            kept["tracks"] = {ident: [row for row in rows if row[0] >= start - 1e-6] for ident, rows in kept["tracks"].items()}
+            kept["tracks"] = {ident: [row for row in rows if start - 1e-6 <= row[0] <= end + 1e-6] for ident, rows in kept["tracks"].items()}
             aircraft = {str(ident): {"id": ident, **kept["aircraft"].get(ident, {"name": "", "radius": 0}), **derive(rows, kept["step"])}
                         for ident, rows in kept["tracks"].items() if rows}
             self.flight = {"key": key, "rows": kept["tracks"], "data": {"film": project["film"], "start": start, "end": end,
                                                                          "step": kept["step"], "aircraft": aircraft}}
-        data = self.flight["data"]
-        for ident in ids:
-            if ident is not None and str(ident) not in data["aircraft"]:
-                raise ValueError(f"Aircraft {ident} is not in the film in that stretch")
-        rows = self.flight["rows"]
-        data.update(hero=hero, target=target, pair=pair(rows[hero], rows[target]) if hero is not None and target is not None else [])
-        with self.lock:
-            self.data["flight"] = {**{k: data[k] for k in ("film", "start", "end", "step", "hero", "target")},
-                                   "aircraft": [{k: row[k] for k in ("id", "name", "radius", "quality", "update")} for row in data["aircraft"].values()]}
+        return self.flight
+
+    def _segment(self, project, shot):
+        """What the data overlay shows through one shot: its lead aircraft's numbers and the pair's (overlay.py)."""
+        flight = self._read_flight(project, shot["start"], shot["end"])
+        aircraft, rows = flight["data"]["aircraft"], flight["rows"]
+        hero, target = shot["hero"], shot.get("target")
+        lead = aircraft.get(str(hero), {})
+        return {"start": shot["start"], "end": shot["end"], "hero": lead.get("samples", []), "hero_name": lead.get("name") or "You",
+                "target_name": None if target is None else (aircraft.get(str(target), {}).get("name") or "Opponent"),
+                "pair": pair(rows[hero], rows[target]) if hero in rows and target in rows else None}
+
+    def _overlays(self, video, segments, quality, n, count):
+        """The data overlay of a finished video, beside it: one for a 16:9 timeline at the video's size, one for a
+        9:16 reel, at the video's frame rate and length."""
+        width, height, fps = map(int, RENDERS[quality].split())
+        made = []
+        for layout, tall in (("16x9", height), ("9x16", 960 if quality == "draft" else 1920)):
+            self.progress(f"Drawing the {layout.replace('x', ':')} data overlay" + (f" for video {n} of {count}" if count > 1 else ""))
+            made.append(str(overlay.render(layout, segments, video.with_name(f"{video.stem} - overlay {layout}.mov"), tall, fps)))
+        return made
 
     def flight_data(self):
         """The last stretch's flight data in full, for GET /api/flight; None before one was read."""
@@ -696,6 +723,12 @@ class Desk:
         # The viewer holds one camera at a time: takes of one stretch come out as videos of their own, each the
         # same length, to lay over one another in an editor. Asked apart, every shot is a video of its own.
         rows = [[s] for s in sorted(shots, key=lambda s: s["start"])] if raw.get("apart") else passes(shots)
+        segments = {}
+        if raw.get("overlay"):
+            if not shutil.which("ffmpeg"):
+                raise ValueError("A data overlay needs ffmpeg: install it, then try again")
+            # Read before the first render: touching the film between renders can thin the next one's sound (TAIL).
+            segments = {s["id"]: self._segment(project, s) for s in shots}
         files = []
         if quality == "draft":  # measured: about real time; the larger sizes have not been timed
             with self.lock:
@@ -707,6 +740,8 @@ class Desk:
                          f"Rendering {len(row)} shot{'s' * (len(row) > 1)} at {size}" + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""))
             saved = self._keep(path, project, row, raw.get("labels"))
             files.append({"url": "/media/" + path.name, "file": str(saved), "shots": [s["id"] for s in row]})
+            if segments:
+                files[-1]["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality, n, len(rows))
         self._tidy()
         with self.lock:
             self.data["preview"] = {"url": files[0]["url"], "kind": "video", "time": shots[0]["start"],

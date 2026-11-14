@@ -4,6 +4,7 @@ import http.client
 import json
 import math
 from pathlib import Path
+import shutil
 import socket
 import struct
 import subprocess
@@ -16,6 +17,7 @@ from unittest.mock import patch
 from director_api import make_server, videos_folder, working_folder
 from director_core import Conflict, Desk, framing, lead
 import flight_data
+import overlay
 from shot_plan import camera_pose, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows
 
@@ -678,6 +680,77 @@ class DeskTests(unittest.TestCase):
         self.desk.start({"action": "flight", "start": 1, "end": 3, "hero": 7, "expected_revision": 1})
         self.desk.worker.join(2)
         self.assertIn("not in the film", self.desk.snapshot()["job"]["error"])
+
+    def test_the_data_overlay_card(self):
+        hero = [{"t": 10 + i / 50, "tas": 605.8, "alt": 1460.3, "climb": 35.2, "g": 7.76} for i in range(101)]
+        near = [{"t": 10 + i / 50, "range": 355, "closure": 376.4} for i in range(51)]  # he leaves the film at 11 s
+        seg = {"start": 10, "end": 12, "hero": hero, "hero_name": "fu{fu}2", "pair": near, "target_name": "AAdecoy"}
+        colour, matte = overlay.script("16x9", [seg]), overlay.script("16x9", [seg], matte=True)
+        self.assertIn("PlayResX: 1920", colour)
+        self.assertIn("YCbCr Matrix: None", colour)  # or libass shifts the colours
+        self.assertIn("FU(FU)2 · SPEED", colour)  # braces would be read as styling
+        first = colour.split("0:00:00.00,0:00:00.10")[1:]
+        for value in ("}413{", "}1,460{", "}+2,110{", "}7.8", "}355{", "}257{"):
+            self.assertTrue(any(value in line for line in first), value)
+        self.assertIn("0:00:01.90,0:00:02.00", colour)
+        late = "".join(line for line in colour.splitlines() if "0:00:01.50," in line)
+        self.assertIn("}–{", late)  # the opponent gone: his numbers are a dash
+        # The transparency pass draws the same in greys: the panel 58% (148), text and numbers whole (255).
+        self.assertIn("\\1c&H949494&", matte)
+        self.assertNotIn("&H18100C&", matte)
+        self.assertIn("\\1c&H18100C&", colour)
+        self.assertEqual((overlay.number(-0.13, 1), overlay.number(2110, sign=True), overlay.number(0, sign=True)), ("−0.1", "+2,110", "0"))
+        # The reel's card is at the top and half as large again; without an opponent it has no bottom row.
+        reel = overlay.script("9x16", [{**seg, "pair": None, "target_name": None}])
+        self.assertIn("PlayResY: 1920", reel)
+        self.assertIn("\\pos(64.0,260.0)", reel)
+        self.assertNotIn("CLOSING", reel)
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg")
+    def test_the_data_overlay_film_is_prores_4444_with_transparency(self):
+        hero = [{"t": i / 10, "tas": 300, "alt": 500, "climb": 0, "g": 1} for i in range(6)]
+        target = Path(self.temp.name) / "with space" / "o.mov"
+        target.parent.mkdir()
+        overlay.render("16x9", [{"start": 0, "end": .5, "hero": hero, "hero_name": "Pilot"}], target, 216, 10)
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,profile,width,height,pix_fmt,nb_frames,color_space",
+                                "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(probe, "prores,4444,384,216,yuva444p12le,bt709,5")
+
+    def test_a_render_can_bring_its_data_overlays(self):
+        path = Path(self.temp.name) / "fight.ahftracks"
+        write_kept(path, {19: [turn_row(t / 10, 0, 0) for t in range(0, 121)],
+                          10: [(t / 10, 0, 500, 1000, 0, 0, 0, 0, 0, 0) for t in range(0, 121)]}, {19: "Pilot", 10: "Other"})
+        commands, made = [], []
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("tracks ") and " keep " in command:
+                return [f"tracks kept file {path}"]
+            if command.startswith("tracks "):  # the cameras' own read of the stretch
+                start, end = map(float, command.split()[1:3])
+                return [f"track {start + i / 2} {ident} {x} 200 0 0 0 0" for i in range(int((end - start) * 2) + 1)
+                        for ident, x in ((19, 0), (10, 300))]
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"test")
+            return []
+        def draw(layout, segments, target, height, fps):
+            made.append((layout, [(s["start"], s["end"], s["hero_name"], s["target_name"], len(s["hero"])) for s in segments], Path(target).name, height, fps))
+            Path(target).write_bytes(b"overlay")
+            return target
+        self.desk.viewer.command = native
+        self.desk.save({"expected_revision": 1, "shots": [SHOT, {**SHOT, "id": "two", "start": 5, "end": 7, "target": None, "kind": "cockpit"}]})
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", lambda a, b, s: Path(b).write_bytes(b"cut")), \
+                patch("director_core.overlay.render", draw):
+            self.run_action({"action": "export_cut", "quality": "final", "overlay": True})
+        # The flights are read before the first render, and each video gets a 16:9 and a 9:16 overlay of its shots.
+        self.assertLess(max(i for i, c in enumerate(commands) if " keep " in c), min(i for i, c in enumerate(commands) if c.startswith("video ")))
+        both = [(1, 3, "Pilot", "Other", 21), (5, 7, "Pilot", None, 21)]
+        self.assertEqual(made, [("16x9", both, "test 00.01-00.07 cut of 2 shots - overlay 16x9.mov", 1080, 60),
+                                ("9x16", both, "test 00.01-00.07 cut of 2 shots - overlay 9x16.mov", 1920, 60)])
+        self.assertEqual(len(self.desk.snapshot()["preview"]["files"][0]["overlays"]), 2)
+        with patch("director_core.shutil.which", return_value=None):
+            self.desk.start({"action": "export_cut", "overlay": True, "expected_revision": 2})
+            self.desk.worker.join(2)
+        self.assertIn("needs ffmpeg", self.desk.snapshot()["job"]["error"])
 
     def test_a_second_desk_cannot_take_the_port_of_a_running_one(self):
         server = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)

@@ -159,6 +159,8 @@ p.problem{font-size:13px;padding:10px 14px 0}
 .cut-row small{color:var(--muted);font-variant-numeric:tabular-nums}
 .cut-actions{display:grid;gap:6px;padding:10px;border-top:1px solid var(--edge)}
 .cut-actions .primary{min-height:36px}
+.option{display:flex;align-items:center;gap:8px;min-height:30px;font-size:13px;cursor:pointer}
+.option:has(input:disabled){color:var(--muted);cursor:default}
 
 @media(max-width:1250px){.workspace{grid-template-columns:230px minmax(0,1fr)}
 .cut{grid-column:1/-1}
