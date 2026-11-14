@@ -17,7 +17,7 @@ import uuid
 from shot_plan import RIDES, compile_shot, filmer_path, ground_moments, nearby, passes, probe_cameras, track_rows, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows, number, plane_rows
 
-ACTIONS = ("connect", "open", "seek", "preview", "clip", "around", "airfield", "icons", "suggest", "export_cut")
+ACTIONS = ("connect", "open", "seek", "preview", "clip", "live", "around", "airfield", "icons", "suggest", "export_cut")
 RENDERS = {"draft": "960 540 30", "final": "1920 1080 60", "4k": "3840 2160 60"}
 # The viewer renders in about real time whatever the size (measured: 5 s of film in 5 s at 480x270 and at 960x540).
 CLIP = "960 540 30"
@@ -454,18 +454,8 @@ class Desk:
     def _clip(self, raw, project):
         """The desk's moving picture. The socket has no stream, and the viewer renders a video in about the
         time it plays, so a stretch is rendered once and replayed from its file until its cameras change."""
-        length, row = project["length"], None
-        if raw.get("shot_ids") is not None:  # saved shots in a row, a sequence: as they will be rendered
-            if not isinstance(raw["shot_ids"], list):
-                raise ValueError("shot_ids must be a list")
-            row = sorted((s for s in project["shots"] if s["id"] in raw["shot_ids"]), key=lambda s: s["start"])
-            if not row or any(b["start"] < a["end"] - .01 for a, b in zip(row, row[1:])):
-                raise ValueError("Choose saved shots that follow one another")
-            start, end = row[0]["start"], row[-1]["end"]
-        else:
-            start, end = number(raw.get("start"), 0, length, "start"), number(raw.get("end"), 0, length, "end")
-        if not .1 <= end - start <= 120:
-            raise ValueError("A preview lasts 0.1 to 120 seconds")
+        length = project["length"]
+        start, end, row = self._stretch(raw, project)
         shots = row or self._plan(project, raw)[0]
         if raw.get("hero") is not None:  # who is near the lead in this stretch, for choosing the opponent
             self._around(raw, project)
@@ -497,6 +487,50 @@ class Desk:
         with self.lock:
             self.data["preview"] = {"url": "/media/clips/" + path.name, "kind": "clip", "start": start, "end": end,
                                     "time": start, "revision": project["revision"], "film": project["film"]}
+
+    @staticmethod
+    def _stretch(raw, project):
+        """What a preview shows: saved shots in a row (`shot_ids`, a sequence: as they will be rendered), or a
+        stretch from `start` to `end` through the plan and an unsaved shot. (start, end, the row or None)"""
+        length, row = project["length"], None
+        if raw.get("shot_ids") is not None:
+            if not isinstance(raw["shot_ids"], list):
+                raise ValueError("shot_ids must be a list")
+            row = sorted((s for s in project["shots"] if s["id"] in raw["shot_ids"]), key=lambda s: s["start"])
+            if not row or any(b["start"] < a["end"] - .01 for a, b in zip(row, row[1:])):
+                raise ValueError("Choose saved shots that follow one another")
+            start, end = row[0]["start"], row[-1]["end"]
+        else:
+            start, end = number(raw.get("start"), 0, length, "start"), number(raw.get("end"), 0, length, "end")
+        if not .1 <= end - start <= 120:
+            raise ValueError("A preview lasts 0.1 to 120 seconds")
+        return start, end, row
+
+    def _live(self, raw, project):
+        """The stretch played in Film Viewer's own window, through its cameras: seen at once, with its sound,
+        nothing rendered. Playing just before a render thins the render's sound (see LEAD), so the next render
+        waits as after a render of that length, and never less than 12 s (renders that far apart were whole)."""
+        start, end, row = self._stretch(raw, project)
+        if row:
+            self._cut(project, row)
+        else:
+            self._apply(project, raw)
+        self._seek(start)
+        self.progress(f"Playing {end - start:.1f} s in Film Viewer's window")
+        self.command("play")
+        deadline, now = time.monotonic() + 2 * (end - start) + 5, start
+        try:
+            while time.monotonic() < deadline and now < end - .05:
+                try:
+                    now = float(self.command("wait 6")[0].rsplit(" ", 1)[1])  # "waited, time <film seconds>"
+                except (IndexError, ValueError):
+                    break
+        finally:
+            self.command("pause")
+            self.quiet = max(self.quiet, time.monotonic() + max(12, end - start + TAIL) * self.pace)
+            self.applied = None
+            with self.lock:
+                self.data["now"] = min(now, project["length"])
 
     def _suggest(self, raw, project):
         with self.lock:
@@ -582,6 +616,8 @@ class Desk:
             return self._around(raw, project)
         if action == "clip":
             return self._clip(raw, project)
+        if action == "live":
+            return self._live(raw, project)
         if action in ("seek", "preview", "icons"):
             # The names switch answers with a still of the moment asked for, like a seek: seen at once, no render.
             if action == "icons":

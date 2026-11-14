@@ -41,7 +41,9 @@ does not read the viewer's memory or its film files.
 2. **Picture** — Play (Space) renders a short preview clip with sound, once;
    after that it replays and scrubs from its file. Set in / Set out (I / O)
    mark the shot at the playhead; drag the ends of the highlighted range to
-   trim it. Drag the picture to walk the camera round the aircraft. With a
+   trim it. Drag the picture to walk the camera round the aircraft, or to
+   turn a camera on the airframe; the wheel over the picture zooms. In Film
+   Viewer plays it at once in the viewer's own window, nothing rendered. With a
    shot of a kill, take-off or landing selected, Play shows all its shots in
    a row, as the cut will render them; clicking the shot in the cut plays it
    alone.

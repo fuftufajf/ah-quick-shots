@@ -43,7 +43,8 @@ def validate_shot(raw, length):
             raise ValueError("Aircraft ids must be whole numbers")
         shot[key] = None if parsed is None else int(parsed)
     # A camera ship watching its hero can swing `sweep` degrees round it and close in to `closer` feet over the shot.
-    for key, low, high in (("sweep", -360, 360), ("closer", 20, 10000)):
+    # A camera on the airframe can be turned from where it looks: `turn` degrees to the left, `tilt` up.
+    for key, low, high in (("sweep", -360, 360), ("closer", 20, 10000), ("turn", -180, 180), ("tilt", -89, 89)):
         if raw.get(key) is not None:
             shot[key] = number(raw[key], low, high, key)
     shot["watch"] = raw.get("watch", "both")
@@ -336,8 +337,10 @@ def _mount(shot):
     fov, roll = math.radians(shot["fov"]), math.radians(shot["roll"])
     left = -1 if shot["side"] == "left" else 1
     target = f" at {shot['target']}" if shot["target"] is not None else ""
+    # The viewer's yaw turns to the left and its pitch up (the gear camera on the right looks in with +0.7).
+    turn, tilt = math.radians(shot.get("turn", 0)), math.radians(shot.get("tilt", 0))
     if shot["kind"] == "cockpit":
-        return f"mount {shot['hero']} 0 0 0 0 0 0 {fov:.8f}"
+        return f"mount {shot['hero']} 0 0 0 {turn:g} {tilt:g} 0 {fov:.8f}"
     if shot["kind"] == "follow":
         # Fastened to the airframe, so it stays behind (or beside) however the aircraft turns, loops or rolls.
         # Aimed a little above the aircraft: it sits low in the frame with the horizon over it.
@@ -345,10 +348,10 @@ def _mount(shot):
         return (f"mount {shot['hero']} {math.sin(turn) * d:.2f} {up:g} {-math.cos(turn) * d:.2f} {turn:.4f} "
                 f"{.1 - math.atan2(up, d):.4f} {roll:.8f} {fov:.8f}{target}")
     if shot["kind"] == "wing":
-        return f"mount {shot['hero']} {24 * left} {shot['height']:g} -6 0 0 {roll:.8f} {fov:.8f}{target}"
+        return f"mount {shot['hero']} {24 * left} {shot['height']:g} -6 {turn:g} {tilt:g} {roll:.8f} {fov:.8f}{target}"
     right, up, ahead, yaw, pitch = MOUNTS[shot["kind"]]
     # Only over the shoulder does the camera turn to hold the other aircraft; the rest look at the airframe.
-    return (f"mount {shot['hero']} {right * left:g} {up:g} {ahead:g} {yaw * left:.4f} {pitch:g} {roll:.8f} {fov:.8f}"
+    return (f"mount {shot['hero']} {right * left:g} {up:g} {ahead:g} {yaw * left + turn:.4f} {pitch + tilt:g} {roll:.8f} {fov:.8f}"
             + (target if shot["kind"] == "shoulder" else ""))
 
 

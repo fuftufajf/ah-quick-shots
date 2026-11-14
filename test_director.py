@@ -421,6 +421,31 @@ class DeskTests(unittest.TestCase):
         self.desk.start({"action": "clip", "shot_ids": ["a", "c"], "expected_revision": 2}); self.desk.worker.join(2)
         self.assertIn("follow one another", self.desk.snapshot()["job"]["error"])
 
+    def test_a_camera_on_the_airframe_turns_and_tilts(self):
+        seat = validate_shot({**SHOT, "kind": "cockpit", "turn": 30, "tilt": -10}, 20)
+        self.assertEqual(compile_shot(seat, {})[0], "cam 1 2 mount 19 0 0 0 0.523599 -0.174533 0 1.04719755")
+        gear = compile_shot(validate_shot({**SHOT, "kind": "gear", "target": None, "turn": 30}, 20), {})[0]
+        self.assertIn(" 1.2236 0.14 ", gear)  # its own 0.7 rad, and 30 degrees more to the left
+        with self.assertRaises(ValueError):
+            validate_shot({**SHOT, "kind": "cockpit", "tilt": 95}, 20)
+
+    def test_live_plays_in_the_viewer_window_and_the_next_render_waits(self):
+        commands, clock = [], iter([3.0, 5.0, 7.0])
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("wait "):
+                return [f"waited, time {next(clock)}"]
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+        self.desk.viewer.command = native
+        self.desk.pace = 1
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 2, "end": 6, "kind": "cockpit"}]})
+        before = time.monotonic()
+        self.run_action({"action": "live", "start": 2, "end": 6})
+        self.assertEqual([c for c in commands if c.split()[0] in ("seek", "play", "pause")], ["seek 2.00000000", "play", "pause"])
+        self.assertEqual(len([c for c in commands if c.startswith("wait ")]), 3)  # until the film reached the end
+        self.assertGreaterEqual(self.desk.quiet - before, 12)
+        self.assertEqual(self.desk.snapshot()["now"], 7.0)
+
     def test_a_shot_s_first_camera_stands_in_the_seconds_before_it(self):
         self.assertEqual(lead("cam 5 2 fixed 1 2 3 4 5 6 7 to 8 9 10 11 12 13 14 curve", 3), ["cam 3 2.00000000 fixed 1 2 3 4 5 6 7"])
         self.assertEqual(lead("cam 5 2 mount 19 0 0 0 0 0 0 1 outside", 4.5), ["cam 4.5 0.50000000 mount 19 0 0 0 0 0 0 1 outside"])

@@ -203,7 +203,15 @@ export function angleOf(shot, cast) {
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 // A drag on the picture moves the camera: the scene follows the hand, so the camera goes the other way round the
 // aircraft, and up when the hand goes down. A long lens moves finer. `width` is the picture's in pixels.
+// Cameras on the airframe turn where they look instead: the scene follows the hand, as a free camera's does.
+// Over your shoulder and from your wing, locked on him, they keep him in frame and do not turn.
+const AIRFRAME = ["cockpit", "nose", "belly", "gear", "wing", "shoulder"];
+export const turnable = shot => AIRFRAME.includes(shot.kind) && !(["shoulder", "wing"].includes(shot.kind) && shot.target != null);
 export function dragCamera(shot, dx, dy, width) {
+  if (AIRFRAME.includes(shot.kind)) {
+    return {...shot, turn: Math.round(((((shot.turn || 0) + dx * shot.fov / width + 180) % 360) + 360) % 360 - 180),
+      tilt: Math.round(clamp((shot.tilt || 0) + dy * shot.fov / width, -89, 89))};
+  }
   // Off the line through both aircraft, degrees count the other way round than round one aircraft's line of flight.
   const way = shot.kind === "pair" || (shot.kind === "escort" && shot.watch !== "hero") ? 1 : -1;
   const orbit = shot.orbit + way * dx * shot.fov / (width * .4);

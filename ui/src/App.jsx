@@ -1,13 +1,15 @@
 import {useEffect, useMemo, useRef, useState} from "react";
 import {ArrowClockwise, CaretLeft, CaretRight, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Trash} from "@phosphor-icons/react";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, killSequence, landingSequence, sequenceOf, takeoffSequence, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
+import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
 const TUNING = [["orbit", "Around", "°", -180, 180, 1, FREE], ["distance", "Distance", "ft", 20, 1500, 5, FREE],
   ["height", "Height", "ft", -300, 600, 1, [...FREE, "wing"]], ["fov", "Lens (zoom)", "°", 6, 120, 1, null], ["roll", "Roll", "°", -45, 45, 1, null],
   // Only on the shots made with them (a lift-off, a roll-out): the camera ship swings round and closes in.
-  ["sweep", "Swing round", "°", -180, 180, 5, ["escort"], true], ["closer", "Ends at", "ft", 20, 1500, 5, ["escort"], true]];
+  ["sweep", "Swing round", "°", -180, 180, 5, ["escort"], true], ["closer", "Ends at", "ft", 20, 1500, 5, ["escort"], true],
+  // Cameras on the airframe that never lock on him: where they look (a drag on the picture does the same).
+  ["turn", "Turn (left +)", "°", -180, 180, 1, ["cockpit", "nose", "belly", "gear"]], ["tilt", "Tilt (up +)", "°", -89, 89, 1, ["cockpit", "nose", "belly", "gear"]]];
 const AS_FLOWN = ["recorded", "weapon"];  // the pilot's own view and the bomb's ride: nothing to adjust
 const CHUNK = 10;  // seconds of film per preview when no shot is selected
 const NEAR = 3000;  // feet: an aircraft that never comes this close is a dot, not someone to film
@@ -181,12 +183,12 @@ export function App() {
     return () => window.removeEventListener("keydown", key);
   });
 
-  // Ctrl + wheel over the picture belongs to the camera; the plain wheel still scrolls the page.
+  // The wheel over the picture zooms the camera's lens; with nothing to zoom it scrolls the page as usual.
   useEffect(() => {
     const element = screen.current;
     let turned = 0;
     function wheel(e) {
-      if (!onWheel.current || !e.ctrlKey) return;
+      if (!onWheel.current) return;
       e.preventDefault();
       turned += e.deltaY;
       if (Math.abs(turned) < 50) return;  // a touchpad sends many small moves for one notch
@@ -254,6 +256,13 @@ export function App() {
   }
 
   // The selected shot's sequence (a kill, a take-off, a landing): its saved shots in a row, as the cut renders them.
+  // At once and with its sound, in Film Viewer's own window: nothing rendered. What Play would show.
+  function playLive() {
+    film.current?.pause();
+    const body = sequence.length > 1 && !dirty ? {shot_ids: sequence.map(s => s.id)}
+      : draft ? {start: draft.start, end: draft.end, shot: draft} : {start: cursor, end: Math.min(length, cursor + CHUNK)};
+    setWanted({action: "live", body});
+  }
   function playSequence() {
     asking.current = [sequence[0].start, sequence.at(-1).end, "sequence"];
     setAsked("sequence"); setWanted({action: "clip", body: {shot_ids: sequence.map(s => s.id)}});
@@ -469,7 +478,7 @@ export function App() {
   const stage = cast.other == null && near.length ? {...cast, other: near[0].id} : cast;
   const rateKey = draft ? JSON.stringify([draft.start, draft.end, stage]) : "";
   const scores = rated === rateKey ? Object.fromEntries(desk.proposals.map(p => [p.id, p])) : {};
-  const movable = Boolean(draft) && FREE.includes(draft.kind) && !video && !conflict;
+  const movable = Boolean(draft) && (FREE.includes(draft.kind) || turnable(draft)) && !video && !conflict;
   const adjustable = Boolean(draft) && !AS_FLOWN.includes(draft.kind) && !video && !conflict;
   const tuning = adjustable ? TUNING.filter(row => (row[6] ? row[6].includes(draft.kind) : true) && (!row[7] || draft[row[0]] != null)) : [];
   const dropInShot = draft && events.some(e => e.kind === "drop" && e.time >= draft.start - 1 && e.time <= draft.end);
@@ -516,7 +525,7 @@ export function App() {
           </div>
           <div className="caption"><span title={video ? (video.files || [video]).map(f => baseName(f.file)).join("\n") : undefined}>{video ? `Rendered by Film Viewer · original sound · ${(video.files || []).length > 1 ? `${video.files.length} videos saved` : `saved as ${baseName(video.file)}`} in ${desk.videos}`
             : clip ? `Preview ${formatTime(clip.start)} — ${formatTime(clip.end)}${movable ? " · drag the picture to move the camera" : ""}`
-            : still && draft ? `Still at ${formatTime(still.time)} through this camera${movable ? " · drag to move it, Ctrl + wheel to zoom" : ""} · Play shows it moving`
+            : still && draft ? `Still at ${formatTime(still.time)} through this camera${movable ? ` · drag to ${turnable(draft) ? "turn" : "move"} it, wheel to zoom` : ""} · Play shows it moving`
             : still ? `Still at ${formatTime(still.time)} · press Play for a moving preview` : "A preview takes about as long to render as it plays."}</span>{video && <span><button onClick={openVideos}>Open folder</button><button onClick={() => setClosedVideo(video.url)}>Back to the film</button></span>}</div>
 
           <div className="timeline">
@@ -543,6 +552,7 @@ export function App() {
           </div>
           <div className="transport">
             <button className="play" disabled={!project} onClick={play} aria-label={rolling ? "Pause" : "Play"} title={sequence.length > 1 && !dirty ? `Play the whole sequence, ${sequence.length} shots (Space)` : draft ? "Play this shot (Space)" : `Play the next ${CHUNK} seconds (Space)`}>{rolling ? <Pause weight="fill"/> : <Play weight="fill"/>}</button>
+            <button disabled={!project || working} onClick={playLive} title="Play it now in Film Viewer's own window, with its sound and nothing rendered. A render after it waits about 12 s, so its sound stays whole."><Play/> In Film Viewer</button>
             <strong>{formatTime(cursor)}</strong><span>/ {formatTime(project?.length)}</span>
             <button disabled={!project || conflict} onClick={another} title={again ? "Another shot of this same stretch: pick a camera, then Add to cut" : "Start a new six-second shot at the playhead"}><Plus/> New shot</button>
             <button disabled={!project} onClick={() => mark("start")} title="Shot starts at the playhead (I)">Set in</button>
@@ -574,10 +584,10 @@ export function App() {
               <button aria-pressed={watching === "them"} disabled={conflict || stage.other == null} onClick={() => watch("them")} title="Him alone, on a long lens from a steady seat beside you">Opponent</button>
             </div>}
             {adjustable ? <div className="adjust">
-              {tuning.map(([key, label, unit, min, max, step]) => <label key={key}>{label} · {Math.round(draft[key])}{unit}<input type="range" min={min} max={max} step={step} value={draft[key]} onChange={e => tune({...draft, [key]: Number(e.target.value)})}/></label>)}
+              {tuning.map(([key, label, unit, min, max, step]) => <label key={key}>{label} · {Math.round(draft[key] ?? 0)}{unit}<input type="range" min={min} max={max} step={step} value={draft[key] ?? 0} onChange={e => tune({...draft, [key]: Number(e.target.value)})}/></label>)}
               {["wing", "shoulder", "gear"].includes(draft.kind) && <label>Side<select value={draft.side} onChange={e => tune({...draft, side: e.target.value})}><option value="right">right</option><option value="left">left</option></select></label>}
             </div> : !conflict && !video && <p className="hint">This camera shows the flight as it was: there is nothing to adjust.</p>}
-            {adjustable && <p className="hint">{movable ? "Or drag the picture: sideways walks the camera round the aircraft, up and down changes its height; Ctrl + wheel zooms the lens." : "Ctrl + wheel over the picture zooms the lens."}{watching === "both" && " The observer opens its lens to hold you both; further off, it flies more of a line of its own."}</p>}
+            {adjustable && <p className="hint">{movable && turnable(draft) ? "Or drag the picture to turn this camera where it looks; the wheel over the picture zooms the lens." : movable ? "Or drag the picture: sideways walks the camera round the aircraft, up and down changes its height; the wheel over the picture zooms the lens." : "The wheel over the picture zooms the lens."}{watching === "both" && " The observer opens its lens to hold you both; further off, it flies more of a line of its own."}</p>}
             <details className="tune"><summary>Shot details{dirty ? " · not in the cut yet" : ""}</summary>
               <div className="fields">
                 <label>In · seconds<input type="number" step="0.1" min="0" value={draft.start} onChange={e => change({...draft, start: Number(e.target.value)})}/></label>

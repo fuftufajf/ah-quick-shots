@@ -174,10 +174,15 @@ The sliders under the cameras (Around, Distance, Height, Lens, Roll) adjust the
 one selected. For the cameras that stand free of the airframe — the two
 in-front ones, the observer and its close views, Behind you and the fly-bys —
 a drag on the picture does the same: sideways walks the camera round the
-aircraft, up and down changes its height. Ctrl + wheel zooms the lens on any
+aircraft, up and down changes its height; on a camera fastened to the airframe
+(cockpit, nose, belly, gear, and wing or shoulder when not locked on him) it
+turns where the camera looks (`turn` left, `tilt` up, in degrees). The wheel zooms the lens on any
 camera: the aircraft grows without the camera going nearer, which would distort
-it. The plain wheel still scrolls the page. Shot details holds exact times, the
-lead aircraft and the name.
+it; with nothing to zoom, the wheel scrolls the page. In Film Viewer plays the
+shot (or its sequence) at once in the viewer's own window, with its sound and
+nothing rendered; a render after it waits at least 12 s, because playing just
+before a render thins its sound. Shot details holds exact times, the lead
+aircraft and the name.
 
 **The cut.** Saved shots, each with a tick box. Render selected makes one 16:9
 video of the ticked shots with the film's sound, at 1080p60, 4K (2160p60) or as

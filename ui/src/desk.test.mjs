@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, fitShot, killSequence, landingSequence, ownKills, sequenceOf, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
+import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, fitShot, killSequence, landingSequence, ownKills, sequenceOf, turnable, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
 const event = {time:199, kind:'kill', text:'Hawk Raven 1 19 10', fields:['Hawk','Raven','1','19','10']};
 assert.equal(formatTime(195.3), '03:15.3');
 assert.equal(filterMoments([event], 'Raven 03:19', 'kill').length, 1);
@@ -51,6 +51,11 @@ assert.deepEqual(sequenceOf(reel[1], reel).map(s => s.id), reel.slice(0, 4).map(
 assert.deepEqual(sequenceOf(again[3], reel).map(s => s.id), again.map(s => s.id));
 assert.equal(sequenceOf(takeoff[2], reel).length, 4);
 assert.deepEqual(sequenceOf(reel.at(-1), reel), []);
+
+// A camera on the airframe turns where it looks under a drag; one locked on him keeps him and does not turn.
+const seat = {kind:'cockpit', fov:60, target:10};
+assert.deepEqual([dragCamera(seat, 100, -50, 600).turn, dragCamera(seat, 100, -50, 600).tilt], [10, -5]);
+assert.ok(turnable(seat) && turnable({kind:'gear', target:null}) && !turnable({kind:'wing', target:10}) && !turnable({kind:'pair'}));
 
 const me = {id:19, name:'Hawk'}, elsewhere = {kind:'kill', text:'', fields:['Falcon','Kestrel','1','28','34']};
 assert.deepEqual(filterMoments([event, elsewhere, {kind:'impact', text:'', fields:[]}, {kind:'guns', text:'', fields:[]}], '', 'mine', me).map(e => e.kind), ['kill', 'impact']);
