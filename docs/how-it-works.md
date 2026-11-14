@@ -73,11 +73,12 @@ shape and the video's width of view; drawn at full width it sits where it will
 in the 16:9 video, which shows more above and below when the window is wider.
 A seek can leave the film up to 0.08 s past the moment asked for (measured; the
 viewer tells its time in tenths), so the first still may be a frame or two later
-than the clip frame it replaces. After any jump the viewer also fades the
-aircraft in over about two seconds of real time, however many frames it draws:
-a still taken at once shows them see-through. So a still that follows a jump
-is taken again, without moving the film, once things have rested for two
-seconds; the still shown while a clip renders waits a second first instead.
+than the clip frame it replaces. After any jump the aircraft would also come
+out see-through (see "Aircraft fading in" below), so the desk does not jump
+straight to a moment: it goes two seconds before it, plays up to it through the
+shot's camera and takes the still there, about two seconds later than a bare
+jump. Only a moment in the first two seconds of a film is still taken at once,
+and taken again once things have rested.
 
 The pilot's view and the cameras on the airframe are heard as the cockpit was
 recorded: engine, guns and the pilots' voices. A camera standing in the world
@@ -349,9 +350,18 @@ each of these; a change in the viewer would make the workaround unnecessary.
   had passed; after a 4 s stretch 3 s were enough). `open`, a new connection,
   `cams off` or a seek to the start did not help. The desk waits the stretch's
   length and 1.5 s before each render.
-- **Aircraft fading in after a seek.** They are see-through for about two
-  seconds of real time, and `shot` catches them so. The desk takes the still
-  again once they are solid.
+- **Aircraft fading in after a seek.** Each aircraft fades in the first time
+  it is drawn, each level of detail on its own, and after a seek every other
+  aircraft is new to the viewer: `shot` catches them see-through, and so did
+  the first second of a `video` started after one (the opponent invisible in
+  the first frame, half there at 0.5 s, solid at about 1 s). Steely's fix
+  (Aces High forum, 14 Nov 2026): play the two seconds before the moment
+  through the shot's camera, then a short seek forward, which keeps them drawn.
+  The desk does this before every still and every video, with each shot's
+  first camera standing in the two seconds before it; measured on the same
+  shot, the opponent is solid from the first frame and the sound is whole.
+  Waiting while paused would fix it too, but a burning aircraft's smoke piles up
+  while film time stands still.
 - **Where a seek lands.** Up to 0.08 s past the time asked for, while `time`
   answers in tenths of a second.
 - **The end of a film.** `open` tells the length rounded to 0.1 s, and `tracks`

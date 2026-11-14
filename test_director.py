@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from director_api import make_server, videos_folder, working_folder
-from director_core import Conflict, Desk, framing
+from director_core import Conflict, Desk, framing, lead
 from shot_plan import camera_pose, compile_shot, escort_poses, nearby, passes, probe_cameras, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows
 
@@ -243,7 +243,11 @@ class DeskTests(unittest.TestCase):
         plan = [SHOT, {**SHOT, "id": "two", "start": 5, "end": 7}, {**SHOT, "id": "three", "start": 9, "end": 11}]
         self.desk.save({"expected_revision": 1, "shots": plan})
         self.run_action({"action": "seek", "seconds": 2, "rough": True})
-        self.assertIn("seek 2.00000000 rough", commands)
+        # The two seconds before the still play through its camera, so the aircraft in it are drawn solid.
+        at = commands.index("seek 0.00000000 rough")
+        self.assertEqual(commands[at:at + 6], ["seek 0.00000000 rough", "planes", "play", "wait 5", "pause", "seek 2.00000000"])
+        self.assertFalse(self.desk.snapshot()["preview"]["fresh"])
+        self.assertIn("cam 0 1.00000000 fixed -253.76618037 260.00000000 118.33311329 -1.89422331 -0.15832816 0.00000000 1.04719755", commands)
         self.assertEqual(len([c for c in commands if c.startswith("tracks ")]), 3)
         plan[0] = {**SHOT, "name": "Renamed"}
         self.desk.save({"expected_revision": 2, "shots": plan})
@@ -253,18 +257,20 @@ class DeskTests(unittest.TestCase):
         self.run_action({"action": "export_cut", "shot_ids": ["one", "three"], "quality": "draft"})
         self.assertIn("skip 3.00000000 9.00000000", commands)
         self.assertTrue(commands[-1].startswith("video 1.00000000 11.00000000 ") and commands[-1].endswith(" 960 540 30"))
+        self.assertEqual(commands[-8:-1], ["seek 0.00000000", "planes", "play", "wait 5", "pause", "seek 1.00000000", "planes"])
         self.run_action({"action": "icons", "on": True})
         self.assertIn("icons on", commands)
         self.assertTrue(self.desk.snapshot()["icons"])
         # Asked with a time, a switch answers with a still of that moment: seen at once, no render.
         self.run_action({"action": "icons", "on": False, "seconds": 6, "rough": True})
-        self.assertEqual(commands[-4:-1], ["icons off", "seek 6.00000000 rough", "planes"])
-        # Taken right after the jump the aircraft are still fading in: the still says so, and asked for again where
-        # the film already is, it is taken again without another jump.
+        self.assertEqual(commands[-9:-6], ["icons off", "seek 4.00000000 rough", "planes"])
+        # A still too near the start to play up to it is taken while the aircraft are still fading in: the still
+        # says so, and asked for again where the film already is, it is taken again without another jump.
+        self.run_action({"action": "seek", "seconds": .2, "rough": True})
         self.assertTrue(self.desk.snapshot()["preview"]["fresh"])
         del commands[:]
         self.desk.jumped -= 5
-        self.run_action({"action": "seek", "seconds": 6, "rough": True})
+        self.run_action({"action": "seek", "seconds": .2, "rough": True})
         self.assertFalse(any(c.startswith("seek ") for c in commands) or self.desk.snapshot()["preview"]["fresh"])
         self.assertEqual(self.desk.snapshot()["preview"]["kind"], "image")
         self.run_action({"action": "export_cut", "shot_ids": ["two"], "quality": "4k"})
@@ -315,7 +321,7 @@ class DeskTests(unittest.TestCase):
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [SHOT]})
         self.run_action({"action": "seek", "seconds": 2, "rough": True})
-        self.assertIn("seek 2.00000000 rough", commands)
+        self.assertIn("seek 2.00000000", commands)
         self.assertIn("Aircraft 10 is not in the film", self.desk.snapshot()["problems"]["one"])
         self.desk.start({"action": "export_cut", "expected_revision": 2})
         deadline = time.monotonic()+2
@@ -323,6 +329,12 @@ class DeskTests(unittest.TestCase):
             time.sleep(.01)
         self.assertIn("Aircraft 10", self.desk.snapshot()["job"]["error"])
         self.assertFalse(any(c.startswith("video ") for c in commands))
+
+    def test_a_shot_s_first_camera_stands_in_the_seconds_before_it(self):
+        self.assertEqual(lead("cam 5 2 fixed 1 2 3 4 5 6 7 to 8 9 10 11 12 13 14 curve", 3), ["cam 3 2.00000000 fixed 1 2 3 4 5 6 7"])
+        self.assertEqual(lead("cam 5 2 mount 19 0 0 0 0 0 0 1 outside", 4.5), ["cam 4.5 0.50000000 mount 19 0 0 0 0 0 0 1 outside"])
+        self.assertEqual(lead("cam 5 2 recorded", 3), [])
+        self.assertEqual(lead("cam 5 2 mount 19 0 0 0 0 0 0 1", 4.98), [])
 
     def test_a_film_ends_inside_the_length_the_viewer_tells(self):
         # The viewer rounds a film's length to 0.1 s and has no aircraft paths past the real end: the desk's film
@@ -357,9 +369,9 @@ class DeskTests(unittest.TestCase):
         self.run_action(ask)
         # The unsaved draft replaces the saved shot it overlaps; the rest of the plan stays.
         cams = [c for c in commands if c.startswith("cam ")]
-        self.assertEqual(len(cams), 5)
+        self.assertEqual(len(cams), 7)  # with each shot's camera standing in the two seconds before it
         self.assertFalse(any(c.startswith("cam 2 2 mount") for c in cams))
-        self.assertLess(commands.index("seek 2.50000000 rough"), commands.index(next(c for c in commands if c.startswith("video "))))
+        self.assertLess(commands.index("seek 2.50000000"), commands.index(next(c for c in commands if c.startswith("video "))))
         first = self.desk.snapshot()["preview"]
         self.assertEqual((first["kind"], first["start"], first["end"]), ("clip", 1, 3))
         self.assertTrue((self.desk.media_root / "clips" / Path(first["url"]).name).exists())
@@ -424,8 +436,9 @@ class DeskTests(unittest.TestCase):
         self.assertEqual([c.split()[0] for c in commands], ["cams", "cam", "cam", "cams", "shot"])
         # Anywhere else the film is moved, with the whole plan in the viewer again.
         self.run_action({"action": "seek", "seconds": 11, "rough": True, "shot": draft})
-        self.assertIn("seek 11.00000000 rough", commands)
-        self.assertEqual(len([c for c in commands if c.startswith("cam ")]), 2 + 6)
+        self.assertIn("seek 9.00000000 rough", commands)
+        self.assertIn("seek 11.00000000", commands)
+        self.assertEqual(len([c for c in commands if c.startswith("cam ")]), 2 + 1 + 6)  # the whole plan: a camera before the shot and its six pieces
         # Asked to wait, the desk answers with the finished state: one round trip per look.
         server = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)
         server.desk = self.desk

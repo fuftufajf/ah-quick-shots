@@ -24,6 +24,10 @@ CLIP = "960 540 30"
 # it draws (measured: nearly invisible at once, solid after 1.7 s). A still taken sooner shows them see-through.
 FADE = 2.0
 SETTLE = 1.0  # what a picture that stays on screen for a while waits of that: mostly solid, without doubling the wait
+# Each aircraft fades in the first time it is drawn, each level of detail on its own, and after a seek every other
+# aircraft is new to the viewer. Playing the seconds before a moment through the shot's camera draws them, and a
+# short seek forward keeps them drawn: a still or a video starts solid (Steely, Aces High forum, 14 Nov 2026).
+LEAD = 2.0
 # For about as long as a rendered stretch lasts after its render ends, the viewer is still finishing that stretch's
 # sound. A render started in that time can be heard from a point standing still in the sky instead of from the
 # aircraft: no engine, guns or pilots' voices. Measured on an 11.5 s stretch: with a seek, a still or a read of
@@ -31,7 +35,7 @@ SETTLE = 1.0  # what a picture that stays on screen for a while waits of that: m
 # that followed a seek; thin renders keep coming until the viewer has rested. Every render started 12 s or more
 # after the one before was full, whatever happened in between (6 of 6). After a 4 s stretch, 3 s were enough.
 TAIL = 1.5  # seconds added to the last rendered stretch's length before the next render may start
-CAMERAS = 6  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
+CAMERAS = 7  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
 
 
 class Conflict(ValueError):
@@ -40,6 +44,17 @@ class Conflict(ValueError):
 
 def camera_key(shot):
     return json.dumps({k: v for k, v in shot.items() if k not in ("id", "name")}, sort_keys=True)
+
+
+def lead(command, start):
+    """The shot's first camera, standing from `start` to the shot's start, for drawing the aircraft before it
+    (see LEAD): a moving camera holds its first place. The pilot's view and the weapon ride need none."""
+    _cam, at, _duration, rest = command.split(" ", 3)
+    if float(at) - start < .05 or rest.startswith(("recorded", "weapon")):
+        return []
+    if rest.startswith("fixed ") and " to " in rest:
+        rest = rest.split(" to ", 1)[0]
+    return [f"cam {start:g} {float(at) - start:.8f} {rest}"]
 
 
 def framing(found):
@@ -168,6 +183,7 @@ class Desk:
         while time.monotonic() < self.quiet:
             self.progress(f"Film Viewer is finishing the last clip's sound: {math.ceil(self.quiet - time.monotonic())} s, so this one keeps its own")
             time.sleep(.25)
+        self._preroll(start)
         self.progress(label or f"Rendering {end - start:.1f} s of film")
         self.command(f"video {start:.8f} {end:.8f} {path.as_posix()} {size}")
         self.quiet = time.monotonic() + (end - start + TAIL) * self.pace
@@ -214,6 +230,28 @@ class Desk:
         planes = plane_rows(self.command("planes"))
         with self.lock:
             self.data.update(now=seconds, planes=planes)
+
+    def _preroll(self, seconds, rough=False):
+        """Stand at `seconds` with the aircraft drawn solid (see LEAD)."""
+        start = max(0.0, seconds - LEAD)
+        if seconds - start < .3:  # nothing before it to play: the aircraft fade in as after any jump
+            return self._seek(seconds, rough=rough)
+        self._seek(start, rough=rough)
+        self.progress(f"Playing up to {seconds:.2f}s so the aircraft are drawn solid")
+        self.command("play")
+        deadline = time.monotonic() + 3 * LEAD + 5
+        try:
+            while time.monotonic() < deadline:
+                reply = self.command("wait 5")  # "waited, time <film seconds>"
+                try:
+                    if float(reply[0].rsplit(" ", 1)[1]) >= seconds - .3:
+                        break
+                except (IndexError, ValueError):
+                    break
+        finally:
+            self.command("pause")
+        self._seek(seconds)
+        self.jumped = 0.0  # a short seek forward: nothing fades in
 
     def _settle(self):
         """Let the aircraft fade in after a jump, before a picture that will stay on screen for a while."""
@@ -294,7 +332,7 @@ class Desk:
         if only is not None:
             shots, token = only, ("cut", project["revision"], *(s["id"] for s in only))
         if self.applied != token:
-            commands, problems = [], {}
+            commands, problems, drawn = [], {}, 0.0
             for shot in shots:
                 key = camera_key(shot)
                 if key not in self.compiled:
@@ -305,7 +343,8 @@ class Desk:
                         # One shot that cannot be built must not stop the picture for the rest.
                         problems[shot["id"]] = str(error)
                         continue
-                commands.extend(self.compiled[key])
+                commands.extend(lead(self.compiled[key][0], max(drawn, shot["start"] - LEAD)) + self.compiled[key])
+                drawn = max(drawn, shot["end"])
             while len(self.compiled) > 300:  # angles tried and dropped
                 del self.compiled[next(iter(self.compiled))]
             self.progress("Applying camera plan")
@@ -387,8 +426,7 @@ class Desk:
                 self.data["job"]["expect"] = round(end - start + 1.5, 1)
             self._apply(project, raw)
             if raw.get("still") is not None:  # something to look at while the clip renders
-                self._seek(number(raw["still"], 0, length, "time"), rough=True)
-                self._settle()
+                self._preroll(number(raw["still"], 0, length, "time"), rough=True)
                 self._frame(project["revision"])
             self._render(start, end, path, CLIP)  # the film is back where it was afterwards
             for old in sorted(folder.glob("*.mp4"), key=lambda p: p.stat().st_mtime)[:-80]:
@@ -494,7 +532,7 @@ class Desk:
             if action in ("seek", "preview") or raw.get("seconds") is not None:
                 seconds = number(raw.get("seconds", selected["start"] if selected else 0), 0, project["length"], "time")
                 if action != "seek" or abs(seconds - self.data["now"]) >= .02:  # asked for where it is, the film is not moved
-                    self._seek(seconds, rough=bool(raw.get("rough")))
+                    self._preroll(seconds, rough=bool(raw.get("rough")))
             return self._frame(project["revision"])
         ids = raw.get("shot_ids")
         if ids is not None and not isinstance(ids, list):
