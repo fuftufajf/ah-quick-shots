@@ -15,6 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from director_api import make_server, videos_folder, working_folder
+import director_core
 from director_core import Conflict, Desk, framing, lead
 import flight_data
 import overlay
@@ -393,6 +394,37 @@ class DeskTests(unittest.TestCase):
             self.desk.start({"action": "export_cut", "expected_revision": 2})
             self.desk.worker.join(3)
         self.assertIn("Unknown encoder", self.desk.snapshot()["job"]["error"])
+
+    def test_motion_blur_renders_four_passes_a_quarter_frame_apart_and_blends_them(self):
+        commands, blends = [], []
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"fast")
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+        def blend(parts, target, seconds, fps):
+            blends.append(([p.exists() for p in parts], seconds, fps))
+            Path(target).write_bytes(b"cut")
+        self.desk.viewer.command = native
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 3, "end": 5, "kind": "cockpit"}]})
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.blend", blend):
+            self.run_action({"action": "export_cut", "quality": "final", "blur": True})
+        videos = [c.split() for c in commands if c.startswith("video ")]
+        self.assertEqual([(v[1], v[2], v[4:]) for v in videos], [(f"{1 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
+        self.assertEqual(blends, [([True] * 4, 2, 60)])
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg")
+    def test_the_blend_keeps_the_film_s_length_at_its_own_frame_rate(self):
+        parts, target = [Path(self.temp.name) / f"fast{n}.mp4" for n in range(4)], Path(self.temp.name) / "o.mp4"
+        for part in parts:
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=120:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
+                            "-c:v", "libx264", "-c:a", "aac", str(part)], check=True)
+        director_core.blend(parts, target, .5, 60)
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
+                                "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.split()
+        self.assertEqual(probe[0], "video,60/1,60")
+        self.assertTrue(probe[1].startswith("audio,"))
+        self.assertFalse(any(p.exists() for p in parts))
 
     def test_take_offs_and_touchdowns_are_found_in_the_filmer_s_path(self):
         # Parked, a roll, a lift-off at 18 s, a flight, a landing at 60 s that stops at 64 s; then a second sortie
