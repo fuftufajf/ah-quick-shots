@@ -142,6 +142,9 @@ by the Windows package: they are experimental.
 - **A render may wait for the sound of the one before.** Started too soon, the
   viewer loses the engine, guns and voices, so the desk waits (the status line
   says for how long).
+- **30 frames a second are rendered at 60.** Asked for 30, Film Viewer draws your own aircraft a frame out of
+  place now and then, and it hops in the picture; at 60 it does not. So the desk renders a 30 fps video at
+  60 and keeps every second frame: the render takes longer than it used to.
 - **Motion blur and a propeller that turns slowly.** The blur blends four
   moments of each frame. A running propeller is a disc and blurs well; one
   that windmills on a dead engine shows as four faint copies of each blade.

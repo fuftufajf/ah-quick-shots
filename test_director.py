@@ -304,7 +304,7 @@ class DeskTests(unittest.TestCase):
         del commands[:]
         self.run_action({"action": "export_cut", "shot_ids": ["one", "three"], "quality": "draft"})
         self.assertIn("skip 3.00000000 9.00000000", commands)
-        self.assertTrue(commands[-1].startswith("video 1.00000000 11.00000000 ") and commands[-1].endswith(" 960 540 30"))
+        self.assertTrue(commands[-1].startswith("video 1.00000000 11.00000000 ") and commands[-1].endswith(" 960 540 60"))  # twice the clip's 30: see Desk._render
         self.assertNotIn("play", commands)  # playing just before a render takes the engine and guns out of its sound
         self.assertEqual(commands[-3:-1], ["seek 1.00000000", "planes"])  # from far off: a seek first, or its first second is silent
         self.run_action({"action": "icons", "on": True})
@@ -323,7 +323,7 @@ class DeskTests(unittest.TestCase):
         self.assertFalse(any(c.startswith("seek ") for c in commands) or self.desk.snapshot()["preview"]["fresh"])
         self.assertEqual(self.desk.snapshot()["preview"]["kind"], "image")
         self.run_action({"action": "export_cut", "shot_ids": ["two"], "quality": "4k"})
-        self.assertTrue(commands[-1].endswith(" 3840 2160 30"))  # 30 fps unless 60 is asked for
+        self.assertTrue(commands[-1].endswith(" 3840 2160 60"))  # a 30 fps video (unless 60 is asked for) is rendered at twice that
         # A second take of the first stretch cannot share the viewer's one camera: it gets a video of its own,
         # and until it is selected the first take is the one that plays.
         self.desk.save({"expected_revision": 3, "shots": plan + [{**SHOT, "id": "take", "kind": "cockpit"}]})
@@ -496,17 +496,27 @@ class DeskTests(unittest.TestCase):
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"film")
             return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
-        def trim(source, target, seconds, filters=""):
-            trims.append((seconds, filters))
+        def trim(source, target, seconds, filters="", fps=None):
+            trims.append((seconds, filters, fps))
             Path(target).write_bytes(b"cut")
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 0, "end": 2, "kind": "cockpit"}]})
+        commands = []
+        self.desk.viewer.command = lambda command, progress: (commands.append(command), native(command, progress))[1]
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", trim):
             self.run_action({"action": "export_cut", "quality": "draft", "effects": {"look": True}})
             self.run_action({"action": "export_cut", "quality": "draft"})
-        # At the film's start there is no lead-in: only the looks need ffmpeg. The film look brings its haze, laid
-        # first, as in the grade.
-        self.assertEqual(trims, [(0, finishing.haze(960, 540) + "," + finishing.look(540))])
+            self.run_action({"action": "export_cut", "quality": "draft", "fps": 60})
+        # At the film's start there is no lead-in: the looks need ffmpeg (the film look brings its haze, laid first,
+        # as in the grade). A video of 30 frames a second is rendered at 60, where Film Viewer does not draw the
+        # recording pilot's aircraft a frame off, and ffmpeg keeps every second frame; one of 60 goes as it is.
+        self.assertEqual(trims, [(0, finishing.haze(960, 540) + "," + finishing.look(540), 30), (0, "", 30)])
+        self.assertEqual([c.split()[4:] for c in commands if c.startswith("video ")], [["960", "540", "60"]] * 3)
+        # Without ffmpeg nothing can halve it: the video keeps the 60 it was rendered at.
+        del commands[:]
+        with patch("director_core.shutil.which", return_value=None), patch("director_core.trim", trim):
+            self.run_action({"action": "export_cut", "quality": "draft"})
+        self.assertEqual(([c.split()[4:] for c in commands if c.startswith("video ")], len(trims)), ([["960", "540", "60"]], 2))
 
     def test_each_shot_is_rendered_with_its_own_effects_and_alike_ones_together(self):
         renders, trims = [], []
@@ -515,7 +525,7 @@ class DeskTests(unittest.TestCase):
                 renders.append(tuple(map(float, command.split()[1:3])))
                 Path(command.split()[3]).write_bytes(b"film")
             return []
-        def trim(source, target, seconds, filters=""):
+        def trim(source, target, seconds, filters="", fps=None):
             trims.append(filters)
             Path(target).write_bytes(b"cut")
         self.desk.viewer.command = native
@@ -719,7 +729,7 @@ class DeskTests(unittest.TestCase):
 
     def test_trails_ask_the_viewer_where_the_camera_is_at_every_frame_and_leave_no_script_behind(self):
         projects, scripts = [], []
-        def trim(source, target, seconds, filters=""):
+        def trim(source, target, seconds, filters="", fps=None):
             name = filters.split("subtitles=filename='")[1].split("'")[0].replace("\\:", ":")
             scripts.append(Path(name).read_text(encoding="utf-8"))
             Path(target).write_bytes(b"cut")
@@ -744,7 +754,7 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(list(self.desk.media_root.glob("*.ass")), [])
 
     def test_a_render_that_fails_leaves_no_trail_script_and_long_trails_are_refused(self):
-        def trim(source, target, seconds, filters=""):
+        def trim(source, target, seconds, filters="", fps=None):
             raise ValueError("ffmpeg could not cut the lead-in off the video: no room")
         self.desk.viewer.command = self.trail_viewer([])
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 5, "end": 6}, {**SHOT, "id": "two", "start": 8, "end": 9}]})
@@ -1624,7 +1634,7 @@ class DeskTests(unittest.TestCase):
             return target
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [SHOT, {**SHOT, "id": "two", "start": 5, "end": 7, "target": None, "kind": "cockpit"}]})
-        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", lambda a, b, s, h=None: Path(b).write_bytes(b"cut")), \
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", lambda a, b, s, h=None, fps=None: Path(b).write_bytes(b"cut")), \
                 patch("director_core.overlay.render", draw):
             self.run_action({"action": "export_cut", "quality": "final", "effects": {"overlay": True}})
             # The overlays are drawn while the desk goes on: the render's job is over, the viewer free.

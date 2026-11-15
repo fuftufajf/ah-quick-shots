@@ -73,11 +73,13 @@ def style(width, height, film=False, hazy=False):
     return ",".join(([haze(width, height)] if hazy else []) + ([look(height)] if film else []))
 
 
-def trim(source, target, seconds, filters=""):
+def trim(source, target, seconds, filters="", fps=None):
     """`source` without its first `seconds`, as `target`, through `filters` (see style). Re-encoded so the cut is
     frame-exact (a stream copy cuts at keyframes), close to the viewer's own quality (about 21 Mbit/s at 1080p60,
-    AAC 192 kbit/s)."""
-    encode(["-ss", f"{seconds:.6f}", "-i", str(source)], ["-vf", filters] if filters else [], [source], target,
+    AAC 192 kbit/s). `fps`: the frames a second to keep of a source rendered at twice as many, every second one
+    (see Desk._render)."""
+    chain = ",".join(part for part in (f"fps={fps}" if fps else "", filters) if part)
+    encode(["-ss", f"{seconds:.6f}", "-i", str(source)], (["-vf", chain] if chain else []) + (["-r", str(fps)] if fps else []), [source], target,
            "cut the lead-in off the video")
 
 

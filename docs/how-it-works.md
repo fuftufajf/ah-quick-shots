@@ -243,10 +243,11 @@ the two-aircraft cameras then take whoever comes nearest.
   (`curve`), as for every moving camera; the keyframes only say where.
 - Rides your aircraft (with Looks at: You) — the observer as a camera on your airframe (`ride`; the viewer's
   `mount`, aimed by the viewer at you). Film Viewer draws an aircraft about a frame of flight off for single
-  frames in some stretches: measured after the recording pilot was shot down, 5 to 10 ft every 0.2 s of film
-  (51 of 1,006 frames of a 30 fps preview), and once in 22 s of an ordinary fight (2.4 ft). The aircraft's own
-  track is smooth there and the camera's points have nothing to do with it; moving every frame by 1/120 s
-  made it no better. A camera in the world sees the aircraft hop; a camera on its airframe goes with it:
+  frames of a video it renders at 30 frames a second: measured after the recording pilot was shot down, 5 to
+  10 ft every 0.2 s of film (51 of 1,006 frames of a preview). The aircraft's own track is smooth there and
+  the camera's points have nothing to do with it; moving every frame by 1/120 s made it no better. In an
+  ordinary fight rendering at 60 took the hops away (see "Under 50 frames a second" below); whether it does
+  after a shooting down is not measured yet, and this camera does. A camera in the world sees the aircraft hop; a camera on its airframe goes with it:
   the same 16 s had 24 frames that hopped, then none (the aircraft's step in the picture 0.07 px a frame).
   The seat is the observer's own place, told in the airframe's axes at every point (right, up, ahead; the
   viewer gave places back within 2.3 ft at five attitudes, which is the pilot's eye it counts from). Between
@@ -831,6 +832,19 @@ What the film tells, measured:
   ends. The desk told a move's start with six digits and its length with eight decimals: every joint was up
   to 0.5 ms off, and 5 ms in a film past 1,000 s (2 ft of the camera's way). Starts are now told to the
   microsecond and a length is the difference of two starts as told.
+- **Under 50 frames a second the viewer draws the recording pilot's aircraft a frame off, now and then.**
+  The film holds that aircraft every 0.02 s (read every 0.01 s, its place changes at every second
+  reading). In a video the viewer rendered at 30 frames a second, single frames show it up to a frame of
+  flight ahead of where it is, and back in the next: on one 22 s shot 2.7 ft at 432.00 s and 10 ft at
+  444.60 s of the film, the same in five renders, with the camera's points half a second or a tenth
+  apart, and with every frame moved by 1/300 s. The trees under it stand still, and its track is smooth
+  there: it is the aircraft, not the camera. At 25 frames a second it was three feet every 0.32 s. At 50,
+  60 and 100 frames a second those hops are not there, nor in every second frame of the 60. A camera on
+  the airframe or one the viewer aims hides them (the aircraft is where the camera is fastened), which is
+  why they were only seen from a camera flying a path of its own. So the desk never asks the viewer for
+  fewer than 50: a video of 30 is rendered at 60 and ffmpeg keeps every second frame (without ffmpeg the
+  video stays at 60), a preview clip too; a blurred one was always rendered at 120. Found by following
+  corners on the aircraft from frame to frame (Lucas-Kanade) against the background's own step.
 - **The viewer carries a camera's turn straight from point to point.** `curve` or not, between two points
   of a moving camera the picture turns at one pace. Measured in a finished video, frame by frame (phase
   correlation of whole frames, a point every 0.4956 s): 5.5 px a frame for one move, then 7.0, then 9.1,

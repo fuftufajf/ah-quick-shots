@@ -59,7 +59,7 @@ FINE = .02  # the step aircraft paths are read at (see Desk._tracks)
 # with the aircraft in steps. Ten a second make the steps a fifth as large and three frames apart. Telling the viewer
 # 46 camera lines took under 0.2 s.
 POINTS = 10
-CAMERAS = 12  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
+CAMERAS = 13  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
 
 
 def to_recycle_bin(paths):
@@ -583,7 +583,17 @@ class Desk:
             self._seek(start - early)
             time.sleep(2 * self.pace)
         self._stage(label or f"Rendering {end - start:.1f} s of film")  # after the seek, whose message it replaces
-        whole = path.with_name(path.stem + "-lead" + path.suffix) if early or blur or filters else path
+        # Asked for 25 or 30 frames a second, Film Viewer draws the recording pilot's aircraft a frame of flight off in
+        # single frames: seen from a camera in the world it hops (measured on one shot: 2.7 ft at 432.00 s and 10 ft
+        # at 444.60 s of the film, in every render at 30, moved by 1/300 s or not; at 25, three feet every 0.32 s).
+        # Asked for 50, 60 or 100 it does not, and every second frame of a 60 does not either. The film holds that
+        # aircraft every 0.02 s. So a slow video is rendered at twice its frames and ffmpeg keeps every second one;
+        # a blurred one is rendered at FASTEST anyway. Without ffmpeg the video keeps the doubled rate.
+        width, height, fps = size.split()
+        halve = int(fps) if int(fps) < 50 and not blur and shutil.which("ffmpeg") else None
+        if int(fps) < 50 and not blur:
+            size = f"{width} {height} {2 * int(fps)}"
+        whole = path.with_name(path.stem + "-lead" + path.suffix) if early or blur or filters or halve else path
         parts = [whole.with_name(f"{whole.stem}{n}{whole.suffix}") for n in range(PASSES)] if blur else [whole]
         # The viewer answers a render only when it is done (measured: 1.1 to 1.7 times the stretch at 1080p, 4K not
         # timed), so it may take twenty times the stretch before the desk gives it up.
@@ -606,9 +616,9 @@ class Desk:
         if blur:
             self._encode("Blending the motion blur with ffmpeg" + (", with its effects" if filters else ""), end - start,
                          lambda: blend(parts, path, early, blur, filters))
-        elif early or filters:
+        elif early or filters or halve:
             self._encode("Laying the effects on with ffmpeg" if filters else "Cutting off the lead-in with ffmpeg", end - start,
-                         lambda: trim(whole, path, early, filters))
+                         lambda: trim(whole, path, early, filters, halve))
 
     def start(self, raw):
         action = raw.get("action")
@@ -1247,7 +1257,7 @@ class Desk:
         # ffmpeg then does to it, and before them the trails' cameras.
         with self.lock:
             self.data["job"].update(expect=expect and round(expect, 1), video=1, videos=len(rows), steps=sum(
-                (PASSES if blur else 1) + (ffmpeg and bool(blur or filters or drawn or row[0]["start"] >= .05)) + bool(drawn)
+                (PASSES if blur else 1) + (ffmpeg and bool(blur or filters or drawn or row[0]["start"] >= .05 or fps < 50)) + bool(drawn)
                 for row, (blur, filters, drawn) in zip(rows, made)))
         mark = self.data["job"]["clock"]
         scripts = []
