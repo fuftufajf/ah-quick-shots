@@ -101,6 +101,21 @@ export function musicGain(music, time, length) {
   return Math.max(0, Math.min(up, down));
 }
 
+// A stretch of a waveform as the desk sends it ({rate, peaks}: 0 to 255, `rate` a second), `from` seconds into its
+// sound for `seconds`: heights 0 to 1, each of the sound times `gain` at its moment (seconds from the stretch's start),
+// at most `most` of them (the loudest of each group when there are more). Heights are in decibels, FLOOR at the
+// bottom, as an editor draws them: a straight scale drew a quiet sound (a sine at -15 dB) as a line.
+export const FLOOR = 48;
+export function waveLine(wave, from, seconds, gain = () => 1, most = 2000) {
+  const first = Math.round(from * wave.rate), count = Math.round(seconds * wave.rate), step = Math.max(1, Math.ceil(count / most)), line = [];
+  for (let i = 0; i < count; i += step) {
+    let top = 0;
+    for (let k = i; k < Math.min(count, i + step); k++) top = Math.max(top, (wave.peaks[first + k] ?? 0) * gain(k / wave.rate));
+    line.push(top > 0 ? Math.max(0, Math.min(1, 1 + 20 * Math.log10(top / 255) / FLOOR)) : 0);
+  }
+  return line;
+}
+
 // The shots in film order under the name they share before " · " (a kill's four shots, a take-off's): [{head, time, shots}].
 export function grouped(shots) {
   const groups = [];

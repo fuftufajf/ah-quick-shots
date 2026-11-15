@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {DISSOLVE, cutAt, cutBeside, grouped, laid, lengthOf, moved, musicGain, placed, stateOf, ticked, trimmed, under, without} from "./assembly.js";
+import {DISSOLVE, cutAt, cutBeside, grouped, laid, lengthOf, moved, musicGain, placed, stateOf, ticked, trimmed, under, waveLine, without} from "./assembly.js";
 
 const shots = [{id: "a", name: "Kill: Bandit · closing in", start: 10, end: 14}, {id: "b", name: "Kill: Bandit · guns", start: 14, end: 19},
   {id: "c", name: "Shot at 00:40.0", start: 40, end: 46}, {id: "d", name: "Take-off 00:02.0 · rolling", start: 2, end: 8}];
@@ -51,6 +51,17 @@ assert.deepEqual(without(empty, clips, 0).off, ["c"]);
 assert.deepEqual(without(empty, cut, 1).off, []);
 assert.deepEqual(ticked({...empty, off: ["b"]}, clips, "b", true).off, []);
 assert.deepEqual(ticked(empty, cut, "a", false).clips.map(c => c.shot), ["c", "b"]);
+
+// A waveform's stretch: from where the clip begins in its video, as loud as it is set, never past the top; a long one
+// keeps the loudest of each group.
+// Heights are decibels: full is the top, every 6 dB down (half as loud) an eighth lower, FLOOR dB below full the bottom.
+const wave = {rate: 10, peaks: [0, 1, 64, 128, 255, 255, 255, 0]};
+const heights = (expected, ...args) => { const line = waveLine(wave, ...args); assert.ok(line.length === expected.length && line.every((h, i) => Math.abs(h - expected[i]) < .005), String(line)); };
+heights([.75, .875, 1], .2, .3);
+heights([.625, .75, .875], .2, .3, () => .5);
+heights([1, 0, 0, 0], .6, .4, t => t < .15 ? 1 : 0);  // past its end the sound is silent
+heights([.75, 1, 1], 0, .8, () => 1, 3);
+heights([0], .1, .1);  // 48 dB down is the floor: nothing to draw
 
 const music = {in: 1, out: 3, level: .5};
 assert.deepEqual([0, .5, 5, 12.5, 14].map(t => musicGain(music, t, 14)), [0, .5, 1, .5, 0]);

@@ -1,7 +1,7 @@
 import {useEffect, useRef, useState} from "react";
 import {CaretLeft, CaretLineLeft, CaretLineRight, CaretRight, FilmSlate, FolderOpen, MusicNotes, Pause, Play, Scissors, SkipBack, SkipForward, Stop, X} from "@phosphor-icons/react";
 import {formatTime, request} from "./desk.js";
-import {cutAt, cutBeside, grouped, laid, lengthOf, moved, musicGain, placed, stateOf, ticked, trimmed, under, without} from "./assembly.js";
+import {cutAt, cutBeside, grouped, laid, lengthOf, moved, musicGain, placed, stateOf, ticked, trimmed, under, waveLine, without} from "./assembly.js";
 
 const EMPTY = {clips: [], off: [], music: null, sound: 1};
 const QUALITY = {draft: "Draft", final: "1080p", "4k": "4K"};
@@ -11,6 +11,15 @@ const EXTRAS = {blur: "motion blur", look: "film look", haze: "haze", trails: "t
 const told = v => [QUALITY[v.quality] || "Video", ...(v.quality ? [`${v.fps || (v.quality === "draft" ? 30 : 60)} fps`] : []), ...v.extras.map(e => EXTRAS[e] || e),
   v.made ? new Date(v.made * 1000).toLocaleString([], {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}) : "earlier",
   ...(v.changed ? ["before its camera changed"] : [])].join(" · ");
+
+// A stretch of a sound's waveform (waveLine), filling its box, mirrored round the middle.
+function Wave({wave, from, seconds, gain}) {
+  const line = wave?.peaks.length ? waveLine(wave, from, seconds, gain) : [];
+  if (line.length < 2) return null;
+  const at = (v, i) => `${i},${(50 - v * 48).toFixed(1)}`, below = (v, i) => `${i},${(50 + v * 48).toFixed(1)}`;
+  return <svg className="wave" viewBox={`0 0 ${line.length - 1} 100`} preserveAspectRatio="none" aria-hidden="true">
+    <polygon points={[...line.map(at), ...line.map(below).reverse()].join(" ")}/></svg>;
+}
 
 // The second view: the film's rendered shots in a row, trimmed, cut and set to music, then exported as one video by
 // ffmpeg. The viewer has no part in it. What it shows is worked out in assembly.js; the desk keeps it per film.
@@ -26,6 +35,8 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
   const [fps, setFps] = useState(30);
   const [trimming, setTrimming] = useState(null);  // the clips while an end is dragged
   const [widest, setWidest] = useState(0);  // the longest the assembly has been on this page: the timeline's scale
+  const [waves, setWaves] = useState({});  // "video/<id>" or "music/<file>": its sound's waveform, as the desk measured it
+  const waveAsked = useRef(new Set());
   const film = useRef(null), song = useRef(null), lane = useRef(null), grab = useRef(null), picker = useRef(null), scrubbing = useRef(false);
 
   useEffect(() => { setMine(null); setAt(0); setSelected(0); setPlaying(false); setWidest(0); }, [project?.film]);
@@ -55,6 +66,15 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
     if (!playing && at >= length - .05) go(0);
     setPlaying(!playing);
   }
+
+  // Each video's and the music's waveform, asked of the desk once (ffmpeg reads the sound there).
+  useEffect(() => {
+    for (const key of [...rows.map(r => `video/${r.version.id}`), ...(music ? [`music/${music.file}`] : [])]) {
+      if (waveAsked.current.has(key)) continue;
+      waveAsked.current.add(key);
+      request(`/api/wave/${key}`).then(wave => setWaves(old => ({...old, [key]: wave}))).catch(() => waveAsked.current.delete(key));
+    }
+  });
 
   // The players follow the playhead: the clip under it at the right moment of its video, the music beside it.
   useEffect(() => {
@@ -244,10 +264,13 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
               {held.edge === "start" ? `Starts ${held.row.start.toFixed(1)} s later` : `Ends ${held.row.end.toFixed(1)} s earlier`} · {held.row.seconds.toFixed(1)} s of {held.row.version.seconds.toFixed(1)} left</span>}
           </div>
           <span className="lane-name"><b>Film sound</b>engine, guns, radio</span>
-          <div className="lane thin" onClick={e => go(timeAt(e))}>{rows.length > 0 && <span className="sound" style={{right: "auto", width: share(length)}}/>}</div>
+          {/* The film's sound is cut with the picture: each clip's own stretch of its waveform, as loud as it is set. */}
+          <div className="lane thin" onClick={e => go(timeAt(e))}>{rows.map((r, i) => <span key={i} className={`sound ${i === pick ? "current" : ""}`} style={{left: share(r.at), width: share(r.seconds)}}>
+            <Wave wave={waves[`video/${r.version.id}`]} from={r.start} seconds={r.seconds} gain={() => r.sound * assembly.sound}/></span>)}</div>
           <span className="lane-name"><b>Music</b>your own file</span>
           <div className="lane thin" onClick={e => go(timeAt(e))}>
-            {music && <span className="music" style={{right: "auto", width: share(length)}}>{music.name} · from {formatTime(music.from)} · in {music.in} s · out {music.out} s</span>}
+            {music && <span className="music" style={{width: share(length)}}><Wave wave={waves[`music/${music.file}`]} from={music.from} seconds={length} gain={t => music.level * musicGain(music, t, length)}/>
+              <span>{music.name} · from {formatTime(music.from)} · in {music.in} s · out {music.out} s</span></span>}
           </div>
           {/* One playhead through the ruler and every lane, over all of them: the arrow and the line are one element. */}
           {rows.length > 0 && <div className="scrub"><span className="playhead" style={{left: share(at)}} role="slider" tabIndex={0} aria-label="Playhead"

@@ -1,7 +1,9 @@
 """What ffmpeg does to a video once the viewer has rendered it: the lead-in cut off, the passes of a blurred one
 blended, the film look and the haze laid on. One encode does all of it."""
+import array
 from pathlib import Path
 import subprocess
+import sys
 import threading
 
 # With motion blur a video is rendered PASSES[its frame rate] times at the viewer's most, FASTEST frames a second ("fps
@@ -89,6 +91,28 @@ def blend(sources, target, seconds, fps, filters=""):
              + (f",{filters}" if filters else "") + "[v]")
     encode([a for s in sources for a in ("-ss", f"{seconds:.6f}", "-i", str(s))],
            ["-filter_complex", graph, "-map", "[v]", "-map", "0:a?", "-r", str(fps)], sources, target, "blend the motion blur")
+
+
+WAVE = 50  # a waveform's values a second: one every 20 ms, finer than the Assembly's timeline draws
+
+
+def peaks(source, rate=WAVE):
+    """How loud a file's sound is, `rate` times a second: the loudest sample of each step, 0 to 255; [] when it has no
+    sound (or there is no ffmpeg). ffmpeg decodes it to mono 16-bit, 160 samples a step."""
+    try:
+        done = subprocess.run(["ffmpeg", "-v", "error", "-i", str(source), "-vn", "-ac", "1", "-ar", str(rate * 160), "-f", "s16le", "-"],
+                              capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except OSError:
+        return []
+    return [] if done.returncode else loudest(done.stdout, 160)
+
+
+def loudest(pcm, step):
+    """The loudest of every `step` samples of signed 16-bit little-endian sound, 0 to 255."""
+    samples = array.array("h", pcm[:len(pcm) // 2 * 2])
+    if sys.byteorder == "big":
+        samples.byteswap()
+    return [round(max(max(part), -min(part)) * 255 / 32768) for part in (samples[i:i + step] for i in range(0, len(samples), step))]
 
 
 DISSOLVE = .3  # seconds two clips share when one dissolves into the next

@@ -490,6 +490,14 @@ move it a tenth of a second, a second with Shift. Beside Play the buttons jump
 to the start (Home), the cut before (Up), the next cut (Down) and the end
 (End): a cut is where a clip starts or ends, so a dissolve has two.
 
+The Film sound lane shows each clip's own stretch of its video's waveform, so
+the sound is seen cut with the picture; the Music lane shows the music's from
+where it starts, with its fades. Both are drawn as loud as they are set (the
+clip's sound, the lane's level), in decibels with 48 dB below full at the bottom,
+as an editor draws them: on a straight scale a sine at -15 dB was a line. The
+desk measures a waveform with ffmpeg the first time the page asks (GET
+`/api/wave/...`: the loudest sample of every 20 ms) and keeps it while it runs.
+
 Export video is ffmpeg's work alone (`assemble()` in finishing.py): each clip
 trimmed and brought to one size and frame rate, joined in turn by `concat` or
 `xfade` and `acrossfade` (a dissolve between clips too short to share it is a
@@ -678,6 +686,8 @@ most 5 s later). One action runs at a time; a second is refused while
   flac or ogg, up to 100 MB) keeps a piece of music; answers `{file, name}` for the assembly's `music`
 - GET `/media/video/<id>` is a finished video on record (`state.versions`), `/media/music/<file>` a kept
   piece of music, `/media/assembly` the assembly made last
+- GET `/api/wave/video/<id>` and `/api/wave/music/<file>` are the waveform of that video's or music's sound,
+  `{rate, peaks}`: `rate` (50) values a second, each the loudest sample of its step, 0 to 255; `[]` without sound
 
 `seek`, `clip` and `icons` also take `shot`, an unsaved shot object: it stands
 in for the saved shots it overlaps, so a camera can be looked at before it is

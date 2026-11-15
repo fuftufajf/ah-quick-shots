@@ -876,6 +876,10 @@ class DeskTests(unittest.TestCase):
             self.assertEqual(call("POST", "/api/music", b"MZ", {"X-Name": "song.exe"})[0], 400)
             self.assertEqual(call("GET", "/media/music/..%2Fone.json")[0], 404)
             self.assertEqual(call("GET", "/media/assembly")[0], 404)  # none made yet
+            # A waveform of a video on record or of kept music; the fakes hold no sound, so theirs is empty.
+            self.assertEqual(call("GET", "/api/wave/video/" + found["two"][0]["id"]), (200, b'{"rate": 50, "peaks": []}'))
+            self.assertEqual(call("GET", "/api/wave/music/" + kept["file"])[0], 200)
+            self.assertEqual([call("GET", "/api/wave/video/" + "0" * 32)[0], call("GET", "/api/wave/music/..%2Fone.mp3")[0]], [404, 404])
         finally:
             server.shutdown(); server.server_close()
 
@@ -910,6 +914,22 @@ class DeskTests(unittest.TestCase):
         self.assertEqual([(c["file"], c["start"], c["seconds"], c["join"], round(c["sound"], 3)) for c in clips],
                          [(found["two"][0]["file"], .5, 2.5, "dissolve", .8), (found["one"][1]["file"], 0, 1.75, "cut", .4)])
         self.assertEqual((music["file"], music["from"], size), (self.desk.root / "music" / song["file"], 20, (960, 540, 60)))
+
+    def test_a_waveform_is_the_loudest_sample_of_each_step(self):
+        pcm = struct.pack("<8h", 0, 100, -32768, 5, 16384, -16384, 0, 0)
+        self.assertEqual(finishing.loudest(pcm, 4), [255, 128])
+        self.assertEqual(finishing.loudest(pcm[:7], 3), [255])  # an odd byte at the end is left out
+        self.assertEqual(finishing.peaks(Path(self.temp.name) / "none.mp4"), [])
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
+    def test_a_waveform_follows_the_sound(self):
+        # Half a second of a loud tone, then half a second of silence: 25 loud values a second, then 25 quiet ones.
+        path = Path(self.temp.name) / "tone.m4a"
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=f=440:d=1,volume='if(lt(t,.5),1,0)':eval=frame", str(path)], check=True)
+        found = self.desk.wave(path)
+        self.assertAlmostEqual(len(found), 50, delta=2)
+        self.assertTrue(all(v > 20 for v in found[2:23]) and all(v < 3 for v in found[28:48]), found)
+        self.assertEqual(self.desk.wave(path), found)  # kept: worked out once
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg")
     def test_clips_are_joined_by_cuts_and_dissolves_with_music_under_them(self):

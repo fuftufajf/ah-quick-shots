@@ -17,6 +17,7 @@ import urllib.request
 import webbrowser
 
 from director_core import MUSIC, Conflict, Desk
+from finishing import WAVE
 
 ROOT = Path(__file__).resolve().parent
 HOST, PORT = "127.0.0.1", 8766
@@ -80,6 +81,12 @@ class Handler(BaseHTTPRequestHandler):
             data = self.server.desk.flight_data()
             return self.send_json(200, data) if data else self.send_json(404, {"message": "Read a stretch's flight first"})
         desk = self.server.desk
+        # How loud a clip's or the music's sound is, for the Assembly's lanes: {rate, peaks}, peaks 0 to 255.
+        if wave := re.fullmatch(rf"/api/wave/(?:video/([a-f0-9]{{32}})|music/([a-f0-9]{{32}}\.({MUSIC})))", relative):
+            path = desk.video(wave[1]) if wave[1] else desk.root / "music" / wave[2]
+            if path is None or not path.is_file():
+                return self.send_error(404)
+            return self.send_json(200, {"rate": WAVE, "peaks": desk.wave(path)})
         if video := re.fullmatch(r"/media/video/([a-f0-9]{32})", relative):  # a finished video on record: an assembly's clip
             path = desk.video(video[1])
         elif re.fullmatch(rf"/media/music/[a-f0-9]{{32}}\.({MUSIC})", relative):

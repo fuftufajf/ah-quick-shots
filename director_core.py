@@ -16,7 +16,7 @@ import traceback
 import uuid
 
 import finishing
-from finishing import FASTEST, PASSES, Cancelled, assemble, blend, style, trim
+from finishing import FASTEST, PASSES, Cancelled, assemble, blend, peaks, style, trim
 from flight_data import derive, pair, read_kept
 import overlay
 import trails
@@ -161,6 +161,7 @@ class Desk:
         self.drawing = deque()  # data overlays still to draw: ffmpeg's work, the viewer is not needed for it
         self.drawer = None
         self.halt = threading.Event()  # the page asks the playing in Film Viewer's window to stop where it is
+        self.waves = {}  # (file, its time) -> its waveform, see wave
         self.films_folder = None  # where the viewer keeps its films, as its `films` reply says
         self.data = {"connected": False, "films": [], "project": None, "planes": [],
                      "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None, "flight": None,
@@ -326,6 +327,18 @@ class Desk:
         with self.lock:
             row = next((r for r in self.data["renders"] if r.get("id") == ident), None)
         return Path(row["file"]) if row else None
+
+    def wave(self, path):
+        """The waveform of a finished video's or a piece of music's sound (finishing.peaks), worked out once a file and
+        kept while the desk runs: 50 bytes a second of sound."""
+        key = (str(path), path.stat().st_mtime_ns)
+        with self.lock:
+            found = self.waves.get(key)
+        if found is None:
+            found = bytes(peaks(path))
+            with self.lock:
+                self.waves[key] = found
+        return list(found)
 
     def keep_music(self, name, body):
         """Music for the assembly, kept with the desk under a name made of its content: {file, name}.
