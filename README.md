@@ -134,7 +134,8 @@ time, shot and camera; Videos folder, under The cut, opens it.
 - **Film Viewer does not run beside the game.** If the viewer exits at once,
   close the game and start the viewer again.
 - **A render cannot be interrupted** from the page. Stop it in Film Viewer if
-  you must.
+  you must. Playing can: Pause and Stop hold the clip on the page and what
+  plays in Film Viewer's own window alike.
 - **A render may wait for the sound of the one before.** Started too soon, the
   viewer loses the engine, guns and voices, so the desk waits (the status line
   says for how long).
