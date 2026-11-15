@@ -189,8 +189,8 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
           {music && <audio ref={song} src={`/media/music/${music.file}`} preload="auto"/>}
         </div>
         <div className="transport">
-          <button className="play" disabled={!rows.length || playing} onClick={play} aria-label="Play" title="Play the assembly (Space)"><Play weight="fill"/></button>
-          <button className="play" disabled={!playing} onClick={() => setPlaying(false)} aria-label="Pause" title="Pause (Space)"><Pause weight="fill"/></button>
+          {playing ? <button className="play" onClick={() => setPlaying(false)} aria-label="Pause" title="Pause (Space)"><Pause weight="fill"/></button>
+            : <button className="play" disabled={!rows.length} onClick={play} aria-label="Play" title="Play the assembly (Space)"><Play weight="fill"/></button>}
           <button className="play" disabled={!rows.length || (!playing && at === 0)} onClick={() => { setPlaying(false); go(0); }} aria-label="Stop" title="Stop and go back to the start"><Stop weight="fill"/></button>
           <strong>{formatTime(at)}</strong><span>/ {formatTime(length)}</span>
           <button disabled={!cutAt(clips, rows, at)} onClick={cut} title="Cuts the clip under the playhead in two (S)"><Scissors/> Cut at the playhead</button>

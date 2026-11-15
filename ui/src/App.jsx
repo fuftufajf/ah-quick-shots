@@ -161,7 +161,9 @@ export function App() {
     if (!job || job.running) return;
     const own = clip && Array.isArray(asking.current) && clip.start === asking.current[0] && clip.end === asking.current[1];
     if (job.action === "clip" && !job.error && own && player && !trimGrab.current && (!draft || asking.current[2] === "sequence" || (clip.start === draft.start && clip.end === draft.end))) { asking.current = null; player.currentTime = 0; player.play().catch(() => {}); }
-    if (job.action === "live" && stopped.current != null) { const start = stopped.current; stopped.current = null; goTo(start); }
+    // Played in the viewer's window and now paused or over: the frame it stands on comes to the page at once
+    // (asked for where the film already is, so nothing is moved). Stopped, it goes back to where it began.
+    if (job.action === "live" && !job.error) { const at = stopped.current ?? desk.now; stopped.current = null; goTo(at); }
     if (job.action === "airfield" && airfieldAsked.current) {
       airfieldAsked.current = false;
       if (!job.error) airfieldReel(desk.airfield?.moments || []);
@@ -693,8 +695,8 @@ export function App() {
           </div>
           <div className="transport">
             <button className="play" disabled={!project} onClick={toStart} aria-label="To the start" title={draft ? "To the start of this shot (Home)" : "To the start (Home)"}><SkipBack weight="fill"/></button>
-            <button className="play" disabled={!project || rolling || live || working} onClick={play} aria-label="Play" title={(sequence.length > 1 && !dirty ? `Play the whole sequence, ${sequence.length} shots` : draft ? "Play this shot" : `Play the next ${CHUNK} seconds`) + " in Film Viewer's own window, at once and with its sound: keep that window on screen (Space)"}><Play weight="fill"/></button>
-            <button className="play" disabled={!rolling && !live} onClick={pause} aria-label="Pause" title="Pause what is playing, here or in Film Viewer's window (Space)"><Pause weight="fill"/></button>
+            {rolling || live ? <button className="play" onClick={pause} aria-label="Pause" title="Pause what is playing, here or in Film Viewer's window (Space)"><Pause weight="fill"/></button>
+              : <button className="play" disabled={!project || working} onClick={play} aria-label="Play" title={(sequence.length > 1 && !dirty ? `Play the whole sequence, ${sequence.length} shots` : draft ? "Play this shot" : `Play the next ${CHUNK} seconds`) + " in Film Viewer's own window, at once and with its sound: keep that window on screen (Space)"}><Play weight="fill"/></button>}
             <button className="play" disabled={!project || (!rolling && !live && !clip && !video)} onClick={stop} aria-label="Stop" title="Stop and go back to the start"><Stop weight="fill"/></button>
             <button disabled={!project || working} onClick={renderPlay} title="Render it as a small clip and play it here on the page. It takes about as long to render as it plays; unchanged, it plays again at once."><FilmSlate/> Render and play</button>
             <strong>{formatTime(cursor)}</strong><span>/ {formatTime(project?.length)}</span>
