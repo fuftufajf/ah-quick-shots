@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {frameOf, glide, keyAt, keyable, looseness, reframe, toggleKey} from "./desk.js";
+import {frameOf, glide, keyAt, keyBeside, keyable, looseness, reframe, toggleKey} from "./desk.js";
 
 // The same numbers as the desk's own (test_director.py): held outside the keyframes, through each one, no halt on the way.
 assert.deepEqual([1, 2, 3, 4, 5.5, 7, 9].map(t => Math.round(glide([2, 4, 7], [0, 10, 4], t) * 1e4) / 1e4), [0, 0, 4.8, 10, 7.3, 4, 4]);
@@ -18,6 +18,9 @@ assert.deepEqual(shot.keys.map(k => [k.t, k.orbit, k.distance]), [[12, 30, 400],
 shot = reframe(shot, 18.2, {...frameOf(shot, 18.2), fov: 70});
 assert.deepEqual(shot.keys.map(k => [k.t, k.fov]), [[12, 40], [18, 70]]);
 assert.deepEqual([keyAt(shot, 12.2), keyAt(shot, 15), keyAt(shot, 17.8)], [0, -1, 1]);
+// Stepping from keyframe to keyframe passes over the one the playhead stands on, and stops at the ends.
+assert.deepEqual([[15, -1], [15, 1], [12.2, 1], [12.2, -1], [18, 1], [18.1, -1], [20, -1]].map(([t, step]) => keyBeside(shot, t, step)?.t), [12, 18, 18, undefined, undefined, 12, 18]);
+assert.equal(keyBeside(ship, 15, 1), undefined);
 // Between them the camera is on its way, the short way round the aircraft; outside them it holds.
 assert.deepEqual([10, 12, 15, 18, 20].map(t => frameOf(shot, t).distance), [400, 400, 650, 900, 900]);
 assert.equal(frameOf(shot, 15).orbit, -45);

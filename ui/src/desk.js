@@ -366,6 +366,8 @@ export function frameOf(shot, t) {
 
 // The keyframe at the playhead, if one is within a quarter of a second of it: -1 when none.
 export const keyAt = (shot, t) => (shot.keys || []).findIndex(k => Math.abs(k.t - t) <= .25);
+// The keyframe before (step -1) or after (1) the playhead, past the one it stands on: undefined when none.
+export const keyBeside = (shot, t, step) => step < 0 ? (shot.keys || []).findLast(k => k.t < t - .25) : (shot.keys || []).find(k => k.t > t + .25);
 
 // The shot after its camera was changed at the playhead to `next` (the framing there, changed). Before the first
 // keyframe that is the whole shot's camera. With keyframes a change is a keyframe at the playhead: the one already

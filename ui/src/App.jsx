@@ -1,7 +1,7 @@
-import {useEffect, useMemo, useRef, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Stop, Trash, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, frameOf, keyAt, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, videosOf, zoomCamera} from "./desk.js";
+import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, videosOf, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
@@ -60,6 +60,8 @@ export function App() {
   // (another tab or window) gets the same picture; playing it there too is heard as a doubled voice.
   const asking = useRef(null);
   const film = useRef(null);  // the preview clip's <video>
+  // A clip taken off the page while it plays says nothing: without this Play would stay greyed out.
+  const player = useCallback(el => { film.current = el; if (!el) setRolling(false); }, []);
   const screen = useRef(null);
   const grab = useRef(null);  // a drag on the picture: where it began and the camera as it was
   const trimGrab = useRef(null);
@@ -197,6 +199,9 @@ export function App() {
       if (e.key === "i") mark("start");
       else if (e.key === "o") mark("end");
       else if (e.key === "k") keyframe();
+      else if (e.key === "Delete") keyframe(true);
+      else if (e.key === "[") toKey(-1);
+      else if (e.key === "]") toKey(1);
       else if (e.key === " ") { e.preventDefault(); if (live) pause(); else play(); }  // also when a button still has focus from the last click
     }
     window.addEventListener("keydown", key);
@@ -570,7 +575,10 @@ export function App() {
   // there is the whole shot's until there are keyframes, then a keyframe at the playhead (reframe in desk.js).
   const at = draft ? inShot(draft) : 0, cam = draft ? frameOf(draft, at) : null;
   const keyed = keyable(draft) && !conflict && !video;
-  function keyframe() { if (keyed) { film.current?.pause(); tune(toggleKey(draft, at)); } }
+  // The keyframe the playhead stands on is the selected one: the sliders show it, a change changes it, Delete takes it away.
+  const on = keyed ? keyAt(draft, at) : -1, keys = keyed && draft.keys || [];
+  function keyframe(only) { if (keyed && (only !== true || on >= 0)) { film.current?.pause(); tune(toggleKey(draft, at)); } }
+  function toKey(step) { const k = keyed && keyBeside(draft, at, step); if (k) { film.current?.pause(); goTo(k.t); } }
 
   return <main className="desk">
     <header className="topbar">
@@ -609,7 +617,7 @@ export function App() {
           <div ref={screen} className={`screen ${movable ? "movable" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
             onClick={e => { if (!dragged.current && clip && !video && !e.target.closest("button")) play(); }}>
             {video ? <video key={video.url} src={video.url} controls autoPlay={asking.current === "cut"} onLoadedData={() => { asking.current = null; }} playsInline/>
-            : clip ? <video key={clip.url} ref={film} src={clip.url} playsInline onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} onTimeUpdate={e => { if (!scrubbing.current && !trimGrab.current) setCursor(clip.start + e.target.currentTime); }}/>
+            : clip ? <video key={clip.url} ref={player} src={clip.url} playsInline onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} onTimeUpdate={e => { if (!scrubbing.current && !trimGrab.current) setCursor(clip.start + e.target.currentTime); }}/>
             : still ? <img src={still.url} draggable={false} alt={`Film Viewer frame at ${formatTime(still.time)}`}/>
             : <div className="empty-preview"><FilmStrip size={44} weight="thin"/><h2>See the film here.</h2><p>Open a replay and click a moment.<br/>The desk renders that shot as a short clip and plays it.</p></div>}
             {working && <div className="preview-busy"><span className="spinner"/><span>{desk.job?.message || "Working…"}</span>{desk.job?.expect && <span className="meter"><i style={{width: `${Math.min(100, (desk.job.elapsed || 0) / desk.job.expect * 100)}%`}}/></span>}</div>}
@@ -622,9 +630,11 @@ export function App() {
 
           <div className="timeline">
             <div className="lane">
+              {project && <span className="playhead" style={{left: place(cursor) + "%"}}/>}
               {shots.filter(s => s.id !== draft?.id && s.end > from && s.start < to).map(s => <button key={s.id} className="block" style={span(s)} title={s.name} aria-label={`Shot ${s.name}`} onClick={() => choose(s)}/>)}
               {draft && <><span className="block current" style={span(draft)}/>
-                {(draft.keys || []).map(k => <button key={k.t} className="keyframe" style={{left: place(k.t) + "%"}} title={`Keyframe at ${formatTime(k.t)}: click to go there`} aria-label={`Keyframe at ${formatTime(k.t)}`} onClick={() => goTo(k.t)}/>)}
+                {(draft.keys || []).map((k, i) => <button key={k.t} className={`keyframe ${i === on ? "selected" : ""}`} style={{left: place(k.t) + "%"}} aria-current={i === on || undefined}
+                  title={`Keyframe ${i + 1} of ${draft.keys.length} at ${formatTime(k.t)}${i === on ? " · selected: change the camera, or press Delete" : " · click to select it"}`} aria-label={`Keyframe ${i + 1} of ${draft.keys.length} at ${formatTime(k.t)}`} onClick={() => { film.current?.pause(); goTo(k.t); }}/>)}
                 {["start", "end"].map(edge => <button key={edge} className={'trim-handle ' + edge} style={{left: place(draft[edge]) + "%"}}
                   role="slider" aria-label={edge === "start" ? "Shot start" : "Shot end"} aria-orientation="horizontal"
                   aria-valuemin={trimShot(draft, edge, 0, length, shots)[edge]} aria-valuemax={trimShot(draft, edge, length, length, shots)[edge]}
@@ -652,7 +662,12 @@ export function App() {
             <button disabled={!project || conflict} onClick={another} title={again ? "Another shot of this same stretch: pick a camera, then Add to cut" : "Start a new six-second shot at the playhead"}><Plus/> New shot</button>
             <button disabled={!project} onClick={() => mark("start")} title="Shot starts at the playhead (I)">Set in</button>
             <button disabled={!project} onClick={() => mark("end")} title="Shot ends at the playhead (O)">Set out</button>
-            {keyed && <button aria-pressed={keyAt(draft, at) >= 0} onClick={keyframe} title={keyAt(draft, at) >= 0 ? "Take this keyframe away (K)" : "Keep this framing at the playhead (K). Set another further on, and the observer glides from one to the next"}><Diamond/> Keyframe</button>}
+            {keyed && <span className="keys" role="group" aria-label="Keyframes">
+              {keys.length > 0 && <button disabled={!keyBeside(draft, at, -1)} onClick={() => toKey(-1)} aria-label="Previous keyframe" title="To the keyframe before ([)"><CaretLeft weight="bold"/></button>}
+              {on >= 0 ? <button className="selected" onClick={keyframe} title="Take the selected keyframe away (Delete or K)"><Trash/> Delete keyframe {on + 1} of {keys.length}</button>
+                : <button onClick={keyframe} title="Keep this framing at the playhead (K). Set another further on, and the observer glides from one to the next"><Diamond/> {keys.length ? "Add keyframe" : "Keyframe"}</button>}
+              {keys.length > 0 && <button disabled={!keyBeside(draft, at, 1)} onClick={() => toKey(1)} aria-label="Next keyframe" title="To the keyframe after (])"><CaretRight weight="bold"/></button>}
+            </span>}
             {draft && <span className="range">{formatTime(draft.start)} — {formatTime(draft.end)} · {(draft.end - draft.start).toFixed(1)} s · drag arrows: 1 s</span>}
             <button className="zoom" aria-pressed={zoom && Boolean(draft)} disabled={!draft} onClick={() => setZoom(!zoom)} title="Stretch the timeline around this shot">Close-up</button>
           </div>
