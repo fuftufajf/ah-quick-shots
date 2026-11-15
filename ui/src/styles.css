@@ -193,15 +193,17 @@ p.problem{font-size:13px;padding:10px 14px 0}
 .cut-row strong{font-size:13px;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--ink)}
 .cut-row small{color:var(--muted);font-variant-numeric:tabular-nums}
 /* Remove and add appear where the pointer is (always on a touch screen), with a full frame, never a stripe. */
-.cut-row .forget,.add-take{flex:0 0 30px;width:30px;min-height:30px;padding:0;border-color:transparent;background:#fff;opacity:0}
+.cut-row .forget,.cut-row .duplicate,.add-take{flex:0 0 30px;width:30px;min-height:30px;padding:0;border-color:transparent;background:#fff;opacity:0}
 .cut-row .forget{color:var(--red)}
 .cut-row .forget:hover:not(:disabled){border-color:var(--red);background:var(--red-wash)}
-.cut-row:hover .forget,.cut-row:focus-within .forget,.moment-row:hover .add-take,.moment-row:focus-within .add-take{opacity:1}
+.cut-row .duplicate{color:var(--navy)}
+.cut-row .duplicate:hover:not(:disabled){border-color:var(--navy);background:var(--navy-wash)}
+.cut-row:hover :is(.forget,.duplicate),.cut-row:focus-within :is(.forget,.duplicate),.moment-row:hover .add-take,.moment-row:focus-within .add-take{opacity:1}
 .moment-row{position:relative}
 .moment-row .moment{padding-right:40px}
 .add-take{position:absolute;right:4px;top:5px;color:#188038}
 .add-take:hover:not(:disabled){border-color:#188038;background:#e6f4ea}
-@media (hover:none){.cut-row .forget,.add-take{opacity:1}}
+@media (hover:none){.cut-row .forget,.cut-row .duplicate,.add-take{opacity:1}}
 .heading-actions{display:flex;align-items:center;gap:10px}
 button.small{min-height:26px;padding:3px 8px;font-size:12px}
 .danger{color:var(--red)}

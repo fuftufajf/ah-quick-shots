@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, fitShot, killSequence, landingSequence, ownKills, sequenceOf, turnable, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
+import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dragCamera, fights, fitShot, killSequence, landingSequence, ownKills, sequenceOf, turnable, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
 const event = {time:199, kind:'kill', text:'Hawk Raven 1 19 10', fields:['Hawk','Raven','1','19','10']};
 assert.equal(formatTime(195.3), '03:15.3');
 assert.equal(filterMoments([event], 'Raven 03:19', 'kill').length, 1);
@@ -51,6 +51,11 @@ assert.deepEqual(sequenceOf(reel[1], reel).map(s => s.id), reel.slice(0, 4).map(
 assert.deepEqual(sequenceOf(again[3], reel).map(s => s.id), again.map(s => s.id));
 assert.equal(sequenceOf(takeoff[2], reel).length, 4);
 assert.deepEqual(sequenceOf(reel.at(-1), reel), []);
+// A duplicate is another take of its stretch: the sequence passes over it, and the duplicate's own goes on round it.
+const copy = {...reel[1], id: 'copy', name: copyName(reel[1].name, reel)}, copied = [...reel, copy];
+assert.deepEqual(sequenceOf(reel[0], copied).map(s => s.id), reel.slice(0, 4).map(s => s.id));
+assert.deepEqual(sequenceOf(copy, copied).map(s => s.id), [reel[0].id, 'copy', reel[2].id, reel[3].id]);
+assert.deepEqual([copy.name, copyName(copy.name, copied)], [`${reel[1].name} (copy)`, `${reel[1].name} (copy 2)`]);
 
 // A camera on the airframe turns where it looks under a drag; one locked on him keeps him and does not turn.
 const seat = {kind:'cockpit', fov:60, target:10};

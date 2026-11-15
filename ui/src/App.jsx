@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, SkipBack, Sparkle, Stop, Trash, X} from "@phosphor-icons/react";
+import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, Copy, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, SkipBack, Sparkle, Stop, Trash, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, videosOf, zoomCamera} from "./desk.js";
+import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dragCamera, fights, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, videosOf, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
@@ -373,13 +373,19 @@ export function App() {
     open(fitShot({...newShot(project, desk.planes, null, start), start, end}, shots), true);
   }
   // The usual next step is the same stretch through another camera: with the playhead inside the selected shot,
-  // a new shot keeps its stretch and starts from its camera, and the selected one stays as it was saved.
-  // (Half a second of slack: a clip played to its end leaves the playhead a frame or two past the shot.)
-  const again = Boolean(draft) && cursor >= draft.start - .5 && cursor <= draft.end + .5;
+  // New shot is Duplicate shot, a copy that keeps its stretch, camera and keyframes, and the selected one stays as
+  // it was saved. (Half a second of slack: a clip played to its end leaves the playhead a frame or two past the shot.)
+  const again = isSaved && cursor >= draft.start - .5 && cursor <= draft.end + .5;
   function another() {
     const at = Math.round(cursor * 10) / 10;
     if (!again) return fresh(at, Math.min(project.length, at + 6));
-    setDraft({...draft, id: crypto.randomUUID()}); setDirty(true); setBaseRevision(project.revision);
+    setDraft({...draft, id: crypto.randomUUID(), name: copyName(draft.name, shots)}); setDirty(true); setBaseRevision(project.revision);
+  }
+  // The same from The cut: a copy of a saved shot, selected and not in the cut until Add to cut.
+  function duplicate(shot) {
+    if (keepDraft()) return;
+    const copy = {...shot, id: crypto.randomUUID(), name: copyName(shot.name, shots)};
+    open(copy, true); setCursor(copy.start); show(copy, copy.start, castOf(copy, desk.planes).lead);
   }
   function mark(edge) {
     if (!project) return;
@@ -702,7 +708,7 @@ export function App() {
             <button className="play" disabled={!project || (!rolling && !live && !clip && !video)} onClick={stop} aria-label="Stop" title="Stop and go back to the start"><Stop weight="fill"/></button>
             <button disabled={!project || working} onClick={renderPlay} title="Render it as a small clip and play it here on the page. It takes about as long to render as it plays; unchanged, it plays again at once."><FilmSlate/> Render and play</button>
             <strong>{formatTime(cursor)}</strong><span>/ {formatTime(project?.length)}</span>
-            <button disabled={!project || conflict} onClick={another} title={again ? "Another shot of this same stretch: pick a camera, then Add to cut" : "Start a new six-second shot at the playhead"}><Plus/> New shot</button>
+            <button disabled={!project || conflict} onClick={another} title={again ? "A copy of this shot, its stretch, camera and keyframes: change it, then Add to cut" : "Start a new six-second shot at the playhead"}>{again ? <><Copy/> Duplicate shot</> : <><Plus/> New shot</>}</button>
             <button disabled={!project} onClick={() => mark("start")} title="Shot starts at the playhead (I)">Set in</button>
             <button disabled={!project} onClick={() => mark("end")} title="Shot ends at the playhead (O)">Set out</button>
             {keyed && <span className="keys" role="group" aria-label="Keyframes">
@@ -766,6 +772,7 @@ export function App() {
         <div className="cut-list">{shots.map(s => <div key={s.id} className={`cut-row ${draft?.id === s.id ? "selected" : ""}`}>
           <input type="checkbox" aria-label={`Render ${s.name}`} checked={!skipped.has(s.id)} onChange={() => setSkipped(old => { const next = new Set(old); if (!next.delete(s.id)) next.add(s.id); return next; })}/>
           <button onClick={() => choose(s)}><strong>{dirty && draft?.id === s.id && <span className="unsaved-dot" role="img" aria-label="Unsaved changes" title="Changed and not saved: Update shot keeps it"/>}{s.name}</strong><small>{formatTime(s.start)} — {formatTime(s.end)} · {camera(s)}</small>{problems[s.id] && <small className="problem">Cannot be filmed: open it for the reason</small>}</button>
+          <button className="duplicate" disabled={working} onClick={() => duplicate(s)} aria-label={`Duplicate ${s.name}`} title="Duplicate this shot: the same stretch, camera and keyframes, to change"><Copy weight="bold"/></button>
           <button className="forget" disabled={working} onClick={() => setForgetting({ids: [s.id], label: s.name})} aria-label={`Remove ${s.name}`} title="Remove this shot from the cut"><X weight="bold"/></button>
         </div>)}
           {!shots.length && <p className="hint">Shots you add appear here. Tick the ones to render.</p>}

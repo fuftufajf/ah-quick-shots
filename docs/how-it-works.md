@@ -55,11 +55,16 @@ Dragging the playhead inside the clip moves the picture at once; elsewhere it
 fetches a still with the viewer's rough seek as soon as it rests, and the
 latest position wins if the viewer is still busy.
 Set in and Set out (keys I and O) mark the shot at the playhead; Space plays
-and pauses. New shot, with the playhead inside the selected shot, begins another
-shot of that same stretch, starting from its camera: the usual next step is the
-same moment through other cameras, each saved as a shot of its own and laid over
-the others in an editor. The selected shot stays as it was saved. With the
-playhead elsewhere, New shot marks six seconds from it. The arrows at either end of the highlighted timeline
+and pauses. With the playhead inside a saved shot, New shot is Duplicate shot:
+a copy of that stretch with its camera and keyframes, named "(copy)", to change
+and then Add to cut: the usual next step is the same moment through other
+cameras, each saved as a shot of its own and laid over the others in an editor.
+The selected shot stays as it was saved. The copy icon beside a shot in The cut
+does the same. With the playhead elsewhere, New shot marks six seconds from it.
+A sequence (a kill, a take-off) plays and renders past such a copy: it is
+another take of its stretch. A shot with a change not saved yet says so: the
+frame of Update shot (Add to cut) breathes amber, and its row in The cut has an
+amber dot. Keyframes are saved only with the shot. The arrows at either end of the highlighted timeline
 range trim that edge, snapping to whole seconds (the film boundary, neighbouring
 shots and the 120-second limit take priority). Arrow keys adjust a focused
 handle too. The range follows the drag; releasing it shows a still at that

@@ -87,16 +87,25 @@ export function landingSequence(project, moment) {
 }
 
 // The saved shots of a sequence that `shot` belongs to: the same name before " · ", following one another with
-// gaps of under 20 s (a kill's guns and his fall can be 14 s apart; two kills of one pilot are further).
+// gaps of under 20 s (a kill's guns and his fall can be 14 s apart; two kills of one pilot are further). Another
+// take of a stretch (a duplicate) is passed over, and the sequence goes on after it.
 export function sequenceOf(shot, shots) {
   const head = shot.name.split(" · ")[0];
   if (!shot.name.includes(" · ")) return [];
   const same = shots.filter(s => s.name.split(" · ")[0] === head).sort((a, b) => a.start - b.start);
-  let at = same.findIndex(s => s.id === shot.id), from = at, to = at;
-  if (at < 0) return [];
-  while (from > 0 && same[from].start - same[from - 1].end < 20 && same[from - 1].end <= same[from].start + .01) from--;
-  while (to < same.length - 1 && same[to + 1].start - same[to].end < 20 && same[to + 1].start >= same[to].end - .01) to++;
-  return same.slice(from, to + 1);
+  if (!same.some(s => s.id === shot.id)) return [];
+  const row = [shot], latest = list => list.sort((a, b) => b.end - a.end)[0];
+  for (let s; (s = latest(same.filter(s => s.end <= row[0].start + .01 && row[0].start - s.end < 20)));) row.unshift(s);
+  for (let s; (s = same.find(s => s.start >= row.at(-1).end - .01 && s.start - row.at(-1).end < 20));) row.push(s);
+  return row;
+}
+
+// A copy's name: the shot's own with "(copy)" after it, "(copy 2)" and on when that is taken.
+export function copyName(name, shots) {
+  const base = name.replace(/ \(copy(?: \d+)?\)$/, ""), taken = new Set(shots.map(s => s.name));
+  let next = `${base} (copy)`;
+  for (let n = 2; taken.has(next); n++) next = `${base} (copy ${n})`;
+  return next;
 }
 
 // What a preview clip shows: the stretch, the shot's camera (not its name) and the picture switches.
