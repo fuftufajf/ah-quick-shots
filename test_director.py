@@ -1013,6 +1013,36 @@ class DeskTests(unittest.TestCase):
             escort_poses(validate_shot({**ship, "loose": seconds}, 60), tracks))
         self.assertLess(flown(8), flown(1))
 
+    def test_a_keyframe_says_whom_the_observer_watches_from_there(self):
+        # The hero flies straight on, the other aircraft 800 ft ahead, to the right and above: 12 s, half a second apart.
+        tracks = {t / 2: {19: (0, 1000, 150 * t, 0, 0, 0), 10: (300, 1100, 150 * t + 800, 0, 0, 0)} for t in range(25)}
+        at = sorted(tracks).index
+        ship = {**SHOT, "kind": "escort", "start": 0, "end": 12, "orbit": 30, "distance": 300, "height": 20, "fov": 20, "roll": 0}
+        frame = {name: ship[name] for name in ("orbit", "distance", "height", "fov")}
+        turned = validate_shot({**ship, "keys": [{"t": 3, **frame, "watch": "hero"}, {"t": 6, **frame, "watch": "target"}, {"t": 9, **frame}]}, 60)
+        self.assertEqual([key.get("watch") for key in turned["keys"]], ["hero", "target", None])  # the last one: the shot's own, both
+        for refused in ({**ship, "keys": [{"t": 3, **frame, "watch": "nobody"}]},
+                        {**ship, "watch": "hero", "target": None, "keys": [{"t": 3, **frame, "watch": "both"}]}):
+            with self.assertRaises(ValueError):
+                validate_shot(refused, 60)
+        poses = escort_poses(turned, tracks)
+        hero, target, both = (escort_poses(validate_shot({**ship, "watch": who}, 60), tracks) for who in ("hero", "target", "both"))
+        same = lambda t, whole: self.assertEqual([round(v, 4) for v in poses[at(t)][:5]], [round(v, 4) for v in whole[at(t)][:5]])
+        # Up to its first keyframe it is the ship that watches the hero alone, at the second the one that watches
+        # the target, from the third on the one that holds both: seat and look, and its lens open again.
+        for t, whole in ((0, hero), (3, hero), (6, target), (9, both), (12, both)):
+            same(t, whole)
+        self.assertAlmostEqual(poses[at(12)][6], both[at(12)][6], places=4)
+        # On the way from one to the next it is at neither seat, never nearer the hero than both seats are, and its
+        # picture turns without a jerk.
+        self.assertGreater(min(math.dist(poses[at(4.5)][:3], whole[at(4.5)][:3]) for whole in (hero, target)), 50)
+        self.assertGreater(min(math.dist(pose[:3], tracks[t][19][:3]) for pose, t in zip(poses, sorted(tracks))), 295)
+        rate = [math.degrees((b[3] - a[3] + math.pi) % (2 * math.pi) - math.pi) / .5 for a, b in zip(poses, poses[1:])]
+        self.assertLess(max(abs(b - a) for a, b in zip(rate, rate[1:])), 25)  # degrees a second, from one half second to the next
+        # The viewer holds an aircraft in the middle only where the ship watches it alone at both ends of a move.
+        held = ["hero" if " at 19 curve" in line else "target" if " at 10 curve" in line else "" for line in compile_shot(turned, tracks)]
+        self.assertEqual(held, ["hero"] * 6 + [""] * 18)
+
     def test_playing_in_the_viewer_is_paused_from_the_page_and_goes_on_from_the_playhead(self):
         commands, clock = [], [0.0]
         def native(command, progress):

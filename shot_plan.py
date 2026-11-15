@@ -58,8 +58,9 @@ def validate_shot(raw, length):
         raise ValueError("Choose the lead aircraft and, for a shot of two, a different second aircraft")
     if kind == "escort":
         # The observer can be directed: `loose`, the seconds of the hero's path it flies the average of; `keys`,
-        # framings set at moments of the shot, between which it glides; `path` "own", when those moments pin it to
-        # the sky and it flies its own line through them instead of the aircraft's.
+        # framings set at moments of the shot, between which it glides, each with whom it watches from there
+        # (`watch`; the shot's own when it does not say); `path` "own", when those moments pin it to the sky and it
+        # flies its own line through them instead of the aircraft's.
         if raw.get("loose") is not None:
             shot["loose"] = number(raw["loose"], 1, 12, "looseness")
         keys = raw.get("keys") or []
@@ -70,6 +71,10 @@ def validate_shot(raw, length):
             t = round(number(key.get("t"), 0, length, "keyframe time"), 2)
             if shot["start"] - .001 <= t <= shot["end"] + .001:  # one outside the shot went with what was trimmed off
                 kept[t] = {"t": t, **{name: number(key.get(name), low, high, name) for name, low, high in KEYED}}
+                if key.get("watch") is not None:
+                    if key["watch"] not in WATCH or (key["watch"] != "hero" and shot["target"] is None):
+                        raise ValueError("A keyframe watches both aircraft, the hero or the target, and only an aircraft the shot has")
+                    kept[t]["watch"] = key["watch"]
         if kept:
             shot["keys"] = [kept[t] for t in sorted(kept)]
             if raw.get("path") == "own":
@@ -129,6 +134,19 @@ def framed(shot, t):
             low, high = -math.inf, math.inf
         out[name] = min(high, max(low, _glide(times, values, t)))
     return out
+
+
+def _watching(shot, t):
+    """How much of the picture is both aircraft's, the hero's alone and the target's alone at film time t: three
+    shares of one, in WATCH's order. A keyframe may say whom the ship watches from there, and the picture passes
+    from one keyframe's aircraft to the next one's over the time between them, starting and ending gently. Set two
+    keyframes close together for a quick turn of the head."""
+    own = shot.get("watch", "both")
+    marks = [(key["t"], key.get("watch", own)) for key in shot.get("keys", ())] or [(0, own)]
+    i = max((k for k, (at, _who) in enumerate(marks) if at <= t), default=0)
+    (a, was), (b, will) = marks[i], marks[min(i + 1, len(marks) - 1)]
+    share = _ease(min(1, max(0, (t - a) / (b - a)))) if b > a else 0
+    return tuple((1 - share) * (was == who) + share * (will == who) for who in WATCH)
 
 
 def track_rows(lines):
@@ -351,13 +369,16 @@ def escort_poses(shot, tracks, step=None, seen=None):
     Watching the target alone it flies the same station and looks straight at it: a long lens from a steady seat.
     Watching the hero alone, `orbit` counts round the hero's own line of flight instead (0 behind, 90 off the
     right wing, 180 ahead): any side of it, as close as the lens likes, a second heavy.
+    Its keyframes can say whom it watches from each on (_watching): between two that differ it changes seat, look
+    and lens together, each by the share of the picture the one and the other then have.
     `step` is the seconds between tracks when their keys are not times."""
     times = sorted(tracks)
     last = len(times) - 1
     per = step or ((times[-1] - times[0]) / last if last else 1)
-    watch = shot.get("watch", "both")
-    weight = shot.get("loose") or (1 if watch == "hero" or shot["target"] is None else max(1, min(2, shot["distance"] / 200)))
     when = [t if step is None else shot["start"] + t * step for t in times]  # film time of each track
+    mix = [_watching(shot, t) if shot["target"] is not None else (0, 1, 0) for t in when]  # both's, hero's, target's
+    alone = all(hero == 1 for _both, hero, _target in mix)
+    weight = shot.get("loose") or (1 if alone else max(1, min(2, shot["distance"] / 200)))
     frames = [framed(shot, t) for t in when]
     reach = max(1, round(weight / per))
     lead = [tracks[t][shot["hero"]][:3] for t in times]
@@ -375,16 +396,18 @@ def escort_poses(shot, tracks, step=None, seen=None):
         g = after.index(next(a for a in after if a > 0)) - 1  # his last moment in the film
         drift = tuple(other[g][k] - other[max(0, g - 1)][k] for k in range(3))
         other = other[:g + 1] + [tuple(other[g][k] + drift[k] * min(i - g, FADE / per) for k in range(3)) for i in range(g + 1, len(times))]
-    stations = []  # where the ship sits from the hero: a bearing (0 toward +z, a quarter turn toward +x) and a climb
-    if watch == "hero" or other is None:
+    # Where the ship sits from the hero, a bearing (0 toward +z, a quarter turn toward +x) and a climb: `solo` round
+    # the hero's own line of flight, `pair` off the line through both.
+    solo = pair = None
+    if any(hero for _both, hero, _target in mix):
         heading = _smooth([(lead[min(last, i + 1)][0] - lead[max(0, i - 1)][0], lead[min(last, i + 1)][2] - lead[max(0, i - 1)][2])
                            for i in range(len(times))], reach)
-        behind, sweep = 0, math.radians(shot.get("sweep", 0))
+        behind, sweep, solo = 0, math.radians(shot.get("sweep", 0)), []
         for i, move in enumerate(heading):
             if math.hypot(*move) > 1e-6:  # standing still, it keeps the heading it had
                 behind = math.atan2(-move[0], -move[1])
-            stations.append((behind - turns[i] - sweep * (i / last if last else 0), 0))
-    else:
+            solo.append((behind - turns[i] - sweep * (i / last if last else 0), 0))
+    if not alone:
         # Where the line from the other aircraft through the hero points, turning the short way round from one
         # moment to the next: when the two pass each other the ship swings round in its own time.
         line = []
@@ -396,7 +419,17 @@ def escort_poses(shot, tracks, step=None, seen=None):
             climb = math.atan2(a[1] - b[1], math.hypot(a[0] - b[0], a[2] - b[2]))
             line.append((line[-1][0] + (angle - line[-1][0] + math.pi) % (2 * math.pi) - math.pi if line else angle,
                          max(-STEEPEST, min(STEEPEST, climb))))  # not straight over or under the hero
-        stations = [(angle + turns[i], climb) for i, (angle, climb) in enumerate(_smooth(line, max(1, round(max(1.5, weight) / per))))]
+        pair = [(angle + turns[i], climb) for i, (angle, climb) in enumerate(_smooth(line, max(1, round(max(1.5, weight) / per))))]
+    stations = solo if pair is None else pair
+    if solo and pair:
+        # Between a keyframe that watches the hero alone and one that does not it goes from one seat to the other
+        # round the hero: the short way as the move begins, and that way to its end (through the hero is no way).
+        stations, gap = [], 0
+        for (bearing, climb), (round_hero, _level), (_both, hero, _target) in zip(pair, solo, mix):
+            if not 0 < hero < 1:
+                gap = 0
+            gap += (round_hero - bearing - gap + math.pi) % (2 * math.pi) - math.pi
+            stations.append((bearing + hero * gap, climb * (1 - hero)))
     places = []
     for i, (bearing, climb) in enumerate(stations):
         base = frames[i]["distance"]
@@ -409,26 +442,29 @@ def escort_poses(shot, tracks, step=None, seen=None):
         # those places, standing at the first before it and at the last after. The aircraft come by, pass and leave.
         pins = [(key["t"], places[min(range(len(when)), key=lambda i: abs(when[i] - key["t"]))]) for key in shot["keys"]]
         places = [tuple(_glide([t for t, _place in pins], [place[axis] for _t, place in pins], t) for axis in range(3)) for t in when]
-    fovs, both = [math.radians(frame["fov"]) for frame in frames], watch == "both" and other is not None
+    fovs = [math.radians(frame["fov"]) for frame in frames]
     lenses = [(fov,) for fov in fovs]
-    if both:  # the lens moves as gently as the ship does
+    if any(both for both, _hero, _target in mix):  # the lens moves as gently as the ship does
         raw = [_lens(pos, lead[i], other[i], fovs[i]) for i, pos in enumerate(places)]
         if any(after):
             left = raw[g]
             raw = [lens if not after[i] else fovs[i] + (left - fovs[i]) * _ease(1 - min(1, after[i] / LENS_BACK)) for i, lens in enumerate(raw)]
-        lenses = _smooth([(lens,) for lens in raw], max(1, round(1.5 / per)))
+        lenses = _smooth([(fovs[i] * (1 - both) + lens * both,) for i, (lens, (both, _hero, _target)) in enumerate(zip(raw, mix))],
+                         max(1, round(1.5 / per)))
     poses = []
     for i, pos in enumerate(places):
         wide = min(WIDEST, max(fovs[i], lenses[i][0]))  # smoothing runs on past either end
+        both, _hero, his = mix[i]
+        both *= 1 - min(1, after[i] / FADE)  # how much he still draws the picture once he has left the film
+        looks = [(1 - both - his, _aim(pos, lead[i], 0, 0)[3:5])]  # the hero alone has the rest of it
         if both:
-            look = _hold(pos, lead[i], other[i], math.degrees(wide))
-            pull = 1 - min(1, after[i] / FADE)  # how much he still draws the picture once he has left the film
-            if pull < 1:
-                alone = _aim(pos, lead[i], 0, 0)[3:5]
-                look = (alone[0] + pull * ((look[0] - alone[0] + math.pi) % (2 * math.pi) - math.pi), alone[1] + pull * (look[1] - alone[1]))
-        else:
-            look = _aim(pos, other[i] if watch == "target" else lead[i], 0, 0)[3:5]
-        poses.append([*pos, *look, math.radians(shot["roll"]), wide])
+            looks.append((both, _hold(pos, lead[i], other[i], math.degrees(wide))))
+        if his:
+            looks.append((his, _aim(pos, other[i], 0, 0)[3:5]))
+        # Each look's share of the way from the first, the short way round.
+        (_all, (yaw, pitch)), *rest = [look for look in looks if look[0]]
+        poses.append([*pos, yaw + sum(share * ((there[0] - yaw + math.pi) % (2 * math.pi) - math.pi) for share, there in rest),
+                      pitch + sum(share * (there[1] - pitch) for share, there in rest), math.radians(shot["roll"]), wide])
     return poses
 
 
@@ -436,9 +472,13 @@ def _poses(shot, tracks, times, seen, step=None):
     """A moving camera at each track time: [(pose, the aircraft the viewer holds in the middle, or None)]."""
     if shot["kind"] == "pair":
         return pair_poses(shot, tracks, times, seen, step)
-    # A camera ship watching one aircraft: held by the viewer between our points, at any lens.
-    watched = None if shot.get("watch", "both") == "both" else shot["hero"] if shot["watch"] == "hero" else shot["target"]
-    return [(pose, watched) for pose in escort_poses(shot, tracks, step, seen)]
+    # A camera ship watching one aircraft: held by the viewer between our points, at any lens. Where its keyframes
+    # pass the picture from one aircraft to another, the points themselves say where it looks.
+    held = []
+    for t in times:
+        _both, hero, target = _watching(shot, t if step is None else shot["start"] + t * step)
+        held.append(shot["hero"] if hero == 1 else shot["target"] if target == 1 else None)
+    return [(pose, who if who == then else None) for pose, who, then in zip(escort_poses(shot, tracks, step, seen), held, held[1:] + held[-1:])]
 
 
 def _held(follow):

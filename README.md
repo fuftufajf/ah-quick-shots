@@ -91,7 +91,8 @@ unzipping.
    the bomb. Sliders or a drag adjust it (a lift-off or roll-out also has
    Swing round and Ends at). The observer can be directed: set the picture,
    press Keyframe (K), move the playhead, set it again, and it glides from one
-   framing to the next; Looseness says how closely it follows you, and on Its
+   framing to the next, turning to whom that keyframe looks at (both of you,
+   you, or the opponent); Looseness says how closely it follows you, and on Its
    own path each keyframe pins it to the sky, so it flies a line of its own
    while you come by and pass. Add to cut keeps the shot.
 4. **The cut** — the green arrow beside a moment adds it straight to the cut

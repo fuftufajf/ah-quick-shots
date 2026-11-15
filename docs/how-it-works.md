@@ -182,6 +182,21 @@ the two-aircraft cameras then take whoever comes nearest.
   first keyframe a change is the whole shot's; once there are keyframes,
   every change is a keyframe at the playhead (the one within a quarter of a
   second, or a new one), and the sliders show the camera as it is there.
+  Looks at is kept in the keyframe too: Both at one, the Opponent at the
+  next, and between them the observer turns from the one to the other,
+  changing its seat, its look and its lens together, gently at both ends.
+  The turn takes the time between the two keyframes: set them a second or
+  two apart for a quick turn of the head, and a keyframe before them to hold
+  the first look until then. Going to or from You alone it flies round you
+  from one seat to the other, the short way as the move begins, keeping its
+  distance (through you is no way). Not yet measured on a real fight: on
+  made-up tracks (a steady 12 s turn, three keyframes 3 s apart) the picture
+  swung at most 54 degrees a second and the ship stayed 290 ft from an
+  aircraft it was set 300 ft from. The viewer
+  holds an aircraft in the middle only where the observer watches it alone
+  at both ends of a half-second move; through a turn the desk's own points
+  say where it looks. A keyframe saved before this watches whom the shot
+  does.
   The keyframe the playhead stands on is the selected one, drawn larger and
   hollow: click a diamond or step with the arrows beside the button ([ and ])
   to select it, change the camera to change it, Delete (or K) to take it
@@ -622,8 +637,9 @@ A shot: `id`, `name`, `start`/`end` (film seconds), `kind`, `hero`/`target`
 (feet), `fov`/`roll` (degrees), `side` left|right (which wing, shoulder or gear
 leg), `watch` both|hero|target (whom the observer holds in its picture). The
 observer (`escort`) also takes `loose` (1 to 12 seconds), `keys` (up to 40
-keyframes `{t, orbit, distance, height, fov}`; one outside the shot is
-dropped) and, with keyframes, `path` "own". Shots
+keyframes `{t, orbit, distance, height, fov, watch}`; `watch` may be left out
+and is then the shot's; one outside the shot is dropped) and, with
+keyframes, `path` "own". Shots
 may overlap: takes of one stretch through different cameras, each with its own
 id. Use the recording pilot as hero when possible; remote tracks can be coarse.
 

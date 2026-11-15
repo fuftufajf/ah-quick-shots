@@ -341,11 +341,12 @@ export function momentLabel(event) {
   return event.text;
 }
 
-// The observer can be directed. A keyframe is a framing (where the ship sits, and its lens) kept at a moment of the
-// shot; between keyframes the ship glides from one to the next (shot_plan.py: _glide and framed, the same numbers).
+// The observer can be directed. A keyframe is a framing (where the ship sits, its lens, and whom it watches) kept at
+// a moment of the shot; between keyframes the ship glides from one to the next (shot_plan.py: _glide, framed and
+// _watching, the same numbers). A keyframe saved before they said whom to watch watches whom the shot does.
 export const KEYED = {orbit: [-Infinity, Infinity], distance: [20, 10000], height: [-2000, 5000], fov: [6, 140]};
 export const keyable = shot => shot?.kind === "escort";
-const framing = from => Object.fromEntries(Object.keys(KEYED).map(name => [name, from[name]]));
+const framing = from => Object.fromEntries([...Object.keys(KEYED), "watch"].filter(name => from[name] != null).map(name => [name, from[name]]));
 
 // A value through keyframes at t: held before the first and after the last; between them on a cubic that passes
 // each at the pace of its neighbours and is flat at the two ends.
@@ -371,6 +372,9 @@ export function frameOf(shot, t) {
     const value = Math.min(high, Math.max(low, glide(times, values, t)));
     out[name] = name === "orbit" ? Math.round((((value + 180) % 360 + 360) % 360 - 180) * 10) / 10 : Math.round(value * 10) / 10;
   }
+  // Whom it watches there: on the way from one keyframe's aircraft to the next one's, the nearer keyframe's.
+  const i = Math.max(0, shot.keys.findLastIndex(k => k.t <= t)), next = shot.keys[i + 1];
+  out.watch = (next && t - shot.keys[i].t > (next.t - shot.keys[i].t) / 2 ? next : shot.keys[i]).watch ?? shot.watch;
   return out;
 }
 
@@ -399,7 +403,8 @@ export function toggleKey(shot, t) {
 }
 
 // How many seconds of the hero's path the observer flies the average of, when the shot does not say (as shot_plan.py).
-export const looseness = shot => shot.loose ?? (shot.watch === "hero" || shot.target == null ? 1 : Math.max(1, Math.min(2, shot.distance / 200)));
+export const looseness = shot => shot.loose ?? (shot.target == null || (shot.keys?.length ? shot.keys : [shot]).every(k => (k.watch ?? shot.watch) === "hero")
+  ? 1 : Math.max(1, Math.min(2, shot.distance / 200)));
 
 // The videos a render of these shots makes, a row of shots each, as the desk deals them (videos in shot_plan.py): one
 // a shot when asked apart; else as few as hold them without two shots of one stretch sharing a video, each cut where

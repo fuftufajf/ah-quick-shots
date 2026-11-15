@@ -10,7 +10,7 @@ assert.equal(frameOf(ship, 15), ship);  // no keyframes: the shot's own camera a
 
 // The first keyframe keeps the camera as it is; until there are keyframes a change is the whole shot's.
 let shot = toggleKey(ship, 12);
-assert.deepEqual(shot.keys, [{t: 12, orbit: 30, distance: 400, height: 50, fov: 40}]);
+assert.deepEqual(shot.keys, [{t: 12, orbit: 30, distance: 400, height: 50, fov: 40, watch: "both"}]);
 assert.deepEqual(reframe(ship, 15, {...ship, distance: 900}), {...ship, distance: 900});
 // With keyframes, a change further on is a keyframe there; a change at a keyframe changes that one.
 shot = reframe(shot, 18, {...frameOf(shot, 18), orbit: -120, distance: 900});
@@ -32,5 +32,13 @@ assert.equal(shot.keys.length, 1);
 shot = toggleKey(shot, 18);
 assert.deepEqual([shot.keys, shot.path, shot.distance, shot.orbit, shot.fov], [undefined, undefined, 900, -120, 70]);
 
-assert.deepEqual([looseness(ship), looseness({...ship, loose: 7}), looseness({...ship, watch: "hero"}), looseness({...ship, distance: 900})], [2, 7, 1, 2]);
+// Whom it watches is the keyframe's too: changed at the playhead it is that keyframe's, the shot's own stays for
+// keyframes that do not say, and on the way from one to the next the sliders show the nearer one's.
+shot = reframe({...ship, keys: [{t: 12, orbit: 30, distance: 400, height: 50, fov: 40}]}, 16, {...ship, watch: "target"});
+assert.deepEqual([shot.watch, shot.keys.map(k => k.watch)], ["both", [undefined, "target"]]);
+assert.deepEqual([11, 12, 13.9, 14.1, 16, 19].map(t => frameOf(shot, t).watch), ["both", "both", "both", "target", "target", "target"]);
+assert.deepEqual([looseness(shot), looseness({...shot, watch: "hero", keys: [{...shot.keys[0], watch: "hero"}]})], [2, 1]);
+assert.equal(toggleKey(toggleKey(shot, 12), 16).watch, "target");  // the last one taken away leaves the shot its own
+
+assert.deepEqual([looseness(ship),looseness({...ship, loose: 7}), looseness({...ship, watch: "hero"}), looseness({...ship, distance: 900})], [2, 7, 1, 2]);
 console.log("OK: the observer's keyframes at the playhead");
