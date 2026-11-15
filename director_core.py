@@ -871,6 +871,10 @@ class Desk:
         shots = row or self._plan(project, raw)[0]
         if raw.get("hero") is not None:  # who is near the lead in this stretch, for choosing the opponent
             self._around(raw, project)
+        if raw.get("bare") and not row:  # to be played in the viewer's own window: its cameras and a still, no render
+            self._apply(project, raw)
+            self._preroll(number(raw.get("still", start), 0, length, "time"), rough=True)
+            return self._frame(project["revision"])
         film = next((row for row in self.data["films"] if row["path"] == project["film"]), {})
         name = hashlib.sha256(json.dumps([
             project["film"], film.get("mb"), film.get("modified"), round(start, 2), round(end, 2), CLIP, CAMERAS,

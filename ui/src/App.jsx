@@ -34,6 +34,9 @@ export function App() {
   const [asked, setAsked] = useState("");
   const [rolling, setRolling] = useState(false);
   const [zoom, setZoom] = useState(false);
+  // No preview clips: a shot shows as a still and Play plays it in Film Viewer's own window. Kept by this browser.
+  const [bare, setBare] = useState(() => { try { return localStorage.getItem("bare") === "1"; } catch { return false; } });
+  function noRender() { try { localStorage.setItem("bare", bare ? "0" : "1"); } catch { /* not kept, still switched */ } setBare(!bare); }
   const [rated, setRated] = useState("");
   const [skipped, setSkipped] = useState(() => new Set());
   const [forgetting, setForgetting] = useState(null);  // {ids, label}: shots asked to be removed, waiting for a choice
@@ -254,6 +257,7 @@ export function App() {
   function show(shot, still, lead = cast.lead) {
     const body = shot ? {start: shot.start, end: shot.end, shot, ...(lead != null ? {hero: lead} : {}), still: Math.min(shot.end - .1, Math.max(still, shot.start + .3))}
       : {start: cursor, end: Math.min(length, cursor + CHUNK)};
+    if (bare) return setWanted({action: "clip", body: {...body, bare: true}});  // its cameras and a still: Play is in the viewer's window
     asking.current = [body.start, body.end];
     setAsked(clipKey(body.start, body.end, shot, flags)); setWanted({action: "clip", body});
   }
@@ -263,6 +267,7 @@ export function App() {
   }
   function play() {
     if (!project) return;
+    if (bare) return playLive();
     const player = film.current;
     if (player && !player.paused && !player.ended) return player.pause();
     // A saved shot of a kill, take-off or landing: Play shows the whole sequence, as the cut renders it (clicking
@@ -622,7 +627,7 @@ export function App() {
       <section className="stage">
         <div className="picture panel" aria-busy={working}>
           <div className="panel-heading"><h2>2 <span>Picture</span></h2>
-            <div className="chips"><span className="note">Trails: tick them in Film Viewer</span><button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Names</button></div>
+            <div className="chips"><span className="note">Trails: tick them in Film Viewer</span><button aria-pressed={bare} onClick={noRender} title="No preview clips: a shot shows here as a still at once, and Play plays it in Film Viewer's own window (keep that window on screen). Off: Play renders a small clip and plays it here">No preview render</button><button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Names</button></div>
           </div>
           <div ref={screen} className={`screen ${movable ? "movable" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
             onClick={e => { if (!dragged.current && clip && !video && !e.target.closest("button")) play(); }}>

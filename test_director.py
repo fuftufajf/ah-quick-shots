@@ -1007,6 +1007,12 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(self.desk.snapshot()["preview"]["url"], first["url"])
         self.run_action({**ask, "shot": {**SHOT, "side": "left"}})
         self.assertNotEqual(self.desk.snapshot()["preview"]["url"], first["url"])
+        # Asked bare (it will be played in the viewer's own window): the cameras and a still, nothing rendered.
+        del commands[:]
+        self.run_action({**ask, "shot": {**SHOT, "side": "right", "distance": 77}, "bare": True})
+        self.assertTrue(any(c.startswith("cam ") for c in commands))
+        self.assertFalse(any(c.startswith("video ") for c in commands))
+        self.assertEqual(self.desk.snapshot()["preview"]["kind"], "image")
         self.assertFalse(any(c.startswith("tracks ") for c in commands))  # another angle on the same stretch
         # The viewer is still finishing a rendered stretch's sound for about as long as the stretch lasts: the next
         # render waits that out, or it would lose the engine, the guns and the pilots' voices.
