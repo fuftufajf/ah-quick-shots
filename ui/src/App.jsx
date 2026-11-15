@@ -1,5 +1,6 @@
 import {useEffect, useMemo, useRef, useState} from "react";
 import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Trash, X} from "@phosphor-icons/react";
+import {Assembly} from "./Assembly.jsx";
 import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
@@ -19,6 +20,7 @@ export function App() {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("fight");
+  const [view, setView] = useState("shots");  // "shots": the desk; "assembly": the rendered shots in a row
   const [filmChoice, setFilmChoice] = useState("");
   const [draft, setDraft] = useState(null);
   const [cast, setCast] = useState({lead: null, other: null});
@@ -185,6 +187,7 @@ export function App() {
 
   useEffect(() => {
     function key(e) {
+      if (view !== "shots") return;  // the assembly has keys of its own
       if (e.ctrlKey || e.metaKey || e.altKey || e.target.matches("input:not([type=range]),select,textarea,summary,a")) return;
       if (e.key === "i") mark("start");
       else if (e.key === "o") mark("end");
@@ -479,6 +482,11 @@ export function App() {
     else if (!made.length) setError(found.length ? "Your take-offs and landings in this film already have shots" : "No take-off or landing of yours in this film");
   }
 
+  // Shots rendered with the options set under The cut. The assembly asks for a file per shot.
+  function renderCut(ids, each) {
+    action("export_cut", {shot_ids: ids, quality, apart: each, overlay: withOverlay && !!desk.ffmpeg, blur: withBlur && !!desk.ffmpeg, look: withLook && !!desk.ffmpeg, haze: withHaze && !!desk.ffmpeg, trails: withTrails && !!desk.ffmpeg && {lead: trailLead, opponent: trailOpponent, seconds: trailSeconds}, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
+  }
+
   // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
   async function reel() {
     const made = [];
@@ -534,6 +542,10 @@ export function App() {
   return <main className="desk">
     <header className="topbar">
       <div className="brand"><FilmStrip size={26} weight="duotone"/><h1>AH <span>QUICK SHOTS</span></h1>{desk.version && <small className="version" title="The version of AH Quick Shots this desk runs: say it when you report a problem">{desk.version}</small>}</div>
+      <div className="tabs" role="tablist" aria-label="View">
+        <button role="tab" aria-selected={view === "shots"} aria-pressed={view === "shots"} onClick={() => setView("shots")} title="Moments, cameras and the cut">Shots</button>
+        <button role="tab" aria-selected={view === "assembly"} aria-pressed={view === "assembly"} onClick={() => { film.current?.pause(); setView("assembly"); }} title="The rendered shots in a row, cut and set to music">Assembly</button>
+      </div>
       <div className="open-film"><select aria-label="Film" value={filmChoice || project?.film || ""} onChange={e => setFilmChoice(e.target.value)}><option value="">Choose a replay</option>{desk.films.map(f => <option key={f.path} value={f.path}>{f.name}{f.modified ? ` · ${new Date(f.modified * 1000).toLocaleDateString()}` : ""}</option>)}</select><button disabled={!(filmChoice || project?.film) || (running && desk.job.action === "export_cut")} onClick={load} title="Open this replay; an operation in progress finishes first">Open</button>
         <button className="danger" aria-label="Delete this replay" disabled={!filmChoice || filmChoice === project?.film || working} onClick={() => setTrashing(desk.films.find(f => f.path === filmChoice))} title={filmChoice && filmChoice === project?.film ? "Open another replay first: Film Viewer holds the one that is open" : "Move the chosen replay to the Recycle Bin"}><Trash/></button></div>
       <div className={`operation ${working ? "working" : desk.job?.error ? "failed" : ""}`} role="status" aria-live="polite">
@@ -544,7 +556,7 @@ export function App() {
     {desk.stale && <div className="notice" role="alert">AH Quick Shots was updated while it was running: the desk still runs the old version, and the page may ask it for things it cannot do. An unsaved shot is lost on restart.<button onClick={restartDesk}>Restart the desk</button></div>}
     {(error || conflict) && <div className="notice" role="alert">{conflict ? "The shared plan changed while you were editing. Discard your changes to load it, then redo them." : error}{!conflict && <button onClick={() => setError("")} aria-label="Dismiss message">×</button>}</div>}
 
-    <section className="workspace">
+    <section className="workspace" hidden={view !== "shots"}>
       <aside className="moments panel">
         <div className="panel-heading"><h2>1 <span>Moments</span></h2><span>{moments.length}</span></div>
         <label className="search"><MagnifyingGlass/><input aria-label="Search moments" placeholder="Pilot, weapon or 03:15…" value={query} onChange={e => setQuery(e.target.value)}/></label>
@@ -673,10 +685,12 @@ export function App() {
               <option value={2.5}>Short</option><option value={10}>10 s</option><option value={30}>30 s</option><option value={60}>Lasting (1 min)</option>
             </select>
           </>}
-          <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; action("export_cut", {shot_ids: chosen, quality, apart, overlay: withOverlay && !!desk.ffmpeg, blur: withBlur && !!desk.ffmpeg, look: withLook && !!desk.ffmpeg, haze: withHaze && !!desk.ffmpeg, trails: withTrails && !!desk.ffmpeg && {lead: trailLead, opponent: trailOpponent, seconds: trailSeconds}, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))}); }} title={dirty ? "Add or update the shot first" : apart ? "A video of each ticked shot, in its own file" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>
+          <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; renderCut(chosen, apart); }} title={dirty ? "Add or update the shot first" : apart ? "A video of each ticked shot, in its own file" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>
           <button onClick={openVideos} title={`Finished videos are kept in ${desk.videos}`}><FolderOpen/> Videos folder</button></div>
       </aside>
     </section>
+    {view === "assembly" && <Assembly desk={desk} busy={working || !desk.connected} cameraOf={camera} onError={setError} openVideos={openVideos}
+      onRender={ids => renderCut(ids, true)} onOpenShot={shot => { setView("shots"); choose(shot); }}/>}
     {trashing && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="trash-title" onKeyDown={e => e.key === "Escape" && setTrashing(null)}>
       <div className="modal-box">
         <h2 id="trash-title">Move the replay “{trashing.name}” to the Recycle Bin?</h2>

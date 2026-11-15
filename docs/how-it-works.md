@@ -329,6 +329,44 @@ film runs on. Near the ground every camera is
 at or above your height, because the ground's height is known only under your
 wheels; the climb is 6 s after lift-off, when a fighter was 160 ft up.
 
+## The assembly
+
+The second view lays the film's rendered shots in a row and makes one video
+of them. It works on what the desk already has: the plan's shots and the
+record of finished videos (`.renders.json`: each video's id, when and how it
+was rendered, its length, and the camera of each shot in it). A shot's
+**versions** are the videos of that shot alone, newest first (a video of
+several shots is nobody's clip): `state.versions`. A version is `changed` when
+the shot's camera or stretch is no longer what the video shows; the shot is
+then marked Changed and Render what is missing renders it again, as a file of
+its own, with the options set under The cut.
+
+The assembly itself is small (`.assembly.json` beside the plan, `state.assembly`):
+`clips` in order, each `{shot, video, start, end, join, sound}` (a version of
+a shot, `video` null for the newest, less `start` seconds at its beginning and
+`end` at its end, joining the next with a cut or a dissolve of 0.3 s, at
+`sound` times its loudness), `off` (the shots kept off the timeline), `sound`
+(the film's loudness) and `music` (`{file, name, from, level, in, out}`).
+The page works out what is on the timeline (`ui/src/assembly.js`): the saved
+clips whose shot still has a video, and every rendered shot that is neither
+among them nor in `off`, put where it falls in the film. So a shot rendered
+a moment ago is on the timeline, and a clip keeps pointing at a shot that can
+be rendered again: change its camera in Shots, render, and the clip shows the
+new video. The picture plays the clips one after another from their files,
+the music beside them; a dissolve shows there as a cut.
+
+Export video is ffmpeg's work alone (`assemble()` in finishing.py): each clip
+trimmed and brought to one size and frame rate, joined in turn by `concat` or
+`xfade` and `acrossfade` (a dissolve between clips too short to share it is a
+cut), the music cut to the video's length, faded in and out and mixed under
+the film's sound without lowering it. The viewer has no part in it, so the
+desk goes on meanwhile; `state.assembling` says how it stands. Music is kept
+in `.quickshots/music` under a name made of its content.
+
+Not there yet: a vertical 9:16 export that keeps the lead aircraft in the
+middle (it needs a live trial of framing by `project`), a timeline file for
+an editor, and assembling without a film open in the viewer.
+
 ## Under the desk
 
 Each film has a local JSON project under `.quickshots/`, with an integer revision.
@@ -485,6 +523,13 @@ most 5 s later). One action runs at a time; a second is refused while
 - POST `/api/forget` `{expected_revision, shot_ids, files}` takes shots out of the plan; with `files: true`
   their finished videos and overlays on record (`state.renders`: `file`, `shots`, `overlays`) go to the
   Recycle Bin. Answers `{project, renders, recycled}`
+- POST `/api/assembly` `{assembly}` keeps the open film's assembly (see "The assembly"); answers `{assembly}`
+  as kept. POST `/api/assemble` `{assembly, quality}` keeps it and makes its video in the videos folder:
+  202 at once, `state.assembling` (`running`, `message`, `error`, `file`) says how it stands
+- POST `/api/music` with the file as the body and its name, percent-encoded, in `X-Name` (mp3, wav, m4a, aac,
+  flac or ogg, up to 100 MB) keeps a piece of music; answers `{file, name}` for the assembly's `music`
+- GET `/media/video/<id>` is a finished video on record (`state.versions`), `/media/music/<file>` a kept
+  piece of music, `/media/assembly` the assembly made last
 
 `seek`, `clip` and `icons` also take `shot`, an unsaved shot object: it stands
 in for the saved shots it overlaps, so a camera can be looked at before it is

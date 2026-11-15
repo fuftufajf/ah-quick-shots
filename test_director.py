@@ -672,6 +672,116 @@ class DeskTests(unittest.TestCase):
         self.run_action({"action": "open", "film": "films/test.ahf"})
         self.assertEqual([e["kind"] for e in self.desk.snapshot()["project"]["events"]], ["kill"])
 
+    def assembly_desk(self):
+        """Two shots, each rendered as a video of its own (the first twice), and once together in one video."""
+        def native(command, progress):
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"film")
+            return []
+        self.desk.viewer.command = native
+        seat = {**SHOT, "kind": "cockpit", "target": None}
+        self.desk.save({"expected_revision": 1, "shots": [seat, {**seat, "id": "two", "start": 5, "end": 8}]})
+        self.run_action({"action": "export_cut", "quality": "draft", "apart": True})
+        self.run_action({"action": "export_cut", "quality": "final", "shot_ids": ["one"], "look": True})
+        self.run_action({"action": "export_cut", "quality": "draft"})
+        return self.desk.snapshot()["versions"]
+
+    def test_a_shot_knows_its_own_videos_and_whether_its_camera_changed_since(self):
+        found = self.assembly_desk()
+        # Newest first; the video of both shots together is nobody's clip.
+        self.assertEqual({ident: [(v["quality"], v["extras"], v["seconds"], v["changed"]) for v in videos] for ident, videos in found.items()},
+                         {"one": [("final", ["look"], 2, False), ("draft", [], 2, False)], "two": [("draft", [], 3, False)]})
+        plan = self.desk.snapshot()["project"]
+        self.desk.save({"expected_revision": plan["revision"], "shots": [{**plan["shots"][0], "fov": 40}, plan["shots"][1]]})
+        changed = self.desk.snapshot()["versions"]
+        self.assertEqual(([v["changed"] for v in changed["one"]], [v["changed"] for v in changed["two"]]), ([True, True], [False]))
+        # A record made before videos had ids is given one when the film is read again, once.
+        file = self.desk._file("films/test.ahf", ".renders")
+        rows = json.loads(file.read_text(encoding="utf-8"))
+        file.write_text(json.dumps([{"file": row["file"], "shots": row["shots"]} for row in rows]), encoding="utf-8")
+        again = self.desk._load_renders("films/test.ahf")
+        self.assertTrue(all(len(row["id"]) == 32 for row in again))
+        self.assertEqual(self.desk._load_renders("films/test.ahf"), again)
+
+    def test_the_page_plays_a_shot_s_video_and_brings_its_music(self):
+        found = self.assembly_desk()
+        server = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)
+        server.desk = self.desk
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        def call(method, path, body=None, headers=None):
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+            connection.request(method, path, body, headers or {})
+            response = connection.getresponse(); result = response.status, response.read()
+            connection.close(); return result
+        try:
+            self.assertEqual(call("GET", "/media/video/" + found["two"][0]["id"]), (200, b"film"))
+            self.assertEqual(call("GET", "/media/video/" + "0" * 32)[0], 404)
+            status, body = call("POST", "/api/music", b"notes", {"X-Name": "My%20song.MP3"})
+            kept = json.loads(body)
+            self.assertEqual((status, kept["name"], kept["file"][-4:]), (200, "My song.MP3", ".mp3"))
+            self.assertEqual(call("GET", "/media/music/" + kept["file"]), (200, b"notes"))
+            self.assertEqual(call("POST", "/api/music", b"MZ", {"X-Name": "song.exe"})[0], 400)
+            self.assertEqual(call("GET", "/media/music/..%2Fone.json")[0], 404)
+            self.assertEqual(call("GET", "/media/assembly")[0], 404)  # none made yet
+        finally:
+            server.shutdown(); server.server_close()
+
+    def test_an_assembly_is_checked_kept_and_made_while_the_desk_goes_on(self):
+        found = self.assembly_desk()
+        song = self.desk.keep_music("song.mp3", b"notes")
+        assembly = {"clips": [{"shot": "two", "video": None, "start": .5, "end": 0, "join": "dissolve", "sound": 1},
+                              {"shot": "one", "video": found["one"][1]["id"], "start": 0, "end": .25, "join": "cut", "sound": .5}],
+                    "off": ["nine"], "music": {**song, "from": 20, "level": .4, "in": 1, "out": 3}, "sound": .8}
+        saved = self.desk.save_assembly({"assembly": assembly})["assembly"]
+        self.assertEqual(saved, assembly)
+        self.assertEqual(json.loads(self.desk._file("films/test.ahf", ".assembly").read_text(encoding="utf-8")), saved)
+        # A video that is gone gives way to the newest; what is not a rendered shot or kept music is refused.
+        self.assertIsNone(self.desk.save_assembly({"assembly": {"clips": [{"shot": "one", "video": "f" * 32}]}})["assembly"]["clips"][0]["video"])
+        for wrong in ({"clips": [{"shot": "nine"}]}, {"clips": [], "music": {"file": "../one.mp3"}}, {"clips": "all"}, {"clips": [{"shot": "one", "start": -1}]}):
+            with self.subTest(wrong=wrong), self.assertRaises(ValueError):
+                self.desk.save_assembly({"assembly": wrong})
+        made = []
+        def assemble(clips, music, target, width, height, fps):
+            made.append((clips, music, (width, height, fps)))
+            Path(target).write_bytes(b"assembled")
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.assemble", assemble):
+            with self.assertRaises(ValueError):  # trimmed down to nothing
+                self.desk.assemble({"assembly": {"clips": [{"shot": "one", "start": 1.9}]}})
+            self.desk.assemble({"assembly": assembly, "quality": "draft"})
+            deadline = time.monotonic() + 3
+            while self.desk.snapshot()["assembling"]["running"] and time.monotonic() < deadline:
+                time.sleep(.01)
+        state = self.desk.snapshot()["assembling"]
+        self.assertEqual((state["error"], Path(state["file"]).name, Path(state["file"]).read_bytes()), (None, "test assembly.mp4", b"assembled"))
+        clips, music, size = made[0]
+        self.assertEqual([(c["file"], c["start"], c["seconds"], c["join"], round(c["sound"], 3)) for c in clips],
+                         [(found["two"][0]["file"], .5, 2.5, "dissolve", .8), (found["one"][1]["file"], 0, 1.75, "cut", .4)])
+        self.assertEqual((music["file"], music["from"], size), (self.desk.root / "music" / song["file"], 20, (960, 540, 30)))
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg")
+    def test_clips_are_joined_by_cuts_and_dissolves_with_music_under_them(self):
+        folder = Path(self.temp.name)
+        for n, (size, rate) in enumerate((("160x90", 30), ("320x180", 60), ("160x90", 30))):  # clips need not match
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", f"testsrc2=s={size}:r={rate}:d=2", "-f", "lavfi", "-i", "sine=d=2",
+                            "-c:v", "libx264", "-c:a", "aac", str(folder / f"clip{n}.mp4")], check=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=f=220:d=30", str(folder / "song.wav")], check=True)
+        clips = [{"file": folder / "clip0.mp4", "start": 0, "seconds": 2, "join": "dissolve", "sound": 1},
+                 {"file": folder / "clip1.mp4", "start": .5, "seconds": 1.5, "join": "cut", "sound": .5},
+                 {"file": folder / "clip2.mp4", "start": 0, "seconds": .5, "join": "dissolve", "sound": 1},  # too short to dissolve
+                 {"file": folder / "clip0.mp4", "start": 1, "seconds": 1, "join": "cut", "sound": 1}]
+        music = {"file": folder / "song.wav", "from": 5, "level": .4, "in": 1, "out": 2}
+        total = finishing.assemble(clips, music, folder / "out.mp4", 160, 90, 30)
+        self.assertAlmostEqual(total, 2 + 1.5 - .3 + .5 + 1)
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames,width",
+                                "-of", "csv=p=0", str(folder / "out.mp4")], capture_output=True, text=True).stdout.split()
+        kind, width, rate, frames = probe[0].split(",")
+        self.assertEqual((kind, width, rate), ("video", "160", "30/1"))
+        self.assertAlmostEqual(int(frames), total * 30, delta=2)
+        self.assertTrue(probe[1].startswith("audio"))
+        self.assertTrue(all(clip["file"].exists() for clip in clips))  # the clips stay: they are the pilot's videos
+        finishing.assemble(clips[:1], None, folder / "one.mp4", 160, 90, 30)  # one clip, no music
+        self.assertTrue((folder / "one.mp4").stat().st_size > 1000)
+
     def test_take_offs_and_touchdowns_are_found_in_the_filmer_s_path(self):
         # Parked, a roll, a lift-off at 18 s, a flight, a landing at 60 s that stops at 64 s; then a second sortie
         # (a new id) that never leaves the ground.

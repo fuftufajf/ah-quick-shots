@@ -110,6 +110,15 @@ unzipping.
    you flying on. Take-offs & landings finds yours in your flight path and adds
    a few shots for each: the roll, the wheels, the lift-off with the camera
    swinging round you, the climb; the approach, the touchdown, the roll-out.
+5. **Assembly** (the second view, beside Shots) — every shot rendered as a
+   file of its own lines up on a timeline, in film order, by itself. Drag a
+   clip to move it, drag the ends of the selected one to trim it, cut it at
+   the playhead (S), join two with a cut or a short dissolve, set each clip's
+   sound, and add one piece of music of your own under the film's sound.
+   A shot whose camera you changed since is marked Changed; Render what is
+   missing renders those and the ones with no video yet. Export video makes
+   one video of the timeline with ffmpeg, while the desk goes on. The music
+   is yours to choose and to have the right to use: none comes with the app.
 
 Finished videos are in **Videos\AH Quick Shots**, each named after its film,
 time, shot and camera; Videos folder, under The cut, opens it.

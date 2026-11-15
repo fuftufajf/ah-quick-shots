@@ -15,12 +15,12 @@ import time
 import traceback
 import uuid
 
-from finishing import FASTEST, PASSES, blend, style, trim
+from finishing import FASTEST, PASSES, assemble, blend, style, trim
 from flight_data import derive, pair, read_kept
 import overlay
 import trails
 from shot_plan import RIDES, compile_shot, filmer_path, ground_moments, nearby, passes, probe_cameras, track_rows, validate_plan, validate_shot
-from viewer_socket import Viewer, film_rows, number, plane_rows
+from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 
 ACTIONS = ("connect", "open", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "export_cut")
 RENDERS = {"draft": "960 540 30", "final": "1920 1080 60", "4k": "3840 2160 60"}
@@ -76,6 +76,26 @@ class Conflict(ValueError):
 
 def camera_key(shot):
     return json.dumps({k: v for k, v in shot.items() if k not in ("id", "name")}, sort_keys=True)
+
+
+MUSIC = "mp3|wav|m4a|aac|flac|ogg"  # what the assembly takes as music
+
+
+def versions(project, renders):
+    """{shot id: the finished videos of that shot alone, newest first}: what the assembly lays in a row. A video of
+    several shots is not among them. `changed`: the shot's camera or stretch is no longer what the video shows; a
+    video recorded before the desk kept that is taken as current."""
+    now = {s["id"]: (camera_key(s), s["end"] - s["start"]) for s in (project or {}).get("shots", [])}
+    found = {}
+    for row in renders:
+        ident = row["shots"][0]
+        if len(row["shots"]) == 1 and ident in now and "id" in row and row["file"].lower().endswith(".mp4"):
+            key, length = now[ident]
+            found.setdefault(ident, []).insert(0, {
+                "id": row["id"], "file": row["file"], "made": row.get("made"), "quality": row.get("quality"),
+                "extras": row.get("extras", []), "seconds": row.get("seconds", round(length, 3)),
+                "changed": row.get("takes", {}).get(ident, key) != key})
+    return found
 
 
 def lead(command, start):
@@ -134,7 +154,7 @@ class Desk:
         self.data = {"connected": False, "films": [], "project": None, "planes": [],
                      "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None, "flight": None,
                      "preview": None, "proposals": [], "job": None, "videos": str(self.videos), "renders": [],
-                     "ffmpeg": bool(shutil.which("ffmpeg")), "overlays": None}
+                     "ffmpeg": bool(shutil.which("ffmpeg")), "overlays": None, "assembly": None, "assembling": None}
 
     @staticmethod
     def _drop(path):
@@ -158,13 +178,19 @@ class Desk:
             title = f"{film} {clock(first['start'])} {first['name']} - {camera if isinstance(camera, str) and camera else first['kind']}"
         else:
             title = f"{film} {clock(first['start'])}-{clock(row[-1]['end'])} cut of {len(row)} shots"
+        target = self._free(title)
+        shutil.copyfile(path, target)
+        return target
+
+    def _free(self, title):
+        """A file in the videos folder under this title that is not there yet: the same thing made again is kept
+        beside the first."""
         title = re.sub(r":\s*", " ", title)  # "Kill: Somebody" reads better as "Kill Somebody" than "Kill- Somebody"
         title = re.sub(r'[\\/*?"<>|\x00-\x1f]+', "-", title).strip(" .")[:120] or "video"
         self.videos.mkdir(parents=True, exist_ok=True)
         target, n = self.videos / (title + ".mp4"), 2
-        while target.exists():  # the same shot rendered again is kept beside the first
+        while target.exists():
             target, n = self.videos / f"{title} ({n}).mp4", n + 1
-        shutil.copyfile(path, target)
         return target
 
     def snapshot(self):
@@ -172,6 +198,7 @@ class Desk:
             data = copy.deepcopy(self.data)
         if data["job"] and data["job"]["running"]:
             data["job"]["elapsed"] = round(time.monotonic() - data["job"]["clock"], 1)
+        data["versions"] = versions(data["project"], data["renders"])
         return data
 
     def _idle(self):
@@ -207,6 +234,10 @@ class Desk:
         """The finished videos of a film that are still on disk, with the shots in each and their overlays."""
         path = self._file(film, ".renders")
         rows = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        if any("id" not in row for row in rows):  # recorded before a video had an id: given one now, and kept
+            for row in rows:
+                row.setdefault("id", uuid.uuid4().hex)
+            self._write(path, rows)
         return [row for row in rows if Path(row["file"]).exists() or any(Path(o).exists() for o in row.get("overlays", []))]
 
     def _record_render(self, film, row):
@@ -267,6 +298,98 @@ class Desk:
                 to_recycle_bin([path])
             self.data["films"] = [f for f in self.data["films"] if f["path"] != row["path"]]
             return {"films": copy.deepcopy(self.data["films"])}
+
+    def video(self, ident):
+        """The file of a finished video on record, by its id: the page plays the assembly's clips from it."""
+        with self.lock:
+            row = next((r for r in self.data["renders"] if r.get("id") == ident), None)
+        return Path(row["file"]) if row else None
+
+    def keep_music(self, name, body):
+        """Music for the assembly, kept with the desk under a name made of its content: {file, name}.
+        shortcut: music is never removed from .quickshots/music, clear it by hand if it ever matters"""
+        suffix = Path(name).suffix.lower()
+        if not re.fullmatch(rf"\.({MUSIC})", suffix) or not body:
+            raise ValueError("Music is an mp3, wav, m4a, aac, flac or ogg file")
+        folder = self.root / "music"
+        folder.mkdir(exist_ok=True)
+        file = hashlib.sha256(body).hexdigest()[:32] + suffix
+        (folder / file).write_bytes(body)
+        return {"file": file, "name": Path(name).name[:200]}
+
+    def _assembly(self, raw):
+        """The assembly the page sends, checked: {clips, off, music, sound}. A clip is a finished video of one shot
+        (`video`: its id, None for the newest) less `start` seconds at its beginning and `end` at its end; `off` are
+        the shots kept off the timeline; `sound` is the film's loudness, `music` a file kept by keep_music."""
+        project, raw = self.data["project"], raw.get("assembly")
+        if project is None:
+            raise ValueError("Open a film first")
+        if not isinstance(raw, dict) or not isinstance(raw.get("clips"), list) or len(raw["clips"]) > 500:
+            raise ValueError("An assembly holds up to 500 clips")
+        found, clips = versions(project, self.data["renders"]), []
+        for clip in raw["clips"]:
+            if not isinstance(clip, dict) or not isinstance(clip.get("shot"), str) or clip["shot"] not in found:
+                raise ValueError("A clip is a rendered shot of this film")
+            mine = {video["id"] for video in found[clip["shot"]]}
+            clips.append({"shot": clip["shot"], "video": clip.get("video") if clip.get("video") in mine else None,
+                          "start": number(clip.get("start", 0), 0, 120, "start"), "end": number(clip.get("end", 0), 0, 120, "end"),
+                          "join": "dissolve" if clip.get("join") == "dissolve" else "cut",
+                          "sound": number(clip.get("sound", 1), 0, 2, "clip sound")})
+        music = raw.get("music")
+        if music is not None:
+            if (not isinstance(music, dict) or not re.fullmatch(rf"[a-f0-9]{{32}}\.({MUSIC})", str(music.get("file")))
+                    or not (self.root / "music" / music["file"]).is_file()):
+                raise ValueError("Choose the music again")
+            music = {"file": music["file"], "name": safe_text(music.get("name", "music")),
+                     "from": number(music.get("from", 0), 0, 36000, "music start"), "level": number(music.get("level", .45), 0, 2, "music level"),
+                     "in": number(music.get("in", 1), 0, 30, "fade in"), "out": number(music.get("out", 3), 0, 30, "fade out")}
+        off = raw.get("off") if isinstance(raw.get("off"), list) else []
+        return {"clips": clips, "off": [ident for ident in off if isinstance(ident, str)][:500], "music": music,
+                "sound": number(raw.get("sound", 1), 0, 2, "film sound")}
+
+    def save_assembly(self, raw):
+        with self.lock:
+            assembly = self._assembly(raw)
+            self._write(self._file(self.data["project"]["film"], ".assembly"), assembly)
+            self.data["assembly"] = assembly
+            return {"assembly": copy.deepcopy(assembly)}
+
+    def assemble(self, raw):
+        """The assembly as one video in the videos folder. ffmpeg makes it while the desk goes on: the viewer has no
+        part in it."""
+        with self.lock:
+            if self.data["assembling"] and self.data["assembling"]["running"]:
+                raise Conflict("The last assembly is still being made")
+            if not shutil.which("ffmpeg"):
+                raise ValueError("An assembly needs ffmpeg: install it, then try again")
+            assembly, project = self.save_assembly(raw)["assembly"], self.data["project"]
+            if not assembly["clips"]:
+                raise ValueError("Put at least one clip on the timeline")
+            found, clips = versions(project, self.data["renders"]), []
+            for clip in assembly["clips"]:
+                video = next((v for v in found[clip["shot"]] if v["id"] == clip["video"]), found[clip["shot"]][0])
+                seconds = video["seconds"] - clip["start"] - clip["end"]
+                if seconds < .2:
+                    raise ValueError("A clip is trimmed down to nothing: leave it a fifth of a second at least")
+                clips.append({"file": video["file"], "start": clip["start"], "seconds": seconds, "join": clip["join"],
+                              "sound": clip["sound"] * assembly["sound"]})
+            music = assembly["music"] and {**assembly["music"], "file": self.root / "music" / assembly["music"]["file"]}
+            quality = raw.get("quality") if raw.get("quality") in RENDERS else "final"
+            target = self._free(f"{Path(project['film']).stem} assembly")
+            self.data["assembling"] = {"running": True, "message": f"Assembling {len(clips)} clip{'s' * (len(clips) > 1)} with ffmpeg",
+                                       "error": None, "file": None}
+            threading.Thread(target=self._assemble, args=(clips, music, target, quality), daemon=True).start()
+            return copy.deepcopy(self.data["assembling"])
+
+    def _assemble(self, clips, music, target, quality):
+        try:
+            assemble(clips, music, target, *map(int, RENDERS[quality].split()))
+            done = {"running": False, "message": "Assembly ready", "error": None, "file": str(target)}
+        except Exception as error:  # the desk goes on whatever ffmpeg made of it
+            self._log()
+            done = {"running": False, "message": str(error), "error": str(error), "file": None}
+        with self.lock:
+            self.data["assembling"] = done
 
     def save(self, raw):
         with self.lock:
@@ -402,7 +525,7 @@ class Desk:
         self.progress("Opening film and reading its moments")
         self.compiled, self.paths, self.applied, self.flight = {}, {}, None, None
         with self.lock:
-            self.data.update(project=None, preview=None, planes=[], problems={}, nearby=None, airfield=None, flight=None)
+            self.data.update(project=None, preview=None, planes=[], problems={}, nearby=None, airfield=None, flight=None, assembly=None)
         reply = self.command("open " + film)
         match = re.search(r" length ([\d.]+) s", reply[0])
         if not match or "no ground" in reply[0]:
@@ -431,7 +554,9 @@ class Desk:
                    "shots": shots, "events": events}
         self._persist(project)
         with self.lock:
-            self.data.update(project=project, now=1, preview=None, proposals=[], renders=self._load_renders(film))
+            assembly = self._file(film, ".assembly")
+            self.data.update(project=project, now=1, preview=None, proposals=[], renders=self._load_renders(film),
+                             assembly=json.loads(assembly.read_text(encoding="utf-8")) if assembly.exists() else None)
         self._seek(min(1, length))
         self._settle()
         self._frame(project["revision"])
@@ -919,7 +1044,10 @@ class Desk:
                              ",".join(f for f in (drawn, filters) if f))
                 saved = self._keep(path, project, row, raw.get("labels"))
                 files.append({"url": "/media/" + path.name, "file": str(saved), "shots": [s["id"] for s in row]})
-                record = {"file": str(saved), "shots": [s["id"] for s in row]}
+                # What the assembly needs to know of a video: which it is, how it was made and what cameras it shows.
+                record = {"id": uuid.uuid4().hex, "file": str(saved), "shots": [s["id"] for s in row], "made": round(time.time()),
+                          "quality": quality, "extras": [name for name in ("blur", "look", "haze", "trails") if raw.get(name)],
+                          "seconds": round(sum(s["end"] - s["start"] for s in row), 3), "takes": {s["id"]: camera_key(s) for s in row}}
                 if segments:
                     files[-1]["overlays"] = record["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality)
                 self._record_render(project["film"], record)

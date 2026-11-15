@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlsplit
 import urllib.request
 import webbrowser
 
-from director_core import Conflict, Desk
+from director_core import MUSIC, Conflict, Desk
 
 ROOT = Path(__file__).resolve().parent
 HOST, PORT = "127.0.0.1", 8766
@@ -31,7 +31,8 @@ VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip() if (ROOT / "VER
 
 # Python takes file types from the Windows registry, where some programs make .js plain text: the browser then runs
 # no script and the page stays blank. The page's own files have their types fixed here.
-TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".mp4": "video/mp4", ".bmp": "image/bmp"}
+TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".mp4": "video/mp4", ".bmp": "image/bmp",
+         ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4", ".aac": "audio/aac", ".flac": "audio/flac", ".ogg": "audio/ogg"}
 
 
 def code_stamp():
@@ -78,16 +79,24 @@ class Handler(BaseHTTPRequestHandler):
         if relative == "/api/flight":
             data = self.server.desk.flight_data()
             return self.send_json(200, data) if data else self.send_json(404, {"message": "Read a stretch's flight first"})
-        if relative.startswith("/media/"):
+        desk = self.server.desk
+        if video := re.fullmatch(r"/media/video/([a-f0-9]{32})", relative):  # a finished video on record: an assembly's clip
+            path = desk.video(video[1])
+        elif re.fullmatch(rf"/media/music/[a-f0-9]{{32}}\.({MUSIC})", relative):
+            path = desk.root / relative[7:]
+        elif relative == "/media/assembly":  # the assembly made last
+            made = desk.data["assembling"]
+            path = Path(made["file"]) if made and made["file"] else None
+        elif relative.startswith("/media/"):
             if not re.fullmatch(r"/media/(clips/)?[a-f0-9]{32}\.(bmp|mp4)", relative):
                 return self.send_error(404)
-            path = self.server.desk.media_root / relative[7:]
+            path = desk.media_root / relative[7:]
         else:
             base = ROOT / "ui" / "dist"
             path = (base / (relative.lstrip("/") or "index.html")).resolve()
             if not path.is_relative_to(base) or not path.is_file():
                 return self.send_error(404)
-        if not path.is_file():
+        if path is None or not path.is_file():
             return self.send_error(404)
         size, start, end = path.stat().st_size, 0, path.stat().st_size - 1
         requested = self.headers.get("Range")
@@ -126,6 +135,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
+            if self.path == "/api/music":  # the file itself, its name in a header: a page cannot tell the desk a path
+                if not 0 < length <= 100 * 2 ** 20:
+                    raise ValueError("A music file can be up to 100 MB")
+                return self.send_json(200, self.server.desk.keep_music(unquote(self.headers.get("X-Name", "")), self.rfile.read(length)))
             if not 0 < length <= 512 * 1024:
                 raise ValueError("Request must be 1 to 524288 bytes")
             raw = json.loads(self.rfile.read(length))
@@ -137,6 +150,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, self.server.desk.forget(raw))
             if self.path == "/api/delete-film":
                 return self.send_json(200, self.server.desk.delete_film(raw))
+            if self.path == "/api/assembly":
+                return self.send_json(200, self.server.desk.save_assembly(raw))
+            if self.path == "/api/assemble":
+                return self.send_json(202, self.server.desk.assemble(raw))
             if self.path == "/api/action":
                 job = self.server.desk.start(raw)
                 if raw.get("wait") is True:  # a quick look: the finished state in one round trip, no poll
@@ -149,6 +166,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Wait for the operation in progress to finish, then restart")
                 if state["overlays"] and state["overlays"]["running"]:
                     raise ValueError("Wait for the data overlays to be drawn, then restart")
+                if state["assembling"] and state["assembling"]["running"]:
+                    raise ValueError("Wait for the assembly to be made, then restart")
                 self.send_json(202, {"restarting": True})
                 threading.Thread(target=restart, args=(self.server,), daemon=True).start()
                 return

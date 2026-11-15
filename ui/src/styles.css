@@ -196,3 +196,66 @@ button.small{min-height:26px;padding:3px 8px;font-size:12px}
 }
 
 .swatch { width: 28px; height: 22px; padding: 0; border: 1px solid #444; border-radius: 4px; background: none; cursor: pointer; vertical-align: middle; }
+
+/* The assembly: the same margin and the same 12px between panels as the desk; its three columns end on one line. */
+[hidden]{display:none!important}
+.tabs{display:flex;gap:6px}
+.tabs button{min-height:30px;padding:4px 14px}
+.assembly{display:grid;grid-template-columns:300px minmax(0,1fr) 300px;gap:12px;align-items:stretch}
+.assembly>.panel{display:flex;flex-direction:column}
+.middle,.side{display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
+.assembly .screen{width:min(100%,calc(44vh*16/9))}
+.transport .count{margin-left:auto}
+/* The shots, a fight after a fight. A mark says where each stands; colour only on the one that wants rendering again. */
+.shot-list{flex:1;max-height:calc(100vh - 250px);min-height:300px;overflow:auto;padding:0 8px 8px}
+.group{margin:8px 8px 2px;display:flex;justify-content:space-between;text-transform:uppercase;letter-spacing:1px;font-size:10px;color:var(--muted)}
+.shot{display:flex;align-items:center;gap:10px;padding:2px 8px;margin:1px 0;border:1px solid transparent;border-radius:5px}
+.shot.selected{border-color:var(--navy);background:var(--navy-wash)}
+.shot .what{flex:1;min-width:0;flex-direction:column;align-items:start;gap:2px;text-align:left;border-color:transparent;background:none;padding:4px 0}
+.shot .what:disabled{opacity:1}
+.shot strong{font-size:13px;font-weight:600;color:var(--ink);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shot small{color:var(--muted);font-variant-numeric:tabular-nums;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mark{flex-shrink:0;font-size:11px;padding:1px 7px;border:1px solid var(--line);border-radius:10px;color:var(--muted);background:#fff;white-space:nowrap}
+.mark.changed{border-color:var(--red);color:var(--red)}
+.list-actions{display:grid;gap:6px;padding:10px;border-top:1px solid var(--edge)}
+/* The timeline: a name for each lane at the left, the lanes on one scale. */
+.lanes{display:grid;grid-template-columns:104px minmax(0,1fr);gap:6px 10px;align-items:center;padding:10px 14px 12px}
+.lane-name{font-size:12px;color:var(--muted)}
+.lane-name b{display:block;color:var(--ink);font-weight:600;font-size:13px}
+.ruler{position:relative;height:16px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ruler span{position:absolute;top:0;transform:translateX(-50%)}
+.ruler span:first-child{transform:none}
+.assembly .lane{height:44px;cursor:pointer}
+.assembly .lane.thin{height:30px}
+.clip{position:absolute;top:3px;bottom:3px;min-height:0;padding:0 7px;display:block;text-align:left;border:1px solid var(--silver);border-radius:3px;background:#dfe2e6;overflow:hidden;white-space:nowrap;font-size:11px;line-height:1.25;color:var(--ink)}
+.clip b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;margin-top:4px}
+.clip i{font-style:normal;color:var(--muted);font-variant-numeric:tabular-nums}
+.clip.current{border-color:var(--navy);background:#d9e2f3;padding:0 16px}
+.clip.changed{border-color:var(--red)}
+.clip.changed i{color:var(--red)}
+/* The trim handles stand inside the selected clip, at its two ends: they never cover its neighbours. */
+.trim{position:absolute;top:0;bottom:0;width:10px;background:var(--navy);cursor:ew-resize;touch-action:none}
+.trim.start{left:0}
+.trim.end{right:0}
+.playhead{position:absolute;top:-4px;bottom:-4px;width:1px;background:var(--navy);z-index:3;pointer-events:none}
+.playhead.top::before{content:"";position:absolute;top:-5px;left:-4px;width:9px;height:9px;border-radius:50%;background:var(--navy)}
+.sound,.music{position:absolute;inset:3px 0;border:1px solid var(--silver);border-radius:3px;background:#e9ebee}
+.music{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:11px;line-height:22px;color:var(--ink);padding:0 9px}
+.lane-tools{display:flex;align-items:center;gap:10px;padding:0 14px 12px 128px;flex-wrap:wrap}
+.lane-tools label{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.lane-tools input[type=range]{width:120px;margin:0}
+.lane-tools input[type=number]{width:70px;padding:4px 6px}
+.lane-tools button{min-height:28px;padding:3px 10px;font-size:12px}
+.assembly .fields{grid-template-columns:1fr 1fr;padding:12px 14px}
+.clip-name{padding:12px 14px 0}
+.clip-name strong{display:block;font-size:14px;color:var(--ink)}
+.clip-name small{color:var(--muted)}
+.row-actions{display:flex;justify-content:space-between;gap:8px;padding:0 14px 10px}
+.row-actions button{min-height:30px;border-color:transparent;background:none;color:var(--muted)}
+.row-actions button:hover:not(:disabled){background:var(--wash)}
+.row-actions .danger{color:var(--red)}
+.export{display:grid;gap:6px;padding:10px}
+.export .primary{min-height:36px}
+.export .hint{padding:2px 4px;overflow-wrap:anywhere}
+.hint.working{color:var(--navy)}
+@media(max-width:1250px){.assembly{grid-template-columns:260px minmax(0,1fr)}.side{grid-column:1/-1;grid-template-columns:1fr 1fr;grid-template-rows:auto}}

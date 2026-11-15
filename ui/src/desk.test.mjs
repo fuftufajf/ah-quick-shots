@@ -139,3 +139,4 @@ assert.deepEqual(['shoulder', 'nose', 'belly', 'gear', 'weapon', 'wing', 'cockpi
 assert.ok(ANGLES.every(a => ANGLES.some(b => b.key === angleOf({...shot, ...a.make(cast)[0]}, cast))));  // every camera finds its own card
 assert.ok(ANGLES.every(a => a.make(cast).every(v => v.hero === 19 || v.hero === 10)));
 console.log('OK: moment search, fights, film times, shot creation and angle presets');
+await import("./assembly.test.mjs");

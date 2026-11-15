@@ -88,6 +88,47 @@ def blend(sources, target, seconds, fps, filters=""):
            ["-filter_complex", graph, "-map", "[v]", "-map", "0:a?", "-r", str(fps)], sources, target, "blend the motion blur")
 
 
+DISSOLVE = .3  # seconds two clips share when one dissolves into the next
+
+
+def assemble(clips, music, target, width, height, fps):
+    """Finished videos in a row as one video, with music under them: the assembly. clips: [{file, start, seconds,
+    join, sound}], each playing `seconds` of its file from `start`, at `sound` times its own loudness, and joining
+    the next with a "cut" or a "dissolve" (taken as a cut when either clip is too short to share DISSOLVE). music:
+    None or {file, from, level, in, out}: played from `from`, faded in and out, and ended with the video. Returns
+    the video's length."""
+    parts, video, sound, total = [], "[v0]", "[a0]", clips[0]["seconds"]
+    for n, clip in enumerate(clips):
+        cut = f"start={clip['start']:.3f}:duration={clip['seconds']:.3f}"
+        # Every clip to one size, frame rate and time base: the joins below take no others.
+        parts.append(f"[{n}:v]trim={cut},setpts=PTS-STARTPTS,scale={width}:{height},setsar=1,format=yuv420p,fps={fps},settb=AVTB[v{n}]")
+        parts.append(f"[{n}:a]atrim={cut},asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo,volume={clip['sound']:.3f}[a{n}]")
+        if n == 0:
+            continue
+        if clips[n - 1]["join"] == "dissolve" and min(clips[n - 1]["seconds"], clip["seconds"]) > 2 * DISSOLVE:
+            parts.append(f"{video}[v{n}]xfade=transition=fade:duration={DISSOLVE}:offset={total - DISSOLVE:.3f},fps={fps},settb=AVTB[x{n}]")
+            parts.append(f"{sound}[a{n}]acrossfade=d={DISSOLVE}[y{n}]")
+            total += clip["seconds"] - DISSOLVE
+        else:
+            parts.append(f"{video}[v{n}]concat=n=2:v=1:a=0,fps={fps},settb=AVTB[x{n}]")
+            parts.append(f"{sound}[a{n}]concat=n=2:v=0:a=1[y{n}]")
+            total += clip["seconds"]
+        video, sound = f"[x{n}]", f"[y{n}]"
+    inputs = [a for clip in clips for a in ("-i", str(clip["file"]))]
+    if music:
+        inputs += ["-i", str(music["file"])]
+        fades = (f",afade=t=in:st=0:d={music['in']:.3f}" if music["in"] > 0 else "") + (
+            f",afade=t=out:st={max(0, total - music['out']):.3f}:d={music['out']:.3f}" if music["out"] > 0 else "")
+        parts.append(f"[{len(clips)}:a]atrim=start={music['from']:.3f}:duration={total:.3f},asetpts=PTS-STARTPTS,aresample=48000,"
+                     f"aformat=channel_layouts=stereo,volume={music['level']:.3f}{fades}[m]")
+        # normalize=0: the film's sound stays as loud as it was; music that ends first leaves it alone.
+        parts.append(f"{sound}[m]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]")
+        sound = "[mix]"
+    encode(inputs, ["-filter_complex", ";".join(parts), "-map", video, "-map", sound, "-r", str(fps)], [], Path(target),
+           "assemble the clips")
+    return total
+
+
 def encode(inputs, graph, sources, target, what):
     try:
         done = subprocess.run(
