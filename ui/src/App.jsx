@@ -637,7 +637,7 @@ export function App() {
     const kill = events.find(e => e.kind === "kill" && (e.fields[3] === String(id) || e.fields[4] === String(id)));
     return kill ? kill.fields[kill.fields[3] === String(id) ? 0 : 1] : `Aircraft ${id}`;
   };
-  const camera = s => ANGLES.find(a => a.key === angleOf(s, castOf(s, desk.planes))).label;
+  const camera = s => s.kind === "recorded" ? "Pilot's view" : ANGLES.find(a => a.key === angleOf(s, castOf(s, desk.planes))).label;
   // Finished videos are kept in one folder, each under its film, time, shot and camera. A page cannot open a
   // folder, so the desk shows it in Explorer.
   const openVideos = () => request("/api/folder", {}).catch(e => setError(e.message));
@@ -803,6 +803,10 @@ export function App() {
               <button aria-pressed={draft.path !== "own"} onClick={() => tune({...draft, path: undefined})} title="The observer keeps flying with you, and glides from one framing to the next">With you</button>
               <button aria-pressed={draft.path === "own"} onClick={() => tune({...draft, path: "own"})} title="Each keyframe pins the observer to the sky where it then is: it flies a smooth line of its own through those places, and you come by, pass and leave. One keyframe is a camera standing still">Its own path</button>
               <button onClick={() => tune({...cam, keys: undefined, path: undefined, zoom: undefined})} title="Back to one framing for the whole shot: the one at the playhead">Clear keyframes</button>
+            </div>}
+            {["cockpit", "recorded"].includes(draft.kind) && <div className="around" aria-label="How the pilot's seat looks"><span>Looks</span>
+              <button aria-pressed={draft.kind === "cockpit"} disabled={conflict} onClick={() => tune({...draft, kind: "cockpit", target: stage.other ?? null, fov: 69})} title="Straight ahead, or where the sliders turn it">Straight ahead</button>
+              <button aria-pressed={draft.kind === "recorded"} disabled={conflict} onClick={() => tune({...draft, kind: "recorded", target: null})} title="The pilot's view as you saw it in the fight, head movements and all">As recorded</button>
             </div>}
             {watching && <div className="around" aria-label="Whom the observer watches"><span title={draft.keys?.length ? "Kept in the keyframe at the playhead: the observer turns from one keyframe's aircraft to the next one's" : undefined}>Looks at{draft.keys?.length ? " · here" : ""}</span>
               <button aria-pressed={watching === "both"} disabled={conflict || stage.other == null} onClick={() => watch("both")}>Both</button>

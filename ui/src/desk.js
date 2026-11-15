@@ -168,6 +168,10 @@ export const ANGLES = [
   {key: "escort", label: "Observer", hint: "A third aircraft on its own line, filming you both", pair: true,
     make: c => [20, -20, 40, -40].flatMap(orbit => [[300, 28], [400, 28], [300, 40]].map(([distance, fov]) =>
       ({kind: "escort", hero: c.lead, target: c.other, orbit, distance, height: Math.round(distance * .12), fov})))},
+  // Second, as the other camera that is directed: the same ship standing still where it is at the playhead (a path of its own, one keyframe: App.jsx sets it),
+  // following you by turning and by its lens alone, which keeps you the size you were framed (`zoom` "hold").
+  {key: "tripod", label: "Tripod", hint: "Stands still: turns and zooms to follow", rate: false,
+    make: c => [{kind: "escort", watch: "hero", hero: c.lead, target: c.other ?? null, orbit: 90, distance: 400, height: 30, fov: 14, path: "own", zoom: "hold"}]},
   {key: "you", label: "You in front", hint: "You big, opponent beyond", pair: true,
     make: c => PAIR.map(variant => ({kind: "pair", hero: c.lead, target: c.other, ...variant}))},
   {key: "them", label: "Opponent in front", hint: "Opponent big, you beyond", pair: true,
@@ -180,10 +184,6 @@ export const ANGLES = [
   {key: "closeThem", label: "Close on opponent", hint: "His aircraft big, from any side", pair: true, rate: false,
     make: c => [145, -145, 35, -35, 90, -90].map(orbit =>
       ({kind: "escort", watch: "hero", hero: c.other, target: c.lead, orbit, distance: 110, height: 14, fov: 28}))},
-  // The same ship standing still where it is at the playhead (a path of its own, one keyframe: App.jsx sets it),
-  // following you by turning and by its lens alone, which keeps you the size you were framed (`zoom` "hold").
-  {key: "tripod", label: "Tripod", hint: "Stands still: turns and zooms to follow", rate: false,
-    make: c => [{kind: "escort", watch: "hero", hero: c.lead, target: c.other ?? null, orbit: 90, distance: 400, height: 30, fov: 14, path: "own", zoom: "hold"}]},
   {key: "shoulder", label: "Over your shoulder", hint: "Your canopy close, him beyond", pair: true,
     make: c => SIDES.map(side => ({kind: "shoulder", hero: c.lead, target: c.other, side, fov: 66}))},
   {key: "wing", label: "From your wing", hint: "Wingtip camera locked on him", pair: true,
@@ -196,9 +196,9 @@ export const ANGLES = [
   // frame, and at a kill that is where he goes down.
   {key: "ambush", label: "Opponent fly-by", hint: "Camera waits on his path", pair: true,
     make: c => [17, -17].map(orbit => ({kind: "ambush", hero: c.lead, target: c.other, orbit, distance: 470, height: 70, fov: 40}))},
-  {key: "recorded", label: "Pilot's view", hint: "As you saw it, head movements and all", rate: false,
-    make: c => [{kind: "recorded", hero: c.lead, target: null}]},
-  {key: "cockpit", label: "Cockpit", hint: "Your seat, looking straight ahead",
+  // Your seat: looking straight ahead (or where you turn it), or with a switch below the cameras the pilot's view
+  // as recorded, head movements and all (`recorded`), which is one camera with it on the page.
+  {key: "cockpit", label: "Cockpit", hint: "Your seat: straight ahead, or as you looked",
     make: c => [{kind: "cockpit", hero: c.lead, target: c.other, fov: 69}]},
   {key: "nose", label: "On your nose", hint: "Looking back at you", rate: false,
     make: c => [{kind: "nose", hero: c.lead, target: null, side: "right", fov: 77}]},
@@ -214,7 +214,7 @@ export function angleOf(shot, cast) {
   if (shot.kind === "pair") return shot.hero === cast.lead ? "you" : "them";
   if (shot.kind === "escort" && shot.zoom === "hold") return "tripod";
   if (shot.kind === "escort" && shot.watch === "hero") return shot.hero === cast.lead ? "closeYou" : "closeThem";
-  return {follow: "behind", fixed: "flyby"}[shot.kind] || shot.kind;
+  return {follow: "behind", fixed: "flyby", recorded: "cockpit"}[shot.kind] || shot.kind;
 }
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));

@@ -245,8 +245,10 @@ the two-aircraft cameras then take whoever comes nearest.
 - Fly-by, Opponent fly-by — a camera standing still beside your path, or behind
   and beside the opponent's on a longer lens: he flies into the frame, and at a
   kill that is where he goes down.
-- Pilot's view — the view as recorded, head movements included. Cockpit — your
-  seat, looking straight ahead.
+- Cockpit — your seat, looking straight ahead; its switch As recorded shows
+  the pilot's view as it was in the fight, head movements included (the kind
+  `recorded`, called Pilot's view in a video's name). Observer and Tripod,
+  the two cameras that are directed, come first in the list.
 - On your nose, Under your belly, At your gear — the viewer's own airframe
   cameras from its director help; the gear cameras are for take-offs and landings.
 - Ride the bomb — from just before a release to the blast; offered when a bomb,

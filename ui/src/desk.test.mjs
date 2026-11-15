@@ -140,7 +140,8 @@ assert.deepEqual([vulch.length, vulch[0].time, vulch[0].fight.opponent, vulch[0]
 assert.equal(ratingLabel(ANGLES.find(a => a.key === 'behind'), cast, {score: 1}), 'You in frame 100%');
 assert.equal(newShot({length:400}, [], line(64.1, 'kill', 'Hawk', 'Raven', 1, 19, 10), 64.1).start, 59.1);
 assert.equal(fights([line(5, 'guns', 'start', 19), line(5.5, 'guns', 'stop', 19, 9)], me)[0].fight.title, '1 burst, no hits');
-assert.deepEqual(['shoulder', 'nose', 'belly', 'gear', 'weapon', 'wing', 'cockpit', 'recorded', 'ambush', 'escort', 'follow', 'fixed'].map(kind => angleOf({kind}, cast)), ['shoulder', 'nose', 'belly', 'gear', 'weapon', 'wing', 'cockpit', 'recorded', 'ambush', 'escort', 'behind', 'flyby']);
+assert.deepEqual(['shoulder', 'nose', 'belly', 'gear', 'weapon', 'wing', 'cockpit', 'recorded', 'ambush', 'escort', 'follow', 'fixed'].map(kind => angleOf({kind}, cast)), ['shoulder', 'nose', 'belly', 'gear', 'weapon', 'wing', 'cockpit', 'cockpit', 'ambush', 'escort', 'behind', 'flyby']);
+assert.deepEqual(ANGLES.slice(0, 2).map(a => a.key), ['escort', 'tripod']);  // the two cameras that are directed come first
 assert.ok(ANGLES.every(a => ANGLES.some(b => b.key === angleOf({...shot, ...a.make(cast)[0]}, cast))));  // every camera finds its own card
 assert.ok(ANGLES.every(a => a.make(cast).every(v => v.hero === 19 || v.hero === 10)));
 console.log('OK: moment search, fights, film times, shot creation and angle presets');

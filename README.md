@@ -94,8 +94,8 @@ marked, and goes to the Recycle Bin when you open the next.
      path pins each keyframe to the sky.
    - **Tripod** stands still and follows by turning and zooming only.
    - The rest: you or the opponent in front, close views, over your shoulder,
-     from your wing, behind you, fly-bys, the pilot's view, cameras on the
-     airframe, riding the bomb.
+     from your wing, behind you, fly-bys, the cockpit (straight ahead, or as
+     you looked in the fight), cameras on the airframe, riding the bomb.
 4. **The cut** — tick the shots to render, choose 1080p, 4K or a quick
    draft, 30 or 60 frames a second, one video or a file per shot, then Render
    selected. Motion blur (kept with each shot) takes about four times as long
@@ -140,6 +140,9 @@ by the Windows package: they are experimental.
 - **A render may wait for the sound of the one before.** Started too soon, the
   viewer loses the engine, guns and voices, so the desk waits (the status line
   says for how long).
+- **Motion blur and a propeller that turns slowly.** The blur blends four
+  moments of each frame. A running propeller is a disc and blurs well; one
+  that windmills on a dead engine shows as four faint copies of each blade.
 - **Trails and gun cam** are not in the socket: tick them in the viewer's Edit
   tools.
 - **Paths with spaces.** The viewer takes no spaces in a video path. It
