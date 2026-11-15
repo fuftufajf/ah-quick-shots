@@ -233,9 +233,11 @@ aircraft, up and down changes its height; on a camera fastened to the airframe
 (cockpit, nose, belly, gear, and wing or shoulder when not locked on him) it
 turns where the camera looks (`turn` left, `tilt` up, in degrees). The wheel zooms the lens on any
 camera: the aircraft grows without the camera going nearer, which would distort
-it; with nothing to zoom, the wheel scrolls the page. In Film Viewer plays the
+it; with nothing to zoom, the wheel scrolls the page. A shot opened or changed shows as a still (the
+clip action asked `bare`: its cameras and a still, no render). Play plays the
 shot (or its sequence) at once in the viewer's own window, with its sound and
-nothing rendered (the viewer's window must be on screen to be seen); a render
+nothing rendered (the viewer's window must be on screen to be seen); Render
+and play renders it as a small clip and plays that on the page; a render
 after it waits at least 12 s, because playing just before a render thins its
 sound (measured with that wait: the same sound as a rested render, 2 of 2). Shot details holds exact times, the lead
 aircraft and the name.

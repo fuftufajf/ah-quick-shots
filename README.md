@@ -74,13 +74,13 @@ unzipping.
 1. **Moments** — open a film (newest first). "Fights" lists your engagements,
    one row each, with the opponent you actually fought. Click one: a shot is
    prepared around it.
-2. **Picture** — Play (Space) renders a short preview clip with sound, once;
-   after that it replays and scrubs from its file. Set in / Set out (I / O)
+2. **Picture** — a shot shows as a still; Play (Space) plays it at once in
+   Film Viewer's own window (keep it on screen), nothing rendered. Render and
+   play renders a short preview clip with sound, once; after that it replays
+   and scrubs from its file. Set in / Set out (I / O)
    mark the shot at the playhead; drag the ends of the highlighted range to
    trim it. Drag the picture to walk the camera round the aircraft, or to
-   turn a camera on the airframe; the wheel over the picture zooms. In Film
-   Viewer plays it at once in the viewer's own window (keep it on screen),
-   nothing rendered. With a
+   turn a camera on the airframe; the wheel over the picture zooms. With a
    shot of a kill, take-off or landing selected, Play shows all its shots in
    a row, as the cut will render them; clicking the shot in the cut plays it
    alone.

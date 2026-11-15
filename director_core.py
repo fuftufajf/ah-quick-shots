@@ -555,6 +555,7 @@ class Desk:
                                    "text": " ".join(fields[3:]), "fields": fields[3:]})
                 except (ValueError, IndexError):
                     pass  # a line that cannot be read is one moment less, not a film that will not open
+        events = self._filmable(events, length)
         path = self._file(film)
         if path.exists():
             saved = json.loads(path.read_text(encoding="utf-8"))
@@ -572,6 +573,34 @@ class Desk:
         self._seek(min(1, length))
         self._settle()
         self._frame(project["revision"])
+
+    def _filmable(self, events, length):
+        """The moments that can be filmed. A film tells of kills and bombs all over the arena, but holds only the
+        aircraft near its recorder: a moment whose own aircraft is not in the film then (a kill's killer, a bomb's
+        bomber) could only answer "not in the film during this shot", so it is left out. One whose other aircraft
+        is missing (the victim) stays, marked `alone`: a shot of it opens on the one aircraft there is. Who is in
+        the film comes from every aircraft's path a second apart (about 5 s for a 9 minute film); with no paths
+        read at all, nothing is left out."""
+        seen = {}  # aircraft id: the seconds at which it is in the film
+        for start in range(0, math.ceil(length), 600):
+            self.progress(f"Finding who is in the film: {start / length:.0%}")
+            for t, row in track_rows(self.command(f"tracks {start:.2f} {min(length, start + 600):.2f} 1")).items():
+                for ident in row:
+                    seen.setdefault(ident, []).append(t)
+        if not seen:
+            return events
+        def there(value, t):
+            return value.isdigit() and any(abs(s - t) <= 2 for s in seen.get(int(value), ()))
+        kept = []
+        for event in events:
+            fields = event["fields"]
+            lead, other = {"kill": (3, 4), "impact": (0, 1), "hit": (0, None), "drop": (0, None)}.get(event["kind"], (None, None))
+            if lead is not None and len(fields) > lead and not there(fields[lead], event["time"]):
+                continue
+            if other is not None and len(fields) > other and fields[other].isdigit() and not there(fields[other], event["time"]):
+                event = {**event, "alone": True}
+            kept.append(event)
+        return kept
 
     def _tracks(self, start, end, step=None):
         # Choose an exact divisor so the final snapshot lands at the end.

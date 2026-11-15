@@ -504,7 +504,12 @@ class DeskTests(unittest.TestCase):
         firsts = [e for e in events if ",0:00:00.00,0:00:00.01," in e]
         style = trails.STYLE
         seen = sum(style["opacity"] * (1 - (b + .5) / style["bands"]) >= .01 for b in range(style["bands"]))
-        self.assertEqual(len(firsts), 2 * seen)  # two wingtips, each step of brightness that is not too faint to see
+        per = len(firsts) // 2  # two wingtips: each step of brightness that is not too faint to see, then the last metre
+        self.assertGreater(per, seen)
+        # The last metre before the wingtip comes in from nothing: each piece towards the tip fainter, the last nearly gone.
+        rise = [int(e.split("\\1a&H")[1][:2], 16) for e in firsts[seen:per]]
+        self.assertEqual(rise, sorted(rise))
+        self.assertGreater(rise[-1], 200)
         # The bright part is sized to the picture, not to the clock: where the aircraft takes twice as long to cross
         # the picture (a camera twice as far), the trail keeps its brightness twice as long. Half is gone after
         # ln 2 of that time.
@@ -1197,6 +1202,21 @@ class DeskTests(unittest.TestCase):
             self.desk.forget({"expected_revision": 3, "shot_ids": ["two"]})
         with self.assertRaises(ValueError):
             self.desk.forget({"expected_revision": 4, "shot_ids": []})
+
+    def test_moments_whose_aircraft_are_not_in_the_film_are_left_out(self):
+        # Aircraft 19 is in the film throughout, 10 only up to 5 s, 30 and 36 never.
+        self.desk.viewer.command = lambda command, progress: [f"track {t}.0 {ident} 0 200 0 0 0 0" for t in range(11) for ident in (19, 10) if ident == 19 or t <= 5]
+        self.desk.progress = lambda message: None  # no job is running here
+        def event(time, kind, *fields):
+            return {"id": "x", "time": time, "kind": kind, "fields": list(fields)}
+        events = [event(3, "kill", "Pilot", "Other", "1", "19", "10"), event(9, "kill", "Pilot", "Other", "1", "19", "10"),
+                  event(4, "kill", "LTown", "Trapshtr", "1", "36", "30"), event(4, "drop", "30", "bomb", "B100", "2"),
+                  event(4, "drop", "19", "bomb", "B100", "-"), event(4, "land", "Pilot")]
+        kept = self.desk._filmable(events, 10)
+        self.assertEqual([(e["time"], e["kind"], e.get("alone", False)) for e in kept],
+                         [(3, "kill", False), (9, "kill", True), (4, "drop", False), (4, "land", False)])
+        self.desk.viewer.command = lambda command, progress: []  # no paths read: nothing is left out
+        self.assertEqual(len(self.desk._filmable(events, 10)), 6)
 
     def test_a_replay_goes_to_the_recycle_bin_but_not_the_open_one(self):
         folder = Path(self.temp.name) / "films"

@@ -25,6 +25,7 @@ STYLE = {
     "seconds": 2.5,      # how far back a trail reaches
     "span": .88,         # the wingtip's offset as a share of the aircraft's visible radius (a Yak's radius 17.9 ft, its tips 15.8 ft out)
     "opacity": .75,      # at the wingtip
+    "rise": 3.3,         # feet from the wingtip over which the trail comes in from nothing: it leaves any wing gently, wherever the tip really is
     "reach": .3,         # the bright part lasts as long as the aircraft takes to cross this share of the picture's width
     "remain": .07,       # the remainder's brightness, as a share of the wingtip's
     "fade": 1.8,         # the remainder falls as (1 - age / seconds) ** fade
@@ -257,14 +258,25 @@ def lines(frames, tracks, radii, colours, step, fps, w, h, style=STYLE):
             for side in (0, 1):
                 points = [tips[ident, s][side] for s in times]
                 points = points[:fine] + _smooth(points[fine:], style["smooth"])  # only the steps fine enough to jitter
+                stamps = list(times)
+                # The newest step is 6 to 10 ft long at a fighter's speed: points are put inside its last `rise` feet,
+                # so the trail can come in over them.
+                gap = math.dist(points[-1], points[-2]) if len(points) > 1 else 0
+                if gap > style["rise"]:
+                    shares = [style["rise"] * j / 4 / gap for j in (4, 3, 2, 1)]
+                    points[-1:-1] = [tuple(points[-1][c] + (points[-2][c] - points[-1][c]) * f for c in range(3)) for f in shares]
+                    stamps[-1:-1] = [t - (t - times[-2]) * f for f in shares]
+                feet = [0.0]  # along the trail from the wingtip, newest first
+                for a, b in zip(points[:0:-1], points[-2::-1]):
+                    feet.append(feet[-1] + math.dist(a, b))
                 runs, run = [], []
-                for s, p in zip(times, points):
+                for s, p, back in zip(stamps, points, feet[::-1]):
                     q = _seen(cam, p, w, h, style["close"][0])
                     if q is None:  # behind the camera, or at the lens: the trail breaks there
                         runs.append(run)
                         run = []
                     else:
-                        run.append((*q[:2], (t - s) / style["seconds"], q[2]))
+                        run.append((*q[:2], (t - s) / style["seconds"], q[2], back))
                 runs.append(run)
                 for run in (r for r in runs if len(r) > 1):
                     yield from _bands(_thin(_catmull(run), style["thin"] * unit), span, fill, unit, style, bright, w / 2 / cam[4])
@@ -291,11 +303,18 @@ def _bands(curve, span, fill, unit, style, bright, scale):
     they join. `bright`: how many seconds the bright part lasts; `scale`: pixels a foot is, one foot from the camera."""
     out, (lens, clear) = [], style["close"]
     edges, levels = _edges(style, bright)
+    # The last `rise` feet before the wingtip (the curve's end) are drawn point to point, each piece fainter than
+    # the one behind it; the rest in its bands of age.
+    head = next((i for i, c in enumerate(curve) if c[4] < style["rise"]), len(curve) - 1)
+    body = curve[:max(1, head)]
+    pieces = []
     for lo, hi, level in zip(edges, edges[1:], levels):
-        index = [i for i, c in enumerate(curve) if lo - 1e-9 <= c[2] <= hi + 1e-9]
-        if not index:
-            continue
-        piece = curve[index[0]:min(len(curve), index[-1] + 2)]
+        index = [i for i, c in enumerate(body) if lo - 1e-9 <= c[2] <= hi + 1e-9]
+        if index:
+            pieces.append((body[index[0]:min(len(body), index[-1] + 2)], level))
+    for a, b in zip(curve[max(0, head - 1):], curve[max(0, head - 1) + 1:]):
+        pieces.append(([a, b], levels[0] * min(1.0, (a[4] + b[4]) / 2 / style["rise"])))
+    for piece, level in pieces:
         off = sum(c[3] for c in piece) / len(piece)
         opacity = style["opacity"] * level * min(1.0, max(0.0, (off - lens) / (clear - lens)))
         if len(piece) < 2 or opacity < .01:

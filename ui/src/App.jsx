@@ -34,9 +34,6 @@ export function App() {
   const [asked, setAsked] = useState("");
   const [rolling, setRolling] = useState(false);
   const [zoom, setZoom] = useState(false);
-  // No preview clips: a shot shows as a still and Play plays it in Film Viewer's own window. Kept by this browser.
-  const [bare, setBare] = useState(() => { try { return localStorage.getItem("bare") === "1"; } catch { return false; } });
-  function noRender() { try { localStorage.setItem("bare", bare ? "0" : "1"); } catch { /* not kept, still switched */ } setBare(!bare); }
   const [rated, setRated] = useState("");
   const [skipped, setSkipped] = useState(() => new Set());
   const [forgetting, setForgetting] = useState(null);  // {ids, label}: shots asked to be removed, waiting for a choice
@@ -206,7 +203,7 @@ export function App() {
       else if (e.key === "Home") { e.preventDefault(); toStart(); }
       else if (e.key === "[") toKey(-1);
       else if (e.key === "]") toKey(1);
-      else if (e.key === " ") { e.preventDefault(); if (live) pause(); else play(); }  // also when a button still has focus from the last click
+      else if (e.key === " ") { e.preventDefault(); if (live || rolling) pause(); else play(); }  // also when a button still has focus from the last click
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -254,10 +251,11 @@ export function App() {
     setWanted({action: "seek", body: {seconds, rough: true, wait: true, ...(draft ? {shot: draft} : {})}});
   }
   // The moving picture: a shot (saved or not) rendered as a small clip, or the next stretch of film.
-  function show(shot, still, lead = cast.lead) {
+  function show(shot, still, lead = cast.lead, clipped = false) {
     const body = shot ? {start: shot.start, end: shot.end, shot, ...(lead != null ? {hero: lead} : {}), still: Math.min(shot.end - .1, Math.max(still, shot.start + .3))}
       : {start: cursor, end: Math.min(length, cursor + CHUNK)};
-    if (bare) return setWanted({action: "clip", body: {...body, bare: true}});  // its cameras and a still: Play is in the viewer's window
+    // Its cameras and a still, nothing rendered: Play is in the viewer's own window. A clip is rendered when asked for.
+    if (!clipped) return setWanted({action: "clip", body: {...body, bare: true}});
     asking.current = [body.start, body.end];
     setAsked(clipKey(body.start, body.end, shot, flags)); setWanted({action: "clip", body});
   }
@@ -265,9 +263,11 @@ export function App() {
   function look(shot, switched = {}) {
     setWanted({action: switched.action || "seek", body: {seconds: inShot(shot), rough: true, wait: true, ...switched.body, ...(shot ? {shot} : {})}});
   }
-  function play() {
+  // Play: at once in Film Viewer's own window, with its sound, nothing rendered.
+  function play() { if (project) playLive(); }
+  // Render and play: the shot as a small clip, played here on the page. It takes about as long to render as it plays.
+  function renderPlay() {
     if (!project) return;
-    if (bare) return playLive();
     const player = film.current;
     if (player && !player.paused && !player.ended) return player.pause();
     // A saved shot of a kill, take-off or landing: Play shows the whole sequence, as the cut renders it (clicking
@@ -283,7 +283,7 @@ export function App() {
       if (player.ended) player.currentTime = 0;
       return player.play();
     }
-    show(draft, cursor);
+    show(draft, cursor, cast.lead, true);
   }
 
   // The selected shot's sequence (a kill, a take-off, a landing): its saved shots in a row, as the cut renders them.
@@ -627,10 +627,10 @@ export function App() {
       <section className="stage">
         <div className="picture panel" aria-busy={working}>
           <div className="panel-heading"><h2>2 <span>Picture</span></h2>
-            <div className="chips"><span className="note">Trails: tick them in Film Viewer</span><button aria-pressed={bare} onClick={noRender} title="No preview clips: a shot shows here as a still at once, and Play plays it in Film Viewer's own window (keep that window on screen). Off: Play renders a small clip and plays it here">No preview render</button><button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Names</button></div>
+            <div className="chips"><span className="note">Trails: tick them in Film Viewer</span><button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Names</button></div>
           </div>
           <div ref={screen} className={`screen ${movable ? "movable" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
-            onClick={e => { if (!dragged.current && clip && !video && !e.target.closest("button")) play(); }}>
+            onClick={e => { if (!dragged.current && clip && !video && !e.target.closest("button")) renderPlay(); }}>
             {video ? <video key={video.url} src={video.url} controls autoPlay={asking.current === "cut"} onLoadedData={() => { asking.current = null; }} playsInline/>
             : clip ? <video key={clip.url} ref={player} src={clip.url} playsInline onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} onTimeUpdate={e => { if (!scrubbing.current && !trimGrab.current) setCursor(clip.start + e.target.currentTime); }}/>
             : still ? <img src={still.url} draggable={false} alt={`Film Viewer frame at ${formatTime(still.time)}`}/>
@@ -641,7 +641,7 @@ export function App() {
           <div className="caption"><span title={video ? (video.files || [video]).map(f => baseName(f.file)).join("\n") : undefined}>{video ? `Rendered by Film Viewer · original sound · ${(video.files || []).length > 1 ? `${video.files.length} videos saved` : `saved as ${baseName(video.file)}`}${(video.files || []).some(f => f.overlays) ? (desk.overlays?.running ? ` · ${desk.overlays.message} (${desk.overlays.left} left), the desk goes on meanwhile ·` : desk.overlays?.error ? ` · data overlay failed: ${desk.overlays.message} ·` : " with data overlays") : ""} in ${desk.videos}`
             : clip ? `Preview ${formatTime(clip.start)} — ${formatTime(clip.end)}${movable ? " · drag the picture to move the camera" : ""}`
             : still && draft ? `Still at ${formatTime(still.time)} through this camera${movable ? ` · drag to ${turnable(draft) ? "turn" : "move"} it, wheel to zoom` : ""} · Play shows it moving`
-            : still ? `Still at ${formatTime(still.time)} · press Play for a moving preview` : "A preview takes about as long to render as it plays."}</span>{video && <span><button onClick={openVideos}>Open folder</button><button onClick={() => setClosedVideo(video.url)}>Back to the film</button></span>}</div>
+            : still ? `Still at ${formatTime(still.time)} · Play shows it moving in Film Viewer` : "Play plays in Film Viewer's own window. Render and play makes a clip here, in about the time it plays."}</span>{video && <span><button onClick={openVideos}>Open folder</button><button onClick={() => setClosedVideo(video.url)}>Back to the film</button></span>}</div>
 
           <div className="timeline">
             <div className="lane">
@@ -670,10 +670,10 @@ export function App() {
           </div>
           <div className="transport">
             <button className="play" disabled={!project} onClick={toStart} aria-label="To the start" title={draft ? "To the start of this shot (Home)" : "To the start (Home)"}><SkipBack weight="fill"/></button>
-            <button className="play" disabled={!project || rolling || live} onClick={play} aria-label="Play" title={sequence.length > 1 && !dirty ? `Play the whole sequence, ${sequence.length} shots (Space)` : draft ? "Play this shot (Space)" : `Play the next ${CHUNK} seconds (Space)`}><Play weight="fill"/></button>
+            <button className="play" disabled={!project || rolling || live || working} onClick={play} aria-label="Play" title={(sequence.length > 1 && !dirty ? `Play the whole sequence, ${sequence.length} shots` : draft ? "Play this shot" : `Play the next ${CHUNK} seconds`) + " in Film Viewer's own window, at once and with its sound: keep that window on screen (Space)"}><Play weight="fill"/></button>
             <button className="play" disabled={!rolling && !live} onClick={pause} aria-label="Pause" title="Pause what is playing, here or in Film Viewer's window (Space)"><Pause weight="fill"/></button>
             <button className="play" disabled={!project || (!rolling && !live && !clip)} onClick={stop} aria-label="Stop" title="Stop and go back to the start"><Stop weight="fill"/></button>
-            <button disabled={!project || working} onClick={playLive} title="Play it now in Film Viewer's own window (keep that window on screen), with its sound and nothing rendered. A render after it waits about 12 s, so its sound stays whole."><Play/> In Film Viewer</button>
+            <button disabled={!project || working} onClick={renderPlay} title="Render it as a small clip and play it here on the page. It takes about as long to render as it plays; unchanged, it plays again at once."><FilmSlate/> Render and play</button>
             <strong>{formatTime(cursor)}</strong><span>/ {formatTime(project?.length)}</span>
             <button disabled={!project || conflict} onClick={another} title={again ? "Another shot of this same stretch: pick a camera, then Add to cut" : "Start a new six-second shot at the playhead"}><Plus/> New shot</button>
             <button disabled={!project} onClick={() => mark("start")} title="Shot starts at the playhead (I)">Set in</button>

@@ -10,7 +10,8 @@ export function newShot(project, planes, moment, now = 0) {
   const recorder = planes.find(p => p.recorder)?.id ?? planes[0]?.id ?? null;
   // An event carries the ids as they were at that moment; the recorder's own id changes between sorties.
   const hero = (kind === "kill" ? idValue(f[3]) : ["impact", "hit", "drop"].includes(kind) ? idValue(f[0]) : fight?.me) ?? recorder;
-  const target = kind === "kill" ? idValue(f[4]) : kind === "impact" ? idValue(f[1]) : fight?.opponent ?? null;
+  // `alone`: the desk found the other aircraft is not in the film at that moment, so the shot is of the one that is.
+  const target = moment?.alone ? null : kind === "kill" ? idValue(f[4]) : kind === "impact" ? idValue(f[1]) : fight?.opponent ?? null;
   // A kill is held past its message: the victim's last place stays in frame while he goes down.
   // A bomb is ridden from just before its release to the blast.
   const [before, after] = !moment ? [0, 2] : kind === "drop" ? [1, 14] : kind === "kill" || fight?.kills.length ? [5, 2.5] : fight ? [4, 3] : [5, 2];
