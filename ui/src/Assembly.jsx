@@ -26,7 +26,7 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
   const [fps, setFps] = useState(30);
   const [trimming, setTrimming] = useState(null);  // the clips while an end is dragged
   const [widest, setWidest] = useState(0);  // the longest the assembly has been on this page: the timeline's scale
-  const film = useRef(null), song = useRef(null), lane = useRef(null), grab = useRef(null), picker = useRef(null);
+  const film = useRef(null), song = useRef(null), lane = useRef(null), grab = useRef(null), picker = useRef(null), scrubbing = useRef(false);
 
   useEffect(() => { setMine(null); setAt(0); setSelected(0); setPlaying(false); setWidest(0); }, [project?.film]);
 
@@ -125,7 +125,22 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
     if (grab.current && trimming) change(trimming);
     grab.current = null; setTrimming(null);
   }
-  const timeAt = e => { const box = lane.current.getBoundingClientRect(); return (e.clientX - box.left) / box.width * span; };
+  // A moment of the timeline from a pointer: inside the lanes' border, where the clips are laid.
+  const timeAt = e => { const el = lane.current, box = el.getBoundingClientRect(); return (e.clientX - box.left - el.clientLeft) / el.clientWidth * span; };
+  // The playhead is dragged, or the ruler: the picture follows. The arrow keys move it a tenth of a second (Shift: one).
+  function scrubDown(e) {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId); scrubbing.current = true;
+    setPlaying(false); go(timeAt(e));
+  }
+  const scrubMove = e => { if (scrubbing.current) go(timeAt(e)); };
+  const scrubUp = () => { scrubbing.current = false; };
+  function scrubKey(e) {
+    const step = {ArrowLeft: -1, ArrowRight: 1}[e.key];
+    if (!step) return;
+    e.preventDefault(); e.stopPropagation(); setPlaying(false); go(at + step * (e.shiftKey ? 1 : .1));
+  }
 
   async function chooseMusic(e) {
     const file = e.target.files[0];
@@ -202,10 +217,10 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
       </div>
 
       <div className="panel">
-        <div className="panel-heading"><h2>3 <span>Timeline</span></h2><span>Drag a clip to move it · drag the arrows at the ends of the selected one to shorten it</span></div>
+        <div className="panel-heading"><h2>3 <span>Timeline</span></h2><span>Drag the playhead or the ruler · drag a clip to move it · drag the arrows at the ends of the selected one to shorten it</span></div>
         <div className="lanes">
           <span/>
-          <div className="ruler">{Array.from({length: Math.floor(span / step) + 1}, (_v, n) => <span key={n} style={{left: share(n * step)}}>{formatTime(n * step).slice(0, 5)}</span>)}</div>
+          <div className="ruler" onPointerDown={scrubDown} onPointerMove={scrubMove} onPointerUp={scrubUp} onPointerCancel={scrubUp}>{Array.from({length: Math.floor(span / step) + 1}, (_v, n) => <span key={n} style={{left: share(n * step)}}>{formatTime(n * step).slice(0, 5)}</span>)}</div>
           <span className="lane-name"><b>Video</b>the shots, in order</span>
           <div className="lane" ref={lane} onClick={e => go(timeAt(e))}>
             {rows.map((r, i) => <button key={i} className={`clip ${i === pick ? "current" : ""} ${r.version.changed ? "changed" : ""}`}
@@ -220,15 +235,17 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
             </button>)}
             {held && <span className="trim-note" style={{left: share(held.edge === "start" ? held.row.at : held.row.at + held.row.seconds)}}>
               {held.edge === "start" ? `Starts ${held.row.start.toFixed(1)} s later` : `Ends ${held.row.end.toFixed(1)} s earlier`} · {held.row.seconds.toFixed(1)} s of {held.row.version.seconds.toFixed(1)} left</span>}
-            {rows.length > 0 && <span className="playhead top" style={{left: share(at)}}/>}
           </div>
           <span className="lane-name"><b>Film sound</b>engine, guns, radio</span>
-          <div className="lane thin" onClick={e => go(timeAt(e))}>{rows.length > 0 && <><span className="sound" style={{right: "auto", width: share(length)}}/><span className="playhead" style={{left: share(at)}}/></>}</div>
+          <div className="lane thin" onClick={e => go(timeAt(e))}>{rows.length > 0 && <span className="sound" style={{right: "auto", width: share(length)}}/>}</div>
           <span className="lane-name"><b>Music</b>your own file</span>
           <div className="lane thin" onClick={e => go(timeAt(e))}>
             {music && <span className="music" style={{right: "auto", width: share(length)}}>{music.name} · from {formatTime(music.from)} · in {music.in} s · out {music.out} s</span>}
-            {rows.length > 0 && <span className="playhead" style={{left: share(at)}}/>}
           </div>
+          {/* One playhead through the ruler and every lane, over all of them: the arrow and the line are one element. */}
+          {rows.length > 0 && <div className="scrub"><span className="playhead" style={{left: share(at)}} role="slider" tabIndex={0} aria-label="Playhead"
+            aria-valuemin={0} aria-valuemax={length} aria-valuenow={at} aria-valuetext={formatTime(at)} title="Drag the playhead; arrow keys move it a tenth of a second, with Shift a second"
+            onPointerDown={scrubDown} onPointerMove={scrubMove} onPointerUp={scrubUp} onPointerCancel={scrubUp} onKeyDown={scrubKey}/></div>}
         </div>
         <div className="lane-tools">
           <label>Film sound <input type="range" min="0" max="100" value={Math.round(assembly.sound * 100)} aria-label="Film sound level" onChange={e => commit({...assembly, clips, sound: e.target.value / 100})}/></label>

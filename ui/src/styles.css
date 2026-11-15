@@ -287,7 +287,16 @@ button.small{min-height:26px;padding:3px 8px;font-size:12px}
 .trim.start{left:0}
 .trim.end{right:0}
 .playhead{position:absolute;top:-4px;bottom:-4px;width:1px;background:var(--navy);z-index:3;pointer-events:none}
-.playhead.top::before{content:"";position:absolute;top:-6px;left:-6px;width:13px;height:10px;background:var(--navy);clip-path:polygon(0 0,100% 0,50% 100%)}
+/* The assembly's playhead is one element over the ruler and all three lanes, laid where the clips are (inside the
+   lanes' border): the arrow in the ruler and the line through the lanes, centred on its moment. Its grip is the
+   arrow's width all the way down, above the clips: the first thing a pointer catches there. */
+.lanes{position:relative}
+.ruler{margin:0 1px;cursor:ew-resize;touch-action:none}
+.scrub{position:absolute;grid-column:2/3;grid-row:1/5;top:0;bottom:0;left:1px;right:1px;pointer-events:none;z-index:6}
+.scrub .playhead{top:0;bottom:0;width:17px;background:none;transform:translateX(-50%);pointer-events:auto;cursor:ew-resize;touch-action:none;z-index:auto}
+.scrub .playhead::before{content:"";position:absolute;top:0;left:50%;width:17px;height:14px;transform:translateX(-50%);background:var(--navy);clip-path:polygon(0 0,100% 0,50% 100%)}
+.scrub .playhead::after{content:"";position:absolute;top:13px;bottom:0;left:50%;width:2px;transform:translateX(-50%);background:var(--navy)}
+.scrub .playhead:focus-visible{outline:2px solid var(--navy);outline-offset:2px}
 .sound,.music{position:absolute;inset:3px 0;border:1px solid var(--silver);border-radius:3px;background:#e9ebee}
 .music{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:11px;line-height:22px;color:var(--ink);padding:0 9px}
 .lane-tools{display:flex;align-items:center;gap:10px;padding:0 14px 12px 128px;flex-wrap:wrap}
