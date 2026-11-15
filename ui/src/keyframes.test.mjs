@@ -29,5 +29,5 @@ assert.equal(shot.keys.length, 1);
 shot = toggleKey(shot, 18);
 assert.deepEqual([shot.keys, shot.path, shot.distance, shot.orbit, shot.fov], [undefined, undefined, 900, -120, 70]);
 
-assert.deepEqual([looseness(ship), looseness({...ship, loose: 7}), looseness({...ship, watch: "hero"}), looseness({...ship, distance: 900})], [400 / 130, 7, 1, 4]);
+assert.deepEqual([looseness(ship), looseness({...ship, loose: 7}), looseness({...ship, watch: "hero"}), looseness({...ship, distance: 900})], [2, 7, 1, 2]);
 console.log("OK: the observer's keyframes at the playhead");

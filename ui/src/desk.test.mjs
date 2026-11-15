@@ -66,14 +66,14 @@ const planes = [{id:19, recorder:true}, {id:10}];
 const cast = castOf(shot, planes);
 assert.deepEqual(cast, {lead:19, other:10});
 assert.deepEqual(castOf({hero:10, target:19}, planes), cast);
-assert.equal(angleOf(shot, cast), 'you');
-assert.equal(angleOf({...shot, hero:10, target:19}, cast), 'them');
+assert.equal(angleOf(shot, cast), 'escort');  // a new shot of two is the observer's
+assert.deepEqual([angleOf({...shot, kind:'pair'}, cast), angleOf({...shot, kind:'pair', hero:10, target:19}, cast)], ['you', 'them']);
 const all = candidates(shot, cast);
 assert.equal(all.length, 45);
 assert.ok(all.every(c => c.start === shot.start && c.end === shot.end && c.hero != null));
 assert.deepEqual(candidates(shot, {lead:19, other:null}).map(c => c.kind), ['fixed', 'fixed', 'cockpit']);
-const you = ANGLES[0];
-assert.deepEqual([shot.kind, shot.orbit, shot.distance, shot.fov, shot.watch], ['pair', 30, 120, 65, 'both']);  // a new shot opens on the close variant
+const you = ANGLES.find(a => a.key === "you");
+assert.deepEqual([shot.kind, shot.orbit, shot.distance, shot.fov, shot.watch], ['escort', 20, 300, 28, 'both']);  // a new shot opens on the observer's first variant
 assert.equal(bestVariant(you, cast, {}).variant.distance, 120);
 // The variant that reads best wins, not the one that merely keeps both in frame; on a tie, the bigger foreground.
 const scores = {'you:0': {score:1, quality:.4, size:.3}, 'you:4': {score:.9, quality:.9, size:.05}, 'you:5': {score:.9, quality:.9, size:.2}, 'you:8': {score:.2, quality:.2, size:.3}};
@@ -124,7 +124,7 @@ assert.deepEqual([fought[0].fight.me, fought[0].fight.bursts, fought[0].start, f
 // Without a kill message the opponent is whoever took the most hits, not the aircraft a stray round touched.
 assert.equal(fights(film.filter(e => e.kind !== 'kill'), null)[0].fight.opponent, 10);
 const duel = newShot({length:400}, [], fought[0], fought[0].time);
-assert.deepEqual([duel.hero, duel.target, duel.kind, duel.start, duel.end, duel.name], [19, 10, 'pair', 194, 201.5, 'Kill: Raven']);
+assert.deepEqual([duel.hero, duel.target, duel.kind, duel.start, duel.end, duel.name], [19, 10, 'escort', 194, 201.5, 'Kill: Raven']);
 const bomb = newShot({length:400}, planes, line(120, 'drop', 19, 'bomb', '1000 lb', '-'), 120);
 assert.deepEqual([bomb.kind, bomb.hero, bomb.start, bomb.end], ['weapon', 19, 119, 134]);
 assert.deepEqual(ownKills(film, me).map(e => e.time), [199, 210.6]);

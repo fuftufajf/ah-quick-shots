@@ -287,6 +287,12 @@ def _smooth(points, reach):
 
 
 WIDEST = math.radians(100)  # a wider lens bends the edges of the picture
+# Radians: how far up or down from the hero the observer's station follows the line through both. Straight under or
+# over the hero a camera looks straight up or down and the picture spins (a camera on that line itself whipped
+# at over 100 degrees a second and lost the opponent each time he was 80 degrees above or below). At 0.9 the lens
+# had to open to 92 degrees in a vertical fight to hold him; at 1.1 to 80, without one aircraft covering the
+# other more often than a second or two in two minutes; steeper, it does.
+STEEPEST = 1.1
 FADE, LENS_BACK = 1.5, 3.0  # seconds: an aircraft that left the film lets go of the picture, then of the lens
 
 
@@ -308,10 +314,13 @@ def _lens(pos, a, b, base):
 
 def escort_poses(shot, tracks, step=None, seen=None):
     """The observer: a third aircraft flying with the hero on a smooth line of its own, one pose per track
-    time. It is heavy: its place follows the hero's path averaged over one to four seconds either side, the
-    further off the heavier (`distance` / 130), so the hero moves, turns, comes near and falls away in its
-    picture instead of being nailed to it. Close by (120 ft: a second) it has to hold tight; measured on a
-    turning fight, a four-second line at that distance came within 20 ft of the hero and whipped round it.
+    time. It is heavy: its place follows the hero's path averaged over one to two seconds either side, the
+    further off the heavier (`distance` / 200; the shot's `loose` says otherwise), so the hero moves, turns, comes
+    near and falls away in its picture instead of being nailed to it. Close by (120 ft: a second) it has to hold
+    tight; measured on a turning fight, a four-second line at that distance came within 20 ft of the hero and
+    whipped round it. Heavier than two seconds it loses the other aircraft in a turning fight: over three fights
+    (118 s, 37 s, 10 s) three seconds at 400 ft kept both in the picture 81, 88 and 100% of the time, two seconds
+    97, 98 and 100%.
     Watching both aircraft it keeps station `distance` feet from that line and `orbit` degrees off the line
     through both, on the hero's side of it and following it up or down, so the other aircraft is beyond the
     hero and a little aside. Its lens opens by itself, from the shot's own up to WIDEST, to hold both: on a
@@ -325,7 +334,7 @@ def escort_poses(shot, tracks, step=None, seen=None):
     last = len(times) - 1
     per = step or ((times[-1] - times[0]) / last if last else 1)
     watch = shot.get("watch", "both")
-    weight = shot.get("loose") or (1 if watch == "hero" or shot["target"] is None else max(1, min(4, shot["distance"] / 130)))
+    weight = shot.get("loose") or (1 if watch == "hero" or shot["target"] is None else max(1, min(2, shot["distance"] / 200)))
     when = [t if step is None else shot["start"] + t * step for t in times]  # film time of each track
     frames = [framed(shot, t) for t in when]
     reach = max(1, round(weight / per))
@@ -364,7 +373,7 @@ def escort_poses(shot, tracks, step=None, seen=None):
             angle = math.atan2(a[0] - b[0], a[2] - b[2])
             climb = math.atan2(a[1] - b[1], math.hypot(a[0] - b[0], a[2] - b[2]))
             line.append((line[-1][0] + (angle - line[-1][0] + math.pi) % (2 * math.pi) - math.pi if line else angle,
-                         max(-.9, min(.9, climb))))  # not straight over or under the hero
+                         max(-STEEPEST, min(STEEPEST, climb))))  # not straight over or under the hero
         stations = [(angle + turns[i], climb) for i, (angle, climb) in enumerate(_smooth(line, max(1, round(max(1.5, weight) / per))))]
     places = []
     for i, (bearing, climb) in enumerate(stations):

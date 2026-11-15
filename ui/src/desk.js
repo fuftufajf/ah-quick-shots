@@ -16,7 +16,7 @@ export function newShot(project, planes, moment, now = 0) {
   const [before, after] = !moment ? [0, 2] : kind === "drop" ? [1, 14] : kind === "kill" || fight?.kills.length ? [5, 2.5] : fight ? [4, 3] : [5, 2];
   const tidy = seconds => Math.round(seconds * 100) / 100;  // 64.1 - 5 is 59.099999999999994
   const start = tidy(Math.min(Math.max(0, at - before), Math.max(0, project.length - .1)));
-  const camera = ANGLES.find(a => a.key === (kind === "drop" ? "weapon" : target != null ? "you" : "behind")).make({lead: hero, other: target})[0];
+  const camera = ANGLES.find(a => a.key === (kind === "drop" ? "weapon" : target != null ? "escort" : "behind")).make({lead: hero, other: target})[0];
   return {id: crypto.randomUUID(),
     name: kind === "kill" ? `${f[0]} → ${f[1]}` : fight ? fight.title : kind === "drop" ? `Bomb run ${formatTime(at)}` : `Shot at ${formatTime(at)}`,
     start, end: tidy(Math.min(project.length, at + after)),
@@ -43,7 +43,7 @@ export function killSequence(project, planes, kill, events = []) {
   const shot = (part, start, stop, camera) => ({...base, id: crypto.randomUUID(), name: `${base.name} · ${part}`, start, end: stop, ...camera});
   return [
     shot("closing in", a, b, him == null ? {kind: "follow", target: null, orbit: 0, distance: 120, height: 15, fov: 50}
-      : ANGLES[0].make({lead: you, other: him})[0]),
+      : ANGLES.find(a => a.key === "you").make({lead: you, other: him})[0]),
     shot("guns", b, c, him == null ? {kind: "cockpit", target: null, fov: 69} : {kind: "shoulder", target: him, side: "right", fov: 66}),
     // Well above him: he may hit the ground before the message, and a camera at his height ends up in the grass.
     ...(him == null ? [] : [shot("going down", down, end,
@@ -149,17 +149,19 @@ const SIDES = ["right", "left"];
 // Each camera offers a few variants; rating picks the one that reads best. `rate: false` cameras look at your own
 // aircraft, so there is nothing to measure; `drop` needs a bomb, rocket or torpedo leaving in the shot.
 export const ANGLES = [
+  // The observer comes first and is what a new shot of two gets: a third aircraft flying with you on a line of
+  // its own, stationed so that the opponent is beyond you and a little aside. `fov` is its longest lens: it opens
+  // by itself to hold both. Its first variant is the one three fights were best shown by (118 s, 37 s and 10 s,
+  // against 400 ft, a 35 degree lens and 35 degrees aside before): 300 ft, a 28 degree lens, 20 degrees aside
+  // kept both in the picture 98 to 100% of the time (81 to 100% before) with the lead aircraft 15 to 18% of the
+  // picture's width (7 to 12%). Further aside than 40 degrees it lost the opponent half the time in a turning fight.
+  {key: "escort", label: "Observer", hint: "A third aircraft on its own line, filming you both", pair: true,
+    make: c => [20, -20, 40, -40].flatMap(orbit => [[300, 28], [400, 28], [300, 40]].map(([distance, fov]) =>
+      ({kind: "escort", hero: c.lead, target: c.other, orbit, distance, height: Math.round(distance * .12), fov})))},
   {key: "you", label: "You in front", hint: "You big, opponent beyond", pair: true,
     make: c => PAIR.map(variant => ({kind: "pair", hero: c.lead, target: c.other, ...variant}))},
   {key: "them", label: "Opponent in front", hint: "Opponent big, you beyond", pair: true,
     make: c => PAIR.map(variant => ({kind: "pair", hero: c.other, target: c.lead, ...variant}))},
-  // A third aircraft flying with you on a line of its own, the further off the heavier, stationed so that the
-  // opponent is beyond you and a little aside. `fov` is its longest lens: it opens by itself to hold both.
-  // From 300 ft it stops following your every turn (measured on a 44 s turning fight: at 120 ft it stayed
-  // 75 to 142 ft from you, at 400 ft 228 to 517 ft, with both in the picture 92% of the time).
-  {key: "escort", label: "Observer", hint: "A third aircraft on its own line, filming you both", pair: true,
-    make: c => [35, -35, 70, -70].flatMap(orbit => [[400, 35], [300, 45], [550, 28]].map(([distance, fov]) =>
-      ({kind: "escort", hero: c.lead, target: c.other, orbit, distance, height: Math.round(distance * .12), fov})))},
   // The same ship watching one aircraft alone, from any side and as close as the lens likes: the viewer holds
   // that aircraft in the middle of the picture, so its detail fills the frame. Front quarter first.
   {key: "closeYou", label: "Close on you", hint: "Your aircraft big, from any side", rate: false,
@@ -385,7 +387,7 @@ export function toggleKey(shot, t) {
 }
 
 // How many seconds of the hero's path the observer flies the average of, when the shot does not say (as shot_plan.py).
-export const looseness = shot => shot.loose ?? (shot.watch === "hero" || shot.target == null ? 1 : Math.max(1, Math.min(4, shot.distance / 130)));
+export const looseness = shot => shot.loose ?? (shot.watch === "hero" || shot.target == null ? 1 : Math.max(1, Math.min(2, shot.distance / 200)));
 
 // How many videos a render of these shots makes: one a shot when asked apart, else as few as hold them without two
 // shots of one stretch sharing a video (as the desk deals them: passes in shot_plan.py).

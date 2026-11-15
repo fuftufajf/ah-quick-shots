@@ -162,7 +162,7 @@ class DeskTests(unittest.TestCase):
                     10: (0, 200, t * 400 + 3000, 0, 0, 0)} for t in [i / 2 for i in range(13)]}
         wide = lambda distance: math.dist(escort_poses({**ship, "orbit": 0, "distance": distance, "height": 0}, bend)[6][:3],
                                           (0, 200, 1200)) - distance
-        self.assertTrue(0 < wide(130) < 200 and wide(520) > 2 * wide(130))
+        self.assertTrue(0 < wide(130) < 200 and wide(520) > 1.5 * wide(130))  # a second heavy at 130 ft, two from 400 ft
         # It is heavy: the other aircraft crossing from one side to the other in half a second moves it little.
         crossing = {t: {19: rows[19], 10: ((-300 if t < 2 else 300), 200, t * 400 + 600, 0, 0, 0)} for t, rows in flying.items()}
         places = escort_poses(ship, crossing)

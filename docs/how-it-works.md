@@ -116,10 +116,28 @@ the two-aircraft cameras then take whoever comes nearest.
   looks between the two, never further from the nearer one than keeps the whole
   of it in the picture; aimed at the point half way between them, a long lens
   lost the nearer aircraft as soon as the other was far.
-- Observer — a third aircraft flying with you, carrying the camera. It keeps station off the line
+- Observer — the first camera, and the one a new shot of two opens on. A third
+  aircraft flying with you, carrying the camera. It keeps station off the line
   through both aircraft, so the opponent is beyond you and a little aside, but
-  it is heavy: it follows your path, and that line, averaged over one to four
-  seconds either side, the further off the heavier (Distance / 130). From
+  it is heavy: it follows your path, and that line, averaged over one to two
+  seconds either side, the further off the heavier (Distance / 200; Looseness
+  sets it by hand). Its settings come from three fights whose tracks were
+  kept (118 s, 37 s, 10 s), each shown through every candidate by the desk's
+  own maths: where both aircraft stood in the picture every tenth of a
+  second, how large, how fast the picture swung. As it was (400 ft, a 35
+  degree lens, 35 degrees aside, three seconds heavy) it kept both in the
+  picture 81, 88 and 100% of the time with the lead aircraft 9, 7 and 12% of
+  the picture's width; heavier than two seconds it lost the opponent in a
+  turning fight (81% at three seconds, 95% at two, the same station). Its
+  first variant is now 300 ft, a 28 degree lens, 20 degrees aside: 98, 100
+  and 100%, the lead 16, 14 and 18% of the width. You in front, on the line
+  itself, held both 97 to 100% with the lead a quarter of the width, but one
+  aircraft covered the other for 4.7 s of the long fight (1.8 s here), the
+  picture swung at over 100 degrees a second where the observer's stays
+  under 65, and each time the opponent was 80 degrees above or below, it
+  looked straight up or down and lost him. The observer's station follows
+  that line up or down no steeper than 63 degrees (it was 52: in a vertical
+  fight the lens then had to open to 92 degrees to hold him, now to 80). From
   300 ft it flies a line of its own while the two of you turn about each
   other: you come near, fall away and cross its picture instead of being
   nailed to it. Close by it has to hold tight, and is then little more than
@@ -141,7 +159,7 @@ the two-aircraft cameras then take whoever comes nearest.
   steady seat beside you, which is where a kill's explosion is caught.
   The observer can be directed, in three steps that each stand alone.
   Looseness is how many seconds of your path it flies the average of (1 to
-  10; by itself it takes its distance / 130, one to four): more, and it
+  10; by itself it takes its distance / 200, one to two): more, and it
   follows you less closely. Keyframe (K) keeps the framing at the playhead:
   round the aircraft, distance, height and lens. Move the playhead, set
   another framing, and the observer glides from one to the next: held before
@@ -535,7 +553,7 @@ Kinds:
 - `ambush` — the same beside the target's path, watching the target fly into
   the frame
 - `escort` — the observer, a third aircraft flying with the hero along the
-  hero's path smoothed over one to four seconds (distance / 130). `watch` both:
+  hero's path smoothed over one to two seconds (distance / 200, or the shot's `loose`). `watch` both:
   distance from that line, orbit off the line through both, `fov` its longest
   lens, opened by itself up to 100 degrees to hold both. `watch` target: the
   same station, looking straight at the target. `watch` hero: orbit counts

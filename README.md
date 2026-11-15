@@ -85,8 +85,8 @@ unzipping.
    a row, as the cut will render them; clicking the shot in the cut plays it
    alone.
 3. **Cameras** — one click shows the moment through that camera, before
-   anything is saved: you or the opponent in front, an observer flying along
-   like a third aircraft, close views, over your shoulder, from your wing,
+   anything is saved: an observer flying along like a third aircraft (the
+   first, and what a new shot opens on), you or the opponent in front, close views, over your shoulder, from your wing,
    behind you, a fly-by, the pilot's own view, cameras on the airframe, riding
    the bomb. Sliders or a drag adjust it (a lift-off or roll-out also has
    Swing round and Ends at). The observer can be directed: set the picture,
