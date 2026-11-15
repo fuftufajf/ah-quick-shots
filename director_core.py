@@ -120,8 +120,10 @@ def lead(command, start):
     _cam, at, _duration, rest = command.split(" ", 3)
     if float(at) - start < .05 or rest.startswith(("recorded", "weapon")):
         return []
-    if rest.startswith("fixed ") and " to " in rest:
-        rest = rest.split(" to ", 1)[0]
+    if rest.startswith(("fixed ", "mount ")) and " to " in rest:
+        first, then = rest.split(" to ", 1)
+        # A camera on an airframe keeps what follows its second seat: whom it is aimed at, and `outside`.
+        rest = first + ("".join(" " + word for word in then.split()[7:] if word != "curve") if rest.startswith("mount ") else "")
     return [f"cam {stamp(start)} {float(at) - float(stamp(start)):.8f} {rest}"]
 
 
@@ -779,7 +781,9 @@ class Desk:
                 near = a if t - a <= b - t else b
                 if abs(near - t) <= FINE / 2 + 1e-6:
                     share = (t - a) / (b - a) if b > a else 0
-                    picked[t] = {ident: (*(p + (q - p) * share for p, q in zip(fine[a][ident][:3], fine[b][ident][:3])), *row[3:])
+                    turn = lambda p, q: p + ((q - p + math.pi) % (2 * math.pi) - math.pi) * share  # an angle, the short way
+                    picked[t] = {ident: (*(p + (q - p) * share for p, q in zip(fine[a][ident][:3], fine[b][ident][:3])),
+                                         *(turn(p, q) for p, q in zip(fine[a][ident][3:], fine[b][ident][3:])))
                                  if ident in fine[a] and ident in fine[b] else row for ident, row in fine[near].items()}
             self.paths[key] = picked
             while len(self.paths) > 12:

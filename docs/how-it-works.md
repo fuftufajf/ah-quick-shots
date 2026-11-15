@@ -241,6 +241,19 @@ the two-aircraft cameras then take whoever comes nearest.
   aircraft's: it can come nearer to them or fall further off than either
   keyframe was. The desk still sends the viewer a move every tenth of a second
   (`curve`), as for every moving camera; the keyframes only say where.
+- Rides your aircraft (with Looks at: You) — the observer as a camera on your airframe (`ride`; the viewer's
+  `mount`, aimed by the viewer at you). Film Viewer draws an aircraft about a frame of flight off for single
+  frames in some stretches: measured after the recording pilot was shot down, 5 to 10 ft every 0.2 s of film
+  (51 of 1,006 frames of a 30 fps preview), and once in 22 s of an ordinary fight (2.4 ft). The aircraft's own
+  track is smooth there and the camera's points have nothing to do with it; moving every frame by 1/120 s
+  made it no better. A camera in the world sees the aircraft hop; a camera on its airframe goes with it:
+  the same 16 s had 24 frames that hopped, then none (the aircraft's step in the picture 0.07 px a frame).
+  The seat is the observer's own place, told in the airframe's axes at every point (right, up, ahead; the
+  viewer gave places back within 2.3 ft at five attitudes, which is the pilot's eye it counts from). Between
+  points the viewer carries the seat straight while the airframe turns: on a hard fight (rolling 120
+  degrees a second at most) the camera was 0.5 ft off typically and 1.9 ft in a tenth of the moves, a
+  tremble of a quarter of a degree, so this is a switch for the stretches that need it, not the rule. A
+  ship on a path of its own stays in the world, and so does one whose aircraft has left the film.
 - Tripod — the observer standing still: pinned to the sky where it is at the
   playhead when you choose it (a path of its own with one keyframe), looking
   at you alone, or at whom Looks at says. It follows by turning and by its
@@ -684,8 +697,8 @@ leg), `watch` both|hero|target (whom the observer holds in its picture). The
 observer (`escort`) also takes `loose` (1 to 12 seconds), `keys` (up to 40
 keyframes `{t, orbit, distance, height, fov, watch}`; `watch` may be left out
 and is then the shot's; one outside the shot is dropped), with keyframes
-`path` "own", and `zoom` "hold" (the lens keeps an aircraft watched alone the
-size `fov` shows it from `distance`). Shots
+`path` "own", `zoom` "hold" (the lens keeps an aircraft watched alone the
+size `fov` shows it from `distance`) and `ride` true (a camera on the hero's airframe where it watches the hero alone). Shots
 may overlap: takes of one stretch through different cameras, each with its own
 id. Use the recording pilot as hero when possible; remote tracks can be coarse.
 

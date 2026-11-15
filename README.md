@@ -91,7 +91,9 @@ marked, and goes to the Recycle Bin when you open the next.
      picture, press Keyframe (K), move the playhead and set it again: it
      glides between the keyframes. Looks at (Both, You, Opponent) is kept in
      each keyframe, so it can turn from one aircraft to the other. Its own
-     path pins each keyframe to the sky.
+     path pins each keyframe to the sky. Looking at You, Rides your aircraft
+     fastens the camera to your aircraft: for a stretch where your aircraft
+     hops in the picture (Film Viewer draws it so after you are shot down).
    - **Tripod** stands still and follows by turning and zooming only.
    - The rest: you or the opponent in front, close views, over your shoulder,
      from your wing, behind you, fly-bys, the cockpit (straight ahead, or as

@@ -416,7 +416,7 @@ export function App() {
     if (draft) change({...draft, start, end}); else fresh(start, end);
   }
   function angle(a) {
-    let next = {...draft, roll: 0, watch: "both", keys: undefined, path: undefined, loose: undefined, zoom: undefined, ...bestVariant(a, stage, scores).variant};
+    let next = {...draft, roll: 0, watch: "both", keys: undefined, path: undefined, loose: undefined, zoom: undefined, ride: undefined, ...bestVariant(a, stage, scores).variant};
     if (next.path === "own") next = toggleKey(next, at);  // the tripod: pinned to the sky where it is at the playhead
     if (a.pair) setCast(stage);
     film.current?.pause(); tune(next);  // a still to set the view on first: the clip is rendered when Play asks for it
@@ -812,6 +812,8 @@ export function App() {
               <button aria-pressed={watching === "both"} disabled={conflict || stage.other == null} onClick={() => watch("both")}>Both</button>
               <button aria-pressed={watching === "you"} disabled={conflict} onClick={() => watch("you")} title="Your aircraft alone, from any side">You</button>
               <button aria-pressed={watching === "them"} disabled={conflict || stage.other == null} onClick={() => watch("them")} title="Him alone, on a long lens from a steady seat beside you">Opponent</button>
+              {watching === "you" && draft.path !== "own" && <button aria-pressed={!!draft.ride} disabled={conflict} onClick={() => tune({...draft, ride: draft.ride ? undefined : true})}
+                title="The camera keeps its place beside you but is fastened to your aircraft as Film Viewer draws it. Use it when your aircraft hops in the picture: Film Viewer draws it a frame off now and then, most of all after you are shot down. In hard turns this camera trembles a little">Rides your aircraft</button>}
             </div>}
             {adjustable ? <div className="adjust">
               {tuning.map(([key, label, unit, min, max, step]) => { const value = cam[key] ?? (key === "loose" ? looseness(draft) : 0);

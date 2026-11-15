@@ -22,7 +22,7 @@ import finishing
 import flight_data
 import overlay
 import trails
-from shot_plan import _glide, _last_seen, _steady, camera_pose, framed, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
+from shot_plan import _glide, _last_seen, _seat, _steady, camera_pose, framed, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows, plane_rows
 
 SHOT = {"id": "one", "name": "Pair", "start": 1, "end": 3, "kind": "pair",
@@ -1533,6 +1533,36 @@ class DeskTests(unittest.TestCase):
         for one, two in zip(moves, moves[1:]):
             self.assertAlmostEqual(float(one[1]) + float(one[2]), float(two[1]), places=9)
             self.assertEqual(one[12:19], two[4:11])  # and where
+
+    def test_an_observer_that_rides_is_a_camera_on_the_airframe_it_watches(self):
+        # The hero in a banked climbing turn, half a second apart; the ship watches him alone and is asked to ride.
+        def spot(t, off):
+            return (2000 * math.cos(t * .15) + off, 3000 + 20 * t, 2000 * math.sin(t * .15), t * .15 + math.pi / 2, .1, -.9)
+        tracks = {t / 2: {19: spot(t / 2, 0), 10: spot(t / 2 + 1.5, 300)} for t in range(13)}
+        ship = {**SHOT, "kind": "escort", "watch": "hero", "start": 0, "end": 6, "orbit": 90, "distance": 200, "height": 20, "fov": 30, "roll": 0}
+        world = compile_shot(validate_shot(ship, 60), tracks)
+        riding = validate_shot({**ship, "ride": True}, 60)
+        self.assertNotIn("ride", validate_shot({**SHOT, "ride": True}, 60))  # the observer's alone
+        lines = compile_shot(riding, tracks)
+        self.assertTrue(all(line.split()[3:5] == ["mount", "19"] and line.endswith(" at 19 outside curve") for line in lines))
+        self.assertTrue(all(" fixed " in line and " at 19 curve" in line for line in world))
+        # Each seat is the world camera's own place, told in the airframe's axes: put back into the world it is that place.
+        for (t, plane), ride, fixed in zip(sorted(tracks.items()), lines, world):
+            seat, wanted = [float(v) for v in ride.split()[5:8]], [float(v) for v in fixed.split()[4:7]]
+            self.assertAlmostEqual(math.hypot(*seat), math.dist(wanted, plane[19][:3]), places=2)
+            self.assertEqual(_seat([*plane[19][:3]], plane[19]), [0, 0, 0])
+        yaw, pitch = .3, .2  # ahead of an airframe is ahead, above it is up, whatever its bank
+        nose = (-math.sin(yaw) * math.cos(pitch), math.sin(pitch), math.cos(yaw) * math.cos(pitch))
+        self.assertEqual([round(v, 6) for v in _seat([100 * v for v in nose], (0, 0, 0, yaw, pitch, 1.2))], [0, 0, 100])
+        self.assertEqual([round(v, 6) for v in _seat((0, 100, 0), (0, 0, 0, 0, 0, 0))], [0, 100, 0])
+        self.assertEqual([round(v, 6) for v in _seat((100, 0, 0), (0, 0, 0, 0, 0, 0))], [100, 0, 0])  # looking toward +z, +x is to the right
+        # Before the shot the camera stands at its first seat, still on the airframe and aimed at it.
+        self.assertEqual(lead("cam 5 2 mount 19 1 2 3 0 0 0 .5 to 4 5 6 0 0 0 .5 at 19 outside curve", 3), ["cam 3 2.00000000 mount 19 1 2 3 0 0 0 .5 at 19 outside"])
+        # A ship pinned to the sky stays a camera in the world, and so does one after its aircraft has left the film.
+        pinned = validate_shot({**ship, "ride": True, "path": "own", "keys": [{"t": 3, "orbit": 90, "distance": 200, "height": 20, "fov": 30}]}, 60)
+        self.assertTrue(all(" fixed " in line for line in compile_shot(pinned, tracks)))
+        gone = {t: ({19: rows[19]} if t <= 3 else {}) | {10: rows[10]} for t, rows in tracks.items()}
+        self.assertEqual(["mount" in line for line in compile_shot(riding, gone)], [True] * 6 + [False] * 6)
 
     def test_the_data_overlay_card(self):
         hero = [{"t": 10 + i / 50, "tas": 605.8, "alt": 1460.3, "climb": 35.2, "g": 7.76} for i in range(101)]

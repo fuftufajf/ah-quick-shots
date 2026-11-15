@@ -79,6 +79,8 @@ def validate_shot(raw, length):
             shot["keys"] = [kept[t] for t in sorted(kept)]
             if raw.get("path") == "own":
                 shot["path"] = "own"
+        if raw.get("ride") is True:  # where it watches the hero alone, it is a camera on the hero's airframe (compile_shot)
+            shot["ride"] = True
         if raw.get("zoom") == "hold":  # the lens follows the aircraft it watches alone, to keep it the size it was framed
             shot["zoom"] = "hold"
     if raw.get("effects") is not None:
@@ -510,6 +512,21 @@ def _held(follow):
     return "" if follow is None else f" at {follow}"
 
 
+def _seat(pose, plane):
+    """A camera's place in the world as a seat on an aircraft (x, alt, z, yaw, pitch, roll): feet to its right, up and
+    ahead in the airframe's own axes, which is how the viewer's `mount` takes it. The axes as the viewer has them
+    (asked with `project` at five attitudes, banked 11 to 68 degrees; a place given back within 2.3 ft, which is the
+    pilot's eye the viewer counts from).
+    shortcut: the eye is taken to be the aircraft's own point, so the camera sits two feet off; ask `project` for it if that shows"""
+    yaw, pitch, roll = plane[3:6]
+    level = (math.cos(yaw), 0.0, math.sin(yaw))
+    over = (math.sin(yaw) * math.sin(pitch), math.cos(pitch), -math.cos(yaw) * math.sin(pitch))
+    axes = (tuple(math.cos(roll) * r - math.sin(roll) * u for r, u in zip(level, over)),
+            tuple(math.sin(roll) * r + math.cos(roll) * u for r, u in zip(level, over)),
+            (-math.sin(yaw) * math.cos(pitch), math.sin(pitch), math.cos(yaw) * math.cos(pitch)))
+    return [sum((pose[k] - plane[k]) * axis[k] for k in range(3)) for axis in axes]
+
+
 def stamp(t):
     """A film time as the viewer is told it: to the microsecond, and no longer than it need be."""
     return f"{t:.6f}".rstrip("0").rstrip(".")
@@ -605,8 +622,22 @@ def compile_shot(shot, tracks):
     # 5 ms in a film past 1,000 s: 2 ft of the camera's way, at every joint. Now to the microsecond, and its length
     # is the difference of the two times as they are told.
     stamps = [round(t, 6) for t, _pose, _follow in points]
-    return [f"cam {stamp(a)} {b - a:.8f} fixed {pose_text(pa)} to {pose_text(pb)}{_held(follow)} curve"
-            for a, b, (_t, pa, follow), (_then, pb, _next) in zip(stamps, stamps[1:], points, points[1:])]
+    # A ship that rides (`ride`) the aircraft it watches is a camera on that airframe (`mount`), aimed by the viewer:
+    # its seat is the same place in the world, told in the airframe's axes at every point. Film Viewer draws an
+    # aircraft a frame of flight off for single frames in some stretches (measured after the recording pilot was
+    # shot down: 5 to 10 ft, every 0.2 s): seen from a camera in the world it hops, from one on its airframe it
+    # cannot (24 frames of 474 hopped, then none). Between points the viewer carries the seat straight while the
+    # airframe turns, so in hard manoeuvres this camera trembles (2 ft in a tenth of the moves at 120 deg/s of
+    # roll): it is asked for, not the rule.
+    rides = shot.get("ride") and shot.get("path") != "own"
+    lines = []
+    for a, b, (ta, pa, follow), (tb, pb, _next) in zip(stamps, stamps[1:], points, points[1:]):
+        if rides and follow == hero and tb <= seen[hero]:
+            seats = [" ".join(f"{v:.4f}" for v in _seat(pose, tracks[t][hero])) + f" 0 0 0 {pose[6]:.8f}" for t, pose in ((ta, pa), (tb, pb))]
+            lines.append(f"cam {stamp(a)} {b - a:.8f} mount {hero} {seats[0]} to {seats[1]} at {hero} outside curve")
+        else:
+            lines.append(f"cam {stamp(a)} {b - a:.8f} fixed {pose_text(pa)} to {pose_text(pb)}{_held(follow)} curve")
+    return lines
 
 
 def validate_plan(shots, length):
