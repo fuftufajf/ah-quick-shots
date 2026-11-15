@@ -167,7 +167,7 @@ class Desk:
         # `recent`: the replays opened last, newest first; `waiting`: those to go to the Recycle Bin once the viewer,
         # which holds the open one, has been given another.
         self.data = {"connected": False, "films": [], "project": None, "planes": [], "recent": kept("recent.json"), "waiting": kept("waiting.json"),
-                     "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None, "flight": None,
+                     "now": 0, "icons": True, "problems": {}, "nearby": None, "airfield": None, "flight": None,
                      "preview": None, "proposals": [], "job": None, "videos": str(self.videos), "renders": [],
                      "ffmpeg": bool(shutil.which("ffmpeg")), "overlays": None, "assembly": None, "assembling": None,
                      "pace": json.loads((self.root / "pace.json").read_text(encoding="utf-8")) if (self.root / "pace.json").exists() else {}}

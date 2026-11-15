@@ -696,7 +696,7 @@ most 5 s later). One action runs at a time; a second is refused while
 - `clip` `{start, end, still?, hero?}` — a 960×540 video of the stretch with
   sound, at `state.preview.url` when done; an unchanged stretch comes from its
   file. `hero` also fills `state.nearby`
-- `icons` `{on, seconds?}` — the pilot name labels; with `seconds` it answers
+- `icons` `{on, seconds?}` — the pilot name labels, on when the desk starts; with `seconds` it answers
   with a still
 - `around` `{start, end, hero}` — `state.nearby.aircraft`: who comes how close
   to hero in that stretch, nearest first. Pick a shot's target from it, not
