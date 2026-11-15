@@ -501,6 +501,11 @@ def _held(follow):
     return "" if follow is None else f" at {follow}"
 
 
+def stamp(t):
+    """A film time as the viewer is told it: to the microsecond, and no longer than it need be."""
+    return f"{t:.6f}".rstrip("0").rstrip(".")
+
+
 def pose_text(pose):
     return " ".join(f"{value:.8f}" for value in pose)
 
@@ -564,14 +569,14 @@ def compile_shot(shot, tracks):
     start, end = shot["start"], shot["end"]
     duration, hero = end - start, shot["hero"]
     if shot["kind"] == "recorded":
-        return [f"cam {start:g} {duration:g} recorded"]  # the pilot's view as flown, head movements included
+        return [f"cam {stamp(start)} {duration:g} recorded"]  # the pilot's view as flown, head movements included
     if shot["kind"] == "weapon":
         # Rides the aircraft until its next bomb, rocket or torpedo leaves, then the weapon down to the blast.
-        return [f"cam {start:g} {duration:g} weapon {hero}"]
+        return [f"cam {stamp(start)} {duration:g} weapon {hero}"]
     if shot["kind"] == "cockpit":
-        return [f"cam {start:g} {duration:g} {_mount(shot)}"]
+        return [f"cam {stamp(start)} {duration:g} {_mount(shot)}"]
     if shot["kind"] in RIDES:
-        return [f"cam {start:g} {duration:g} {_mount(shot)} outside"]
+        return [f"cam {stamp(start)} {duration:g} {_mount(shot)} outside"]
     times = sorted(t for t in tracks if start - .011 <= t <= end + .011)
     if not times or abs(times[0] - start) > .03 or abs(times[-1] - end) > .03:
         raise ValueError("The viewer did not return the whole shot interval")
@@ -580,14 +585,19 @@ def compile_shot(shot, tracks):
     if shot["kind"] in ("fixed", "ambush"):
         pose = camera_pose(shot, tracks[times[len(times) // 2]])
         target = shot["target"] if shot["target"] is not None else hero
-        return [f"cam {start:g} {duration:g} fixed {pose_text(pose)} at {target}"]
+        return [f"cam {stamp(start)} {duration:g} fixed {pose_text(pose)} at {target}"]
     points = [(t, pose, follow) for t, (pose, follow) in zip(times, _poses(shot, tracks, times, seen))]
     # Unwrap yaw so a crossing of north does not spin the camera around.
     for i in range(1, len(points)):
         previous, current = points[i - 1][1], points[i][1]
         current[3] = previous[3] + (current[3] - previous[3] + math.pi) % (2 * math.pi) - math.pi
-    return [f"cam {a:g} {b-a:.8f} fixed {pose_text(pa)} to {pose_text(pb)}{_held(follow)} curve"
-            for (a, pa, follow), (b, pb, _next) in zip(points, points[1:])]
+    # The viewer joins moves into one smooth curve when each begins exactly when the one before ends. Told with six
+    # digits (`:g`) and its length with eight decimals, a move began up to 0.5 ms off the end of the one before, and
+    # 5 ms in a film past 1,000 s: 2 ft of the camera's way, at every joint. Now to the microsecond, and its length
+    # is the difference of the two times as they are told.
+    stamps = [round(t, 6) for t, _pose, _follow in points]
+    return [f"cam {stamp(a)} {b - a:.8f} fixed {pose_text(pa)} to {pose_text(pb)}{_held(follow)} curve"
+            for a, b, (_t, pa, follow), (_then, pb, _next) in zip(stamps, stamps[1:], points, points[1:])]
 
 
 def validate_plan(shots, length):

@@ -1512,6 +1512,27 @@ class DeskTests(unittest.TestCase):
         self.assertGreater(max(speed), 500)  # it does swing round: the hero flies 300 ft/s
         self.assertLess(max(abs(b - a) for a, b in zip(speed, speed[1:])), 90)
 
+    def test_a_moving_camera_s_points_are_where_the_aircraft_are_then_and_its_moves_meet(self):
+        # The hero flies 300 ft/s along z, read every 0.02 s. A shot of 2.23 s has its points 0.446 s apart, between
+        # snapshots: taken from the nearer snapshot, a point was up to 3 ft from where the aircraft is at its moment.
+        def native(command, progress):
+            if command.startswith("tracks "):
+                start, end, step = map(float, command.split()[1:4])
+                return [f"track {start + n * step:.4f} 19 0 1000 {300 * (start + n * step):.3f} 0 0 0" for n in range(round((end - start) / step) + 1)]
+            return []
+        self.desk.viewer.command = native
+        self.desk.data["job"] = {"running": False}
+        paths = self.desk._tracks(1001, 1003.23)
+        self.assertEqual(len(paths), 6)
+        self.assertLess(max(abs(rows[19][2] - 300 * t) for t, rows in paths.items()), .01)
+        # Past 1,000 s a film time told with six digits was 5 ms off: each move now begins when the one before ends.
+        tracks = {t: {19: rows[19], 10: (300, 1000, rows[19][2] + 500, 0, 0, 0)} for t, rows in paths.items()}
+        moves = [line.split() for line in compile_shot(validate_shot({**SHOT, "kind": "escort", "start": 1001, "end": 1003.23}, 2000), tracks)]
+        self.assertEqual([moves[0][1], len(moves)], ["1001", 5])
+        for one, two in zip(moves, moves[1:]):
+            self.assertAlmostEqual(float(one[1]) + float(one[2]), float(two[1]), places=9)
+            self.assertEqual(one[12:19], two[4:11])  # and where
+
     def test_the_data_overlay_card(self):
         hero = [{"t": 10 + i / 50, "tas": 605.8, "alt": 1460.3, "climb": 35.2, "g": 7.76} for i in range(101)]
         near = [{"t": 10 + i / 50, "range": 355, "closure": 376.4} for i in range(51)]  # he leaves the film at 11 s

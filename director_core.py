@@ -20,7 +20,7 @@ from finishing import FASTEST, PASSES, Cancelled, assemble, blend, peaks, style,
 from flight_data import derive, pair, read_kept
 import overlay
 import trails
-from shot_plan import (RIDES, compile_shot, filmer_path, ground_moments, nearby, passes, probe_cameras, track_rows, validate_effects,
+from shot_plan import (RIDES, compile_shot, filmer_path, ground_moments, nearby, passes, probe_cameras, stamp, track_rows, validate_effects,
                        validate_plan, validate_shot, videos as video_rows)
 from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 
@@ -53,7 +53,7 @@ LEAD = 2.0
 # after the one before was full, whatever happened in between (6 of 6). After a 4 s stretch, 3 s were enough.
 TAIL = 1.5  # seconds added to the last rendered stretch's length before the next render may start
 FINE = .02  # the step aircraft paths are read at (see Desk._tracks)
-CAMERAS = 10  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
+CAMERAS = 11  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
 
 
 def to_recycle_bin(paths):
@@ -116,7 +116,7 @@ def lead(command, start):
         return []
     if rest.startswith("fixed ") and " to " in rest:
         rest = rest.split(" to ", 1)[0]
-    return [f"cam {start:g} {float(at) - start:.8f} {rest}"]
+    return [f"cam {stamp(start)} {float(at) - float(stamp(start)):.8f} {rest}"]
 
 
 def framing(found):
@@ -762,12 +762,19 @@ class Desk:
             fine = track_rows(self.command(f"tracks {start - early:.8f} {end:.8f} {FINE:.10f}"))
             grid = sorted(fine)
             picked = {}
-            for k in range(round((end - start) / step) + 1):
+            # Each aircraft where it is at the moment asked for, between the snapshots either side of it. The nearer
+            # snapshot alone is up to 0.01 s off, 3 ft of a 300 ft/s flight and different at every point (a shot of
+            # 22.3 s has its points 0.4956 s apart, the snapshots 0.02 s): the aircraft slid a yard back and forth
+            # in the picture of a camera flying with it.
+            for k in range(round((end - start) / step) + 1) if grid else ():
                 t = start + k * step
                 at = bisect.bisect_left(grid, t)
-                near = min(grid[max(0, at - 1):at + 1], key=lambda g: abs(g - t), default=None)
-                if near is not None and abs(near - t) <= FINE / 2 + 1e-6:
-                    picked[t] = fine[near]
+                a, b = grid[max(0, at - 1)], grid[min(len(grid) - 1, at)]
+                near = a if t - a <= b - t else b
+                if abs(near - t) <= FINE / 2 + 1e-6:
+                    share = (t - a) / (b - a) if b > a else 0
+                    picked[t] = {ident: (*(p + (q - p) * share for p, q in zip(fine[a][ident][:3], fine[b][ident][:3])), *row[3:])
+                                 if ident in fine[a] and ident in fine[b] else row for ident, row in fine[near].items()}
             self.paths[key] = picked
             while len(self.paths) > 12:
                 del self.paths[next(iter(self.paths))]

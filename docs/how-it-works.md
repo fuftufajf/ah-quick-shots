@@ -807,6 +807,17 @@ What the film tells, measured:
   618 ft/s moved 0.3 to 114 ft a snapshot, its stored speed 356 to 889 ft/s); at 0.02 s it was smooth,
   12.3 ft every snapshot, the speed steady. The first two snapshots of a read were off too, so the desk
   reads a tenth of a second early and leaves them out.
+- **A camera's points are between snapshots.** A moving camera gets a point every half second or so (a shot
+  of 22.3 s: every 0.4956 s), and that moment falls between two snapshots 0.02 s apart. Taken from the nearer
+  one, a point was up to 0.01 s off: on a shot at 316 ft/s the lead aircraft stood up to 3.2 ft ahead of or
+  behind where its point took it to be, creeping one way for three seconds and then back at once, by up to
+  5.5 ft, eleven times in 22 s. Seen from a camera flying with it, the aircraft slid a yard forward and jumped
+  back. Each aircraft is now placed between the two snapshots, where it is at that moment. A shot whose
+  length is a whole number of half seconds never showed it: its points fall on snapshots.
+- **Moves that meet.** The viewer joins moves into one curve when each begins exactly when the one before
+  ends. The desk told a move's start with six digits and its length with eight decimals: every joint was up
+  to 0.5 ms off, and 5 ms in a film past 1,000 s (2 ft of the camera's way). Starts are now told to the
+  microsecond and a length is the difference of two starts as told.
 - **Far aircraft are told coarsely.** Their speed was held, then changed over 0.3 to 0.4 s, every 2 s;
   near ones changed every snapshot. Accelerations are taken over half a second, or over two of the
   aircraft's own updates when they come rarer, and such an aircraft is marked `coarse`: its speed and
