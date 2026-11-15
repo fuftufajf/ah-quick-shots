@@ -53,7 +53,13 @@ LEAD = 2.0
 # after the one before was full, whatever happened in between (6 of 6). After a 4 s stretch, 3 s were enough.
 TAIL = 1.5  # seconds added to the last rendered stretch's length before the next render may start
 FINE = .02  # the step aircraft paths are read at (see Desk._tracks)
-CAMERAS = 11  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
+# The points a second a moving camera is given. The viewer carries the camera's turn straight from one point to the
+# next: with a point every half second the picture's pace was the same for half a second and changed at once at each
+# point (measured in a finished video, frame by frame: 5.5, then 7.0, then 9.1 px a frame), so the frame caught up
+# with the aircraft in steps. Ten a second make the steps a fifth as large and three frames apart. Telling the viewer
+# 46 camera lines took under 0.2 s.
+POINTS = 10
+CAMERAS = 12  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
 
 
 def to_recycle_bin(paths):
@@ -751,7 +757,7 @@ class Desk:
 
     def _tracks(self, start, end, step=None):
         # Choose an exact divisor so the final snapshot lands at the end.
-        step = step or (end - start) / max(1, math.ceil((end - start) * 2))
+        step = step or (end - start) / max(1, math.ceil((end - start) * POINTS))
         key = (round(start, 3), round(end, 3), round(step, 6))
         if key not in self.paths:
             self.progress("Reading aircraft paths")

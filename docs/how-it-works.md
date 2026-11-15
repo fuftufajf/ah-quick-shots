@@ -239,7 +239,7 @@ the two-aircraft cameras then take whoever comes nearest.
   whom it watches. One keyframe on its own path is a camera standing still
   where you framed it. Between pins the line is the camera's, not the
   aircraft's: it can come nearer to them or fall further off than either
-  keyframe was. The desk still sends the viewer a move every half second
+  keyframe was. The desk still sends the viewer a move every tenth of a second
   (`curve`), as for every moving camera; the keyframes only say where.
 - Tripod — the observer standing still: pinned to the sky where it is at the
   playhead when you choose it (a path of its own with one keyframe), looking
@@ -807,8 +807,8 @@ What the film tells, measured:
   618 ft/s moved 0.3 to 114 ft a snapshot, its stored speed 356 to 889 ft/s); at 0.02 s it was smooth,
   12.3 ft every snapshot, the speed steady. The first two snapshots of a read were off too, so the desk
   reads a tenth of a second early and leaves them out.
-- **A camera's points are between snapshots.** A moving camera gets a point every half second or so (a shot
-  of 22.3 s: every 0.4956 s), and that moment falls between two snapshots 0.02 s apart. Taken from the nearer
+- **A camera's points are between snapshots.** A moving camera got a point every half second or so (a shot
+  of 22.3 s: every 0.4956 s; ten a second now), and that moment falls between two snapshots 0.02 s apart. Taken from the nearer
   one, a point was up to 0.01 s off: on a shot at 316 ft/s the lead aircraft stood up to 3.2 ft ahead of or
   behind where its point took it to be, creeping one way for three seconds and then back at once, by up to
   5.5 ft, eleven times in 22 s. Seen from a camera flying with it, the aircraft slid a yard forward and jumped
@@ -818,6 +818,17 @@ What the film tells, measured:
   ends. The desk told a move's start with six digits and its length with eight decimals: every joint was up
   to 0.5 ms off, and 5 ms in a film past 1,000 s (2 ft of the camera's way). Starts are now told to the
   microsecond and a length is the difference of two starts as told.
+- **The viewer carries a camera's turn straight from point to point.** `curve` or not, between two points
+  of a moving camera the picture turns at one pace. Measured in a finished video, frame by frame (phase
+  correlation of whole frames, a point every 0.4956 s): 5.5 px a frame for one move, then 7.0, then 9.1,
+  then 11.7, each change within one frame of a point; folded over fourteen seconds, the picture's pace
+  changed six times as much in the frame at a point as in any other. Seen, the frame catches up with the
+  aircraft in steps, and a camera the viewer aims itself (`at`, a standing one) is smooth beside it. So a
+  moving camera now gets ten points a second (`POINTS`): on the same shot its turn changes at a point by 0.3
+  degrees a second typically where it changed by 1.4, and the ship's speed by 13 ft/s at most where it
+  changed by 51. A shot of 22.3 s is 224 camera lines; telling the viewer 46 took under 0.2 s. With points
+  that close the look's own corners (where it stops turning toward the far aircraft, where he leaves the
+  film) are rounded over a quarter of a second either side: 3 degrees a second at most at a point, from 11.
 - **Far aircraft are told coarsely.** Their speed was held, then changed over 0.3 to 0.4 s, every 2 s;
   near ones changed every snapshot. Accelerations are taken over half a second, or over two of the
   aircraft's own updates when they come rarer, and such an aircraft is marked `coarse`: its speed and

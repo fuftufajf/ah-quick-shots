@@ -481,6 +481,15 @@ def escort_poses(shot, tracks, step=None, seen=None):
         (_all, (yaw, pitch)), *rest = [look for look in looks if look[0]]
         poses.append([*pos, yaw + sum(share * ((there[0] - yaw + math.pi) % (2 * math.pi) - math.pi) for share, there in rest),
                       pitch + sum(share * (there[1] - pitch) for share, there in rest), math.radians(shot["roll"]), wide])
+    # The look has corners of its own: where it stops turning toward the far aircraft (_hold), where he leaves the
+    # film. With points close enough together they are rounded over a quarter of a second either side; the turn
+    # then changes by 2 degrees a second at a point where it changed by 6 (measured on a merge and a kill).
+    soft = int(.25 / per)
+    if soft:
+        for i in range(1, len(poses)):
+            poses[i][3] = poses[i - 1][3] + (poses[i][3] - poses[i - 1][3] + math.pi) % (2 * math.pi) - math.pi
+        for pose, look in zip(poses, _smooth([pose[3:5] for pose in poses], soft)):
+            pose[3:5] = look
     return poses
 
 
