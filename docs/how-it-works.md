@@ -397,8 +397,10 @@ the viewer's own render and motion blur (the same four passes) as at 60: worked
 out, not timed. Timed on 15 s of film at 1080p30 with motion blur: with one pass
 46 s in all (about 5 s of it waiting for the last clip's sound), a third more
 than said; with two passes 74 s, 6% more, each pass of the viewer about 1.9 s
-for a second rendered (1.7 assumed) and ffmpeg 0.23. Four passes, about twice
-that, not timed yet. The desk's pace takes each render in.
+for a second rendered (1.7 assumed) and ffmpeg 0.23. With four passes, 24 s of
+film in 202 s against 220 said: each pass 1.7 s for a second rendered, as
+assumed, and ffmpeg 0.35; the edges smooth, without steps or a fan. The desk's
+pace takes each render in.
 
 The effects add up nearly as a sum (look, haze and lasting trails together:
 6.8 against 6.4). A lasting trail is cut off a picture's width outside the
