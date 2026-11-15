@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Stop, Trash, X} from "@phosphor-icons/react";
+import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, SkipBack, Sparkle, Stop, Trash, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
 import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, videosOf, zoomCamera} from "./desk.js";
 
@@ -200,6 +200,7 @@ export function App() {
       else if (e.key === "o") mark("end");
       else if (e.key === "k") keyframe();
       else if (e.key === "Delete") keyframe(true);
+      else if (e.key === "Home") { e.preventDefault(); toStart(); }
       else if (e.key === "[") toKey(-1);
       else if (e.key === "]") toKey(1);
       else if (e.key === " ") { e.preventDefault(); if (live) pause(); else play(); }  // also when a button still has focus from the last click
@@ -300,6 +301,13 @@ export function App() {
     if (live) { stopped.current = start; return pause(); }
     if (player && clip) { player.pause(); player.currentTime = Math.max(0, start - clip.start); }
     setCursor(start);
+  }
+  // Back to where the shot being edited (or the clip on screen, or the film) begins, without playing.
+  function toStart() {
+    const start = draft ? draft.start : clip ? clip.start : 0, player = film.current;
+    if (live) return stop();
+    if (player && clip && start >= clip.start && start <= clip.end) { player.pause(); player.currentTime = start - clip.start; setCursor(start); }
+    else goTo(start);
   }
   function playSequence() {
     asking.current = [sequence[0].start, sequence.at(-1).end, "sequence"];
@@ -526,7 +534,9 @@ export function App() {
   const battles = useMemo(() => fights(events, you.current), [project?.film, events.length, you.current?.id, you.current?.name]);
   const moments = kind === "fight" ? filterMoments(battles, query, "") : filterMoments(events, query, kind, you.current);
   const uncovered = ownKills(events, you.current).filter(e => !shots.some(s => e.time >= s.start && e.time <= s.end));
-  const [from, to] = trimGrab.current?.view || (zoom && draft ? [Math.max(0, draft.start - 30), Math.min(length, draft.end + 30)] : [0, length]);
+  // Close-up: the shot fills the timeline, with a strip either side to show what lies beyond and to grab its ends.
+  const edge = draft ? Math.max(.5, (draft.end - draft.start) * .1) : 0;
+  const [from, to] = trimGrab.current?.view || (zoom && draft ? [Math.max(0, draft.start - edge), Math.min(length, draft.end + edge)] : [0, length]);
   const place = t => Math.max(0, Math.min(100, (t - from) / (to - from) * 100));
   const span = s => ({left: `${place(s.start)}%`, width: `${place(s.end) - place(s.start)}%`});
   const chosen = shots.filter(s => !skipped.has(s.id)).map(s => s.id);
@@ -654,6 +664,7 @@ export function App() {
             }}/>
           </div>
           <div className="transport">
+            <button className="play" disabled={!project} onClick={toStart} aria-label="To the start" title={draft ? "To the start of this shot (Home)" : "To the start (Home)"}><SkipBack weight="fill"/></button>
             <button className="play" disabled={!project || rolling || live} onClick={play} aria-label="Play" title={sequence.length > 1 && !dirty ? `Play the whole sequence, ${sequence.length} shots (Space)` : draft ? "Play this shot (Space)" : `Play the next ${CHUNK} seconds (Space)`}><Play weight="fill"/></button>
             <button className="play" disabled={!rolling && !live} onClick={pause} aria-label="Pause" title="Pause what is playing, here or in Film Viewer's window (Space)"><Pause weight="fill"/></button>
             <button className="play" disabled={!project || (!rolling && !live && !clip)} onClick={stop} aria-label="Stop" title="Stop and go back to the start"><Stop weight="fill"/></button>
@@ -669,7 +680,7 @@ export function App() {
               {keys.length > 0 && <button disabled={!keyBeside(draft, at, 1)} onClick={() => toKey(1)} aria-label="Next keyframe" title="To the keyframe after (])"><CaretRight weight="bold"/></button>}
             </span>}
             {draft && <span className="range">{formatTime(draft.start)} — {formatTime(draft.end)} · {(draft.end - draft.start).toFixed(1)} s · drag arrows: 1 s</span>}
-            <button className="zoom" aria-pressed={zoom && Boolean(draft)} disabled={!draft} onClick={() => setZoom(!zoom)} title="Stretch the timeline around this shot">Close-up</button>
+            <button className="zoom" aria-pressed={zoom && Boolean(draft)} disabled={!draft} onClick={() => setZoom(!zoom)} title="Fill the timeline with this shot, a strip of the film left either side">Close-up</button>
           </div>
         </div>
 

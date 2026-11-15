@@ -172,7 +172,9 @@ the two-aircraft cameras then take whoever comes nearest.
   The keyframe the playhead stands on is the selected one, drawn larger and
   hollow: click a diamond or step with the arrows beside the button ([ and ])
   to select it, change the camera to change it, Delete (or K) to take it
-  away.
+  away. Close-up fills the timeline with the shot (a tenth of its length
+  left either side), so keyframes close together can be told apart; the
+  button before Play (Home) goes back to the shot's start.
   Flies, With you or Its own path: on its own path each keyframe pins the
   observer to the sky where it then sits, and it flies a smooth line of its
   own through those places, standing at the first before it and at the last
