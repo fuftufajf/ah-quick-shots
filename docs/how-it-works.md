@@ -324,7 +324,7 @@ as videos of their own and those alike as one. Effects are not the camera:
 changing them renders no preview again and does not mark a shot's video as
 changed.
 
-A released package offers motion blur only. The data overlay, the film look
+A released package offers motion blur and the data overlay. The film look
 with its haze and the trails are still being made: the page offers them when
 the desk runs from the source code (its version is then `source`), and not
 with `?release` in the page's address, which shows the page as a release does.

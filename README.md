@@ -27,7 +27,7 @@ also needs **Python 3.11 or newer** on the PATH (no extra packages) and,
 optionally, **ffmpeg** on the PATH: with it a video is rendered from two
 seconds early and those seconds are cut off, so the other aircraft are solid
 from the first frame (without it they can fade in during the first second),
-and it makes the motion blur and the Assembly's video. The package brings both.
+and it makes the motion blur, the data overlay and the Assembly's video. The package brings both.
 
 ## Start
 
@@ -58,7 +58,7 @@ checks it.
 
 Inside are the official portable Python from python.org (signed by the Python
 Software Foundation), the free ffmpeg video tool (gyan.dev's build of an FFmpeg
-release), a font and this program's own small source
+release), the font of the data overlay and this program's own small source
 files. There is no installer, no Windows service and no account, and nothing
 is sent anywhere: it talks only to Film Viewer on your own PC, through the
 viewer's documented socket, and to your browser on 127.0.0.1. It does not use
@@ -99,7 +99,9 @@ marked, and goes to the Recycle Bin when you open the next.
 4. **The cut** — tick the shots to render, choose 1080p, 4K or a quick
    draft, 30 or 60 frames a second, one video or a file per shot, then Render
    selected. Motion blur (kept with each shot) takes about four times as long
-   and looks like film. Add my kills makes four shots for every kill; Take-offs
+   and looks like film. Data overlay adds, beside each video, a transparent
+   film of your speed, height, climb and G and the range to your opponent, to
+   lay over it in an editor (16:9 and 9:16). Add my kills makes four shots for every kill; Take-offs
    & landings finds yours. Videos folder opens the finished videos.
 
 **Assembly**, the second view: your rendered shots in a row on a timeline.
@@ -122,8 +124,7 @@ own. Export video makes one film of it.
 Finished videos are in **Videos\AH Quick Shots**, each named after its film,
 time, shot and camera.
 
-**Still being made.** A data overlay, a film look with haze, and wingtip
-trails are offered only when AH Quick Shots is run from the source code, not
+**Still being made.** A film look with haze and wingtip trails are offered only when AH Quick Shots is run from the source code, not
 by the Windows package: they are experimental.
 
 ## Known limits
