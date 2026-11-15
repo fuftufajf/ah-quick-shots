@@ -106,7 +106,7 @@ unzipping.
    to your opponent, to lay over it in DaVinci Resolve or another editor: one
    for a 16:9 timeline, one for a 9:16 reel. Motion blur, the streak a film
    camera leaves on fast motion, is ticked from the start: the render takes
-   about twice as long at 30 fps, about four times at 60. Film look and haze (a film camera's colour, glow, vignette and grain,
+   about four times as long, and the blur is smooth even in a fast roll. Film look and haze (a film camera's colour, glow, vignette and grain,
    fitted to a DaVinci Resolve grade of this footage, with mist along the
    horizon) and Trails (two smooth lines from the wingtips of the shot's
    aircraft, yours and your opponent's in colours you pick; short ones follow

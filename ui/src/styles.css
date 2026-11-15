@@ -225,6 +225,7 @@ button.small{min-height:26px;padding:3px 8px;font-size:12px}
 .option{display:flex;align-items:center;gap:8px;min-height:30px;font-size:13px;cursor:pointer}
 .option:has(input:disabled){color:var(--muted);cursor:default}
 /* What an option costs in time, at the right of its line; the whole of it above the Render button. */
+.option .worth{font-size:12px;color:var(--muted)}
 .option .cost{margin-left:auto;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .cost-total{font-size:12px;color:var(--muted);line-height:1.5;padding:2px 2px 0}
 .cost-total b{color:var(--ink);font-weight:600}

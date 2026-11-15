@@ -27,7 +27,7 @@ from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 ACTIONS = ("connect", "open", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "export_cut")
 RENDERS = {"draft": "960 540", "final": "1920 1080", "4k": "3840 2160"}
 # Frames a second of a finished video: 30 unless 60 is asked for (the operator's choice: more like film, and with
-# motion blur two passes of the viewer instead of four, see PASSES).
+# fewer frames for ffmpeg and the trails to work on).
 RATES = (30, 60)
 
 
@@ -495,7 +495,7 @@ class Desk:
             time.sleep(2 * self.pace)
         self._stage(label or f"Rendering {end - start:.1f} s of film")  # after the seek, whose message it replaces
         whole = path.with_name(path.stem + "-lead" + path.suffix) if early or blur or filters else path
-        parts = [whole.with_name(f"{whole.stem}{n}{whole.suffix}") for n in range(PASSES[blur])] if blur else [whole]
+        parts = [whole.with_name(f"{whole.stem}{n}{whole.suffix}") for n in range(PASSES)] if blur else [whole]
         # The viewer answers a render only when it is done (measured: 1.1 to 1.7 times the stretch at 1080p, 4K not
         # timed), so it may take twenty times the stretch before the desk gives it up.
         self.viewer.patience = max(Viewer.patience, 20 * (end - start + early))
@@ -1148,7 +1148,7 @@ class Desk:
         # ffmpeg then does to it, and before them the trails' cameras.
         with self.lock:
             self.data["job"].update(expect=expect and round(expect, 1), video=1, videos=len(rows), steps=sum(
-                (PASSES[blur] if blur else 1) + (ffmpeg and bool(blur or filters or drawn or row[0]["start"] >= .05)) + bool(drawn)
+                (PASSES if blur else 1) + (ffmpeg and bool(blur or filters or drawn or row[0]["start"] >= .05)) + bool(drawn)
                 for row, (blur, filters, drawn) in zip(rows, made)))
         mark = self.data["job"]["clock"]
         scripts = []

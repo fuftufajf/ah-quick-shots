@@ -6,15 +6,15 @@ import subprocess
 import sys
 import threading
 
-# With motion blur a video is rendered PASSES[its frame rate] times at the viewer's most, FASTEST frames a second ("fps
-# 1 to 120", it answers to more), each pass that share of a frame of FASTEST later, and ffmpeg weaves them and makes
-# each frame the mean of all the frames in its time, as a 360° shutter does: real blur from the viewer's own frames.
-# Eight frames a frame: four passes at 60 fps, two at 30. Half of them (a film camera's 180°) left too little to see;
-# two frames a frame at 120 showed a double image, not a streak; one pass at 30 fps, four frames a frame, showed the
-# edges of an aircraft in a fast roll as four steps (operator's render, 15 Nov 2026). ffmpeg's motion interpolation
-# took 130 times the film's length.
+# With motion blur a video is rendered PASSES times at the viewer's most, FASTEST frames a second ("fps 1 to 120", it
+# answers to more), each pass a quarter of a frame of FASTEST later, and ffmpeg weaves them and makes each frame the
+# mean of all the frames in its time, as a 360° shutter does: real blur from the viewer's own frames. That is eight
+# frames a frame at 60 fps, sixteen at 30. Half of them (a film camera's 180°) left too little to see; two frames a
+# frame at 120 showed a double image, not a streak. At 30 fps, on a fast roll (operator's renders, 15 Nov 2026), one
+# pass drew an aircraft's edges as four steps and two passes left a faint fan at the wingtip: the operator chose four,
+# slow and beautiful. ffmpeg's motion interpolation took 130 times the film's length.
 FASTEST = 120
-PASSES = {30: 2, 60: 4}
+PASSES = 4
 # The film look: the colour of a DaVinci Resolve grade (Film Look Creator), fitted as a LUT to stills of the same
 # footage before and after it, then bloom, a red halation round highlights, a vignette and grain. As faint as the grade
 # (its colour mixed in at half, corners 10% darker, grain about 1/255) it could not be seen, so all are stronger: the
