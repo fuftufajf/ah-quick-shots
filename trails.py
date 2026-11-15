@@ -1,6 +1,14 @@
-"""Trails from the wingtips, drawn over a render: two smooth lines behind each aircraft of the shot, fading with
-age, with a soft glow, one colour for the lead aircraft and another for his opponent. Short, they follow the
-aircraft; lasting (up to a minute), they stay in the sky as the ribbons of the fight, to be looked at afterwards.
+"""Trails from the wingtips, drawn over a render: two soft lines of vapour behind each aircraft of the shot, one
+colour for the lead aircraft and another for his opponent. Short, they follow the aircraft; lasting (up to a
+minute), they stay in the sky as the ribbons of the fight, to be looked at afterwards.
+
+A trail has a bright part and a faint remainder. The bright part is sized to the picture, not to the clock: it lasts
+as long as the aircraft takes to cross a share of the picture's width (`reach`), so it reads the same from a camera
+120 ft off the wing and from one half a mile away. Timed alone (2.5 s of trail), a close camera saw only its newest
+quarter of a second, as bright at the picture's edge as at the wingtip: two wires across the frame (seen on a
+render of film13). The remainder stays as far back as the trail reaches and fades to nothing there; a lasting trail
+keeps more of it. The trail is as wide as vapour is, in feet: thin at the wingtip, spreading as it ages, thicker
+near the camera and never thinner than a pixel; close to the lens it comes in gently instead of cutting the frame.
 
 Where the viewer's camera stands at every frame comes from its own projection (`project`'s eye lines); where the
 wingtips were, from the kept tracks. Checked against the viewer's own placing of the aircraft at 1080p: 0.7 px
@@ -16,13 +24,19 @@ from flight_data import _axes, _cross
 STYLE = {
     "seconds": 2.5,      # how far back a trail reaches
     "span": .88,         # the wingtip's offset as a share of the aircraft's visible radius (a Yak's radius 17.9 ft, its tips 15.8 ft out)
-    "width": 1.8,        # the line at the wingtip, pixels of a 1080-high picture
-    "tail": .25,         # its width at the far end, as a share
     "opacity": .75,      # at the wingtip
-    "fade": 1.8,         # opacity falls as (1 - age / seconds) ** fade
-    "glow": 7.0,         # the glow's blur, pixels of a 1080-high picture
-    "glow_gain": 3.5,    # the blurred line brightened this many times
-    "bands": 14,         # steps of opacity along a trail
+    "reach": .3,         # the bright part lasts as long as the aircraft takes to cross this share of the picture's width
+    "remain": .07,       # the remainder's brightness, as a share of the wingtip's
+    "fade": 1.8,         # the remainder falls as (1 - age / seconds) ** fade
+    "core": .12,         # the trail's width at the wingtip, feet
+    "spread": 1.5,       # feet it widens by in a second
+    "thinnest": 1.0,     # what that comes to on the screen at least, pixels of a 1080-high picture
+    "thickest": 6.0,     # and at most
+    "close": (15, 80),   # feet from the camera: nearer than the first a trail is not drawn; up to the second it comes in gently
+    "soft": .8,          # the lines' own blur, pixels of a 1080-high picture: vapour has no hard edge
+    "glow": 5.0,         # the glow's blur, pixels of a 1080-high picture
+    "glow_gain": 1.4,    # the blurred line brightened this many times
+    "bands": 18,         # steps of brightness along a trail, each as large as the next: none stands out as a dash
     "smooth": 2,         # wingtip positions averaged over this many samples either side (not the newest)
     "fine": 1.5,         # the newest seconds sampled at every kept step; before them, about 300 samples a trail
     "thin": 1.5,         # screen points nearer than this many pixels to the last one kept are dropped
@@ -31,10 +45,11 @@ SECONDS = (1.0, 120.0)  # the lengths a page may ask for
 
 
 def style_for(seconds):
-    """STYLE for a trail `seconds` long. A lasting one fades more slowly and narrows less, so the fight's ribbons stay
-    to be read: at a minute, its middle is still 0.77 as bright as its newest part."""
+    """STYLE for a trail `seconds` long. A lasting one keeps more of itself after its bright part and fades more
+    slowly, so the fight's ribbons stay to be read: at a minute the remainder is half as bright as the wingtip, and
+    halfway back still three quarters of that."""
     keep = min(1.0, STYLE["seconds"] / seconds) ** .5
-    return {**STYLE, "seconds": seconds, "fade": STYLE["fade"] * keep, "tail": STYLE["tail"] + (.5 - STYLE["tail"]) * (1 - keep)}
+    return {**STYLE, "seconds": seconds, "fade": STYLE["fade"] * keep, "remain": STYLE["remain"] + (.6 - STYLE["remain"]) * (1 - keep)}
 
 
 def paint(shots, lead, opponent):
@@ -97,6 +112,12 @@ def camera(eye):
 
 def to_screen(cam, p, w, h, near=10.0):
     """Pixels of a w x h picture, or None for a point behind the camera or nearer than `near` feet in front."""
+    seen = _seen(cam, p, w, h, near)
+    return seen and seen[:2]
+
+
+def _seen(cam, p, w, h, near):
+    """As to_screen, with how far in front of the camera the point is: (x, y, feet)."""
     (x, alt, z), ahead, right, up, k = cam
     d = (p[0] - x, p[1] - alt, p[2] - z)
     depth = sum(d[i] * ahead[i] for i in range(3))
@@ -104,7 +125,7 @@ def to_screen(cam, p, w, h, near=10.0):
         return None
     sx = sum(d[i] * right[i] for i in range(3)) / depth / k
     sy = sum(d[i] * up[i] for i in range(3)) / depth / k * w / h
-    return ((sx + 1) / 2 * w, (1 - sy) / 2 * h)
+    return ((sx + 1) / 2 * w, (1 - sy) / 2 * h, depth)
 
 
 def _curve(p0, p1, p2, p3, f):
@@ -136,7 +157,7 @@ def _smooth(points, reach):
 
 
 def _catmull(points, per=3):
-    """Screen points (x, y, age) through a Catmull-Rom curve, `per` pieces between neighbours."""
+    """Screen points (x, y, age, feet off) through a Catmull-Rom curve, `per` pieces between neighbours."""
     if len(points) < 3:
         return points
     out = []
@@ -222,6 +243,11 @@ def lines(frames, tracks, radii, colours, step, fps, w, h, style=STYLE):
             if not rows or not rows[0][0] <= t <= rows[-1][0]:
                 continue
             fill = f"&H{rgb[2]:02X}{rgb[1]:02X}{rgb[0]:02X}&"
+            # How long the bright part lasts: the time this aircraft takes to cross `reach` of the picture's width,
+            # where it is now (see the module's own words).
+            here, before = at(rows, t, step)[0], at(rows, max(rows[0][0], t - .1), step)[0]
+            wide = 2 * max(style["close"][0], math.dist(cam[0], here)) * cam[4]
+            bright = min(style["seconds"], max(.08, style["reach"] * wide / max(50.0, math.dist(here, before) / .1)))
             times, edge = _samples(rows, t, step, style)
             for s in times:
                 if (ident, s) not in tips:
@@ -233,31 +259,50 @@ def lines(frames, tracks, radii, colours, step, fps, w, h, style=STYLE):
                 points = points[:fine] + _smooth(points[fine:], style["smooth"])  # only the steps fine enough to jitter
                 runs, run = [], []
                 for s, p in zip(times, points):
-                    q = to_screen(cam, p, w, h)
-                    if q is None:  # behind the camera: the trail breaks there
+                    q = _seen(cam, p, w, h, style["close"][0])
+                    if q is None:  # behind the camera, or at the lens: the trail breaks there
                         runs.append(run)
                         run = []
                     else:
-                        run.append((q[0], q[1], (t - s) / style["seconds"]))
+                        run.append((*q[:2], (t - s) / style["seconds"], q[2]))
                 runs.append(run)
                 for run in (r for r in runs if len(r) > 1):
-                    yield from _bands(_thin(_catmull(run), style["thin"] * unit), span, fill, unit, style)
+                    yield from _bands(_thin(_catmull(run), style["thin"] * unit), span, fill, unit, style, bright, w / 2 / cam[4])
 
 
-def _bands(curve, span, fill, unit, style):
+def _edges(style, bright):
+    """The ages (shares of the trail's length) at which a trail has lost one more step of its brightness, from the
+    wingtip (0) to its end (1), and the brightness of each piece between them as a share of the wingtip's."""
+    def shine(age):
+        return max(math.exp(-age * style["seconds"] / bright), style["remain"] * (1 - age) ** style["fade"])
+    edges, bands = [0.0], style["bands"]
+    for n in range(1, bands):
+        lo, hi = edges[-1], 1.0
+        for _ in range(18):  # shine only falls: halve the stretch until the step is found
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if shine(mid) > 1 - n / bands else (lo, mid)
+        edges.append(hi)
+    edges.append(1.0)
+    return edges, [1 - (n + .5) / bands for n in range(bands)]
+
+
+def _bands(curve, span, fill, unit, style, bright, scale):
     """A trail as pieces of falling opacity, from the wingtip back; each reaches one point into the younger piece so
-    they join."""
-    out, bands = [], style["bands"]
-    for band in range(bands):
-        lo, hi = band / bands, (band + 1) / bands
+    they join. `bright`: how many seconds the bright part lasts; `scale`: pixels a foot is, one foot from the camera."""
+    out, (lens, clear) = [], style["close"]
+    edges, levels = _edges(style, bright)
+    for lo, hi, level in zip(edges, edges[1:], levels):
         index = [i for i, c in enumerate(curve) if lo - 1e-9 <= c[2] <= hi + 1e-9]
         if not index:
             continue
         piece = curve[index[0]:min(len(curve), index[-1] + 2)]
-        opacity = style["opacity"] * (1 - (lo + hi) / 2) ** style["fade"]
+        off = sum(c[3] for c in piece) / len(piece)
+        opacity = style["opacity"] * level * min(1.0, max(0.0, (off - lens) / (clear - lens)))
         if len(piece) < 2 or opacity < .01:
             continue
-        widths = [unit * style["width"] * (1 - (1 - style["tail"]) * c[2]) for c in piece]
+        # In feet, so thicker near the camera; never under a real pixel, or a draft's trail would be a third of one.
+        widths = [max(1.0, unit * min(style["thickest"], max(style["thinnest"], (style["core"] + style["spread"] * c[2] * style["seconds"]) * scale / c[3] / unit)))
+                  for c in piece]
         alpha = f"&H{255 - round(255 * opacity):02X}&"
         out.append(f"Dialogue: 0,{span},T,,0,0,0,,{{\\an7\\pos(0,0)\\p3\\bord0\\shad0\\1c{fill}\\1a{alpha}}}"
                    + _ribbon([(c[0], c[1]) for c in piece], widths))
@@ -268,6 +313,7 @@ def filters(path, height, style=STYLE):
     """ffmpeg filters laying the trails of the ASS script at `path` over a video `height` pixels high, with their
     glow: one input, one output."""
     gain = f"min(255,val*{style['glow_gain']:g})"
-    return (f"format=gbrp,split[tr0][tr1];[tr1]lutrgb=r=0:g=0:b=0,subtitles=filename='{graph_path(path)}',split[tr2][tr3];"
+    soft = f",gblur=sigma={style['soft'] * height / 1080:.2f}" if style["soft"] else ""
+    return (f"format=gbrp,split[tr0][tr1];[tr1]lutrgb=r=0:g=0:b=0,subtitles=filename='{graph_path(path)}'{soft},split[tr2][tr3];"
             f"[tr3]gblur=sigma={style['glow'] * height / 1080:.1f},lutrgb=r='{gain}':g='{gain}':b='{gain}'[tr4];"
             f"[tr2][tr4]blend=all_mode=addition[tr5];[tr0][tr5]blend=all_mode=screen")

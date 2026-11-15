@@ -154,7 +154,8 @@ class Desk:
         self.data = {"connected": False, "films": [], "project": None, "planes": [],
                      "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None, "flight": None,
                      "preview": None, "proposals": [], "job": None, "videos": str(self.videos), "renders": [],
-                     "ffmpeg": bool(shutil.which("ffmpeg")), "overlays": None, "assembly": None, "assembling": None}
+                     "ffmpeg": bool(shutil.which("ffmpeg")), "overlays": None, "assembly": None, "assembling": None,
+                     "pace": json.loads((self.root / "pace.json").read_text(encoding="utf-8")) if (self.root / "pace.json").exists() else {}}
 
     @staticmethod
     def _drop(path):
@@ -245,6 +246,16 @@ class Desk:
             renders = self.data["renders"] + [row]
             self._write(self._file(film, ".renders"), renders)
             self.data["renders"] = renders
+
+    def _paced(self, quality, ratio):
+        """This PC against the one the page's estimates were measured on. A render that took `ratio` times its
+        estimate moves that quality's pace halfway there, and the page multiplies its next estimates by it: after a
+        few renders they are this PC's own.
+        shortcut: one number a quality, not one an effect; time each effect apart if the estimates stay off"""
+        with self.lock:
+            pace = {**self.data["pace"], quality: round(self.data["pace"].get(quality, 1) * (1 + (min(4, max(.25, ratio)) - 1) / 2), 3)}
+            self._write(self.root / "pace.json", pace)
+            self.data["pace"] = pace
 
     def _log(self):
         """The error being handled, with where it happened, added to errors.log beside the saved shots: the desk has
@@ -1016,9 +1027,12 @@ class Desk:
             # Read before the first render: touching the film between renders can thin the next one's sound (TAIL).
             segments = {s["id"]: self._segment(project, s) for s in shots}
         files = []
-        if quality == "draft":  # measured: about real time; the larger sizes have not been timed
-            with self.lock:
-                self.data["job"]["expect"] = round(sum(s["end"] - s["start"] for s in shots) + 2 * len(rows), 1)
+        # How long it should take: the page says (it shows what each effect costs before the render is asked for:
+        # renderCost in desk.js). Without that, only a draft is known: about real time.
+        expect = number(raw["expect"], 1, 86400, "expect") if raw.get("expect") is not None else (
+            sum(s["end"] - s["start"] for s in shots) + 2 * len(rows) if quality == "draft" else None)
+        with self.lock:
+            self.data["job"]["expect"] = expect and round(expect, 1)
         width, height, fps = map(int, RENDERS[quality].split())
         blur = fps if raw.get("blur") and shutil.which("ffmpeg") else None
         filters = style(width, height, bool(raw.get("look")), bool(raw.get("haze"))) if shutil.which("ffmpeg") else ""
@@ -1054,6 +1068,8 @@ class Desk:
         finally:
             for script in scripts:  # those of videos never reached too: a render that fails leaves none behind
                 script.unlink(missing_ok=True)
+        if raw.get("expect") is not None:
+            self._paced(quality, (time.monotonic() - self.data["job"]["clock"]) / expect)
         self._tidy()
         with self.lock:
             self.data["preview"] = {"url": files[0]["url"], "kind": "video", "time": shots[0]["start"],

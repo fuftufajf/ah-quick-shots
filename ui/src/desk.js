@@ -329,6 +329,56 @@ export function momentLabel(event) {
   return event.text;
 }
 
+// How many videos a render of these shots makes: one a shot when asked apart, else as few as hold them without two
+// shots of one stretch sharing a video (as the desk deals them: passes in shot_plan.py).
+export function videosOf(shots, apart) {
+  if (apart) return shots.length;
+  const ends = [];
+  for (const shot of [...shots].sort((a, b) => a.start - b.start)) {
+    const row = ends.findIndex(end => end <= shot.start + .001);
+    if (row < 0) ends.push(shot.end); else ends[row] = shot.end;
+  }
+  return ends.length;
+}
+
+// What a second of film costs, in seconds, on the PC these were measured on (docs/how-it-works.md, "What a render
+// costs"): `viewer` Film Viewer's own render, `fast` one of the four passes of motion blur (at 120 frames a second),
+// `plain` ffmpeg cutting the lead-in off, then what each effect adds to ffmpeg's work; `lasting` is what a
+// half-minute trail adds over a short one. ffmpeg's share was timed at 1080p60 and 4K; the viewer's at 1080p60 (7 s
+// of film in 17 s plain, 67 s with motion blur). Not timed: the viewer at 4K (twice its 1080p speed is assumed), the
+// draft's ffmpeg (a sixth of 1080p's, by its pixels and frames) and the viewer telling the trails where its camera
+// is (1.5 s a second assumed). The desk's own pace (below) corrects the sum after the first render at each size.
+const COSTS = {
+  draft: {viewer: 1.0, fast: 1.1, plain: .05, blend: .1, look: .15, haze: .15, trails: 1.4, lasting: .2},
+  final: {viewer: 1.4, fast: 1.7, plain: .22, blend: .4, look: 1.0, haze: 1.1, trails: 4.7, lasting: 1.0},
+  "4k": {viewer: 2.9, fast: 3.4, plain: .85, blend: 1.6, look: 4.8, haze: 4.0, trails: 14.7, lasting: 6.0},
+};
+const LEAD = 2, PAUSE = 4;  // each video starts two seconds early; a seek, a pause and the last clip's sound come before it
+
+// What a render takes, in seconds, before it is asked for: `render` the plain render, then what each effect would
+// add (whether it is ticked or not: the page shows the price of each), and `total` for those that are ticked.
+// `pace` is this PC against the measured one, as the desk has learned it from its own renders (state.pace).
+export function renderCost({film, videos, quality, blur, look, haze, trails, trailSeconds = 2.5}, pace = 1) {
+  const cost = COSTS[quality] || COSTS.final, rendered = film + LEAD * videos;
+  const parts = {
+    render: (rendered * (cost.viewer + cost.plain) + PAUSE * videos) * pace,
+    blur: rendered * (4 * cost.fast - cost.viewer + cost.blend) * pace,
+    look: film * cost.look * pace,
+    haze: film * cost.haze * pace,
+    trails: film * (cost.trails + cost.lasting * Math.min(2, Math.max(0, (trailSeconds - 2.5) / 27.5))) * pace,
+  };
+  const total = parts.render + (blur ? parts.blur : 0) + (look ? parts.look : 0) + (haze ? parts.haze : 0) + (trails ? parts.trails : 0);
+  return {...parts, total};
+}
+
+// "45 s", "2 min 40 s", "1 h 5 min": a length of time as people say it, rounded as far as an estimate deserves.
+export function howLong(seconds) {
+  if (seconds < 90) return `${Math.max(5, Math.round(seconds / 5) * 5)} s`;
+  const tens = Math.round(seconds / 10) * 10, minutes = Math.round(seconds / 60);
+  if (tens < 3600) return `${Math.floor(tens / 60)} min${tens % 60 ? ` ${tens % 60} s` : ""}`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
 export async function request(path, body) {
   const response = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
   const result = await response.json();

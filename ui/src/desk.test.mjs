@@ -140,3 +140,4 @@ assert.ok(ANGLES.every(a => ANGLES.some(b => b.key === angleOf({...shot, ...a.ma
 assert.ok(ANGLES.every(a => a.make(cast).every(v => v.hero === 19 || v.hero === 10)));
 console.log('OK: moment search, fights, film times, shot creation and angle presets');
 await import("./assembly.test.mjs");
+await import("./cost.test.mjs");

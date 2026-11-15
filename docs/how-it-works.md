@@ -251,12 +251,24 @@ Resolve; an aircraft against the sky and clouds stayed as they were. An aircraft
 in front of the horizon is misted with it. Haze and film look on 5 s of 4K:
 53 s.
 
-Trails (experimental, `trails.py`) draws two smooth lines from the wingtips of
-each shot's aircraft with a soft glow: the lead aircraft in one colour, his
-opponent in another. Short (2.5 s) they follow the aircraft; lasting (up to a
-minute) they fade more slowly and narrow less, so the fight's ribbons stay in
-the sky for a wide shot afterwards (halfway back a minute-long trail is still
-three quarters as bright). The newest 1.5 s are drawn through every kept step,
+Trails (experimental, `trails.py`) draws two soft lines of vapour from the
+wingtips of each shot's aircraft: the lead aircraft in one colour, his opponent
+in another. A trail has a bright part and a faint remainder. The bright part is
+sized to the picture, not to the clock: it lasts as long as the aircraft takes
+to cross three tenths of the picture's width, so it reads the same from a
+camera 120 ft off the wing and from one half a mile away. Timed alone, a close
+camera saw only the trail's newest quarter of a second, as bright at the
+picture's edge as at the wingtip: two wires across the frame (seen on a render
+of a pair shot, where the offline drawing matched the viewer's own). The
+remainder stays as far back as the trail reaches (2.5 s short, up to a minute
+lasting) and fades to nothing there; a lasting trail keeps more of it, so the
+fight's ribbons stay in the sky for a wide shot afterwards (halfway back a
+minute-long trail is still three quarters as bright as its remainder begins).
+The trail is as wide as vapour, in feet: an inch and a half at the wingtip,
+spreading a foot and a half a second, so it is thicker near the camera, never
+thinner than a pixel, and within 80 ft of the lens it comes in gently instead
+of cutting the frame. Its brightness falls in equal steps, so none shows as a
+dash. The newest 1.5 s are drawn through every kept step,
 the rest through about 300 points fixed in film time, so a long trail neither
 shimmers nor slows the render much. Before the first render the desk keeps
 every aircraft's track from the trail's length before the video, and asks the viewer's `project` where the
@@ -273,6 +285,35 @@ behind what stands in front of it. The script is written line by line and
 grows with the video (measured: 1.5 to 3.4 MB a second), so trails go on one
 video of up to 120 s whose shots lie within ten minutes of film; beyond that
 the desk asks for A file per shot.
+
+**What a render costs.** The page says it before the render is asked for:
+beside each effect what it would add, above Render selected the whole
+(`renderCost` in `ui/src/desk.js`), and the desk's progress bar runs on the
+same estimate. Seconds for one second of film, measured on one PC (a 7 s pair
+shot of film13):
+
+| | 1080p60 | 4K |
+| --- | --- | --- |
+| Film Viewer's own render | 1.4 | not timed: 2.9 assumed |
+| one of motion blur's four passes (120 fps) | 1.7 | not timed: 3.4 assumed |
+| ffmpeg cutting the lead-in off | 0.22 | 0.85 |
+| ffmpeg blending the four passes | 0.4 | not timed: 1.6 assumed |
+| film look | + 1.0 | + 4.8 |
+| haze | + 1.1 | + 4.0 |
+| trails, short (ffmpeg 3.1, the script 0.1) | + 3.2 | + 13.2 |
+| trails, half a minute long | + 1.0 more | + 6.0 more |
+
+The effects add up nearly as a sum (look, haze and lasting trails together:
+6.8 against 6.4). Motion blur is the dearest because the viewer renders the
+film four times; the trails' share is libass drawing and ffmpeg's glow, and
+what the viewer takes to tell where its camera is at every frame has not been
+timed apart (1.5 is assumed). A draft is taken as a sixth of 1080p's ffmpeg
+work, the viewer at about real time. Each video adds its two seconds of
+lead-in and about four of waiting. Another PC is faster or slower, so the desk
+keeps a pace for each size (`.quickshots/pace.json`, `state.pace`): a render
+that took `r` times its estimate moves the pace halfway there, and the page
+multiplies its next estimates by it. Until a size has been rendered once, the
+page says the estimate was measured on another PC.
 
 Data overlay (16:9 and 9:16) adds, beside every rendered video, two transparent
 films of the same length and frame rate to lay over it in an editor: a card with

@@ -503,8 +503,19 @@ class DeskTests(unittest.TestCase):
         events = [line for line in text.splitlines() if line.startswith("Dialogue:")]
         firsts = [e for e in events if ",0:00:00.00,0:00:00.01," in e]
         style = trails.STYLE
-        seen = sum(style["opacity"] * (1 - (b + .5) / style["bands"]) ** style["fade"] >= .01 for b in range(style["bands"]))
-        self.assertEqual(len(firsts), 2 * seen)  # two wingtips, each band that is not too faint to see
+        seen = sum(style["opacity"] * (1 - (b + .5) / style["bands"]) >= .01 for b in range(style["bands"]))
+        self.assertEqual(len(firsts), 2 * seen)  # two wingtips, each step of brightness that is not too faint to see
+        # The bright part is sized to the picture, not to the clock: where the aircraft takes twice as long to cross
+        # the picture (a camera twice as far), the trail keeps its brightness twice as long. Half is gone after
+        # ln 2 of that time.
+        close, far = (trails._edges(style, bright)[0] for bright in (.2, .4))
+        self.assertEqual(close, sorted(close))
+        self.assertAlmostEqual(far[4] / close[4], 2, places=2)
+        self.assertAlmostEqual(close[style["bands"] // 2] * style["seconds"], .2 * math.log(2), places=2)
+        # At the lens a trail is not drawn at all: it would cut the frame in two.
+        at_lens = (0.0, 1000.0, 300.0 * 3.5 - 5, 0.0, 0.0, 0.0, 1.2)  # on the flight path itself, looking along it
+        behind = trails.script([(3.5, at_lens)], {7: rows}, {7: .1}, {7: (255, 255, 255)}, .02, 60, 1920, 1080)
+        self.assertNotIn("Dialogue:", behind)
         self.assertFalse([e for e in events if ",0:00:00.01,0:00:00.03," in e])  # no camera, no trails
         self.assertTrue(all("\\1c&H0080FF&" in e for e in events))
         alphas = [int(e.split("\\1a&H")[1][:2], 16) for e in firsts[:seen]]  # one wingtip's, from the wingtip back
@@ -781,6 +792,25 @@ class DeskTests(unittest.TestCase):
         self.assertTrue(all(clip["file"].exists() for clip in clips))  # the clips stay: they are the pilot's videos
         finishing.assemble(clips[:1], None, folder / "one.mp4", 160, 90, 30)  # one clip, no music
         self.assertTrue((folder / "one.mp4").stat().st_size > 1000)
+
+    def test_the_desk_learns_how_this_pc_compares_with_the_page_s_estimate(self):
+        def native(command, progress):
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"film")
+            return []
+        self.desk.viewer.command = native
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "kind": "cockpit", "target": None}]})
+        seen = []
+        keep = self.desk._keep
+        self.desk._keep = lambda *args: (seen.append(self.desk.snapshot()["job"]["expect"]), keep(*args))[1]
+        self.run_action({"action": "export_cut", "quality": "final", "expect": 40})
+        # The page's estimate is the job's; this render took no time at all, so the pace moves halfway to a quarter.
+        self.assertEqual((seen, self.desk.snapshot()["pace"]), ([40], {"final": .625}))
+        self.run_action({"action": "export_cut", "quality": "final", "expect": 40})
+        self.assertEqual(self.desk.snapshot()["pace"], {"final": round(.625 * .625, 3)})
+        self.assertEqual(Desk(self.temp.name, self.viewer).data["pace"], self.desk.snapshot()["pace"])  # kept with the desk
+        self.run_action({"action": "export_cut", "quality": "4k"})  # no estimate, nothing learned
+        self.assertEqual(list(self.desk.snapshot()["pace"]), ["final"])
 
     def test_take_offs_and_touchdowns_are_found_in_the_filmer_s_path(self):
         # Parked, a roll, a lift-off at 18 s, a flight, a landing at 60 s that stops at 64 s; then a second sortie

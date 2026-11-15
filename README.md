@@ -105,7 +105,9 @@ unzipping.
    Trails (two smooth lines from the wingtips of the shot's aircraft, yours and
    your opponent's in colours you pick; short ones follow the aircraft, lasting
    ones leave the fight's ribbons in the sky for a wide shot afterwards) are
-   experimental and still being tuned. Add my kills makes four
+   experimental and still being tuned. Beside each of these the page says
+   what it adds to the render's time, and above Render selected the whole of
+   it: estimates, corrected to your PC after each render. Add my kills makes four
    shots for every kill of yours: you closing in, your guns, him going down,
    you flying on. Take-offs & landings finds yours in your flight path and adds
    a few shots for each: the roll, the wheels, the lift-off with the camera

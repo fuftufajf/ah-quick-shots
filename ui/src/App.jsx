@@ -1,7 +1,7 @@
 import {useEffect, useMemo, useRef, useState} from "react";
 import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Trash, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, request, trimShot, zoomCamera} from "./desk.js";
+import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, videosOf, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
@@ -484,7 +484,7 @@ export function App() {
 
   // Shots rendered with the options set under The cut. The assembly asks for a file per shot.
   function renderCut(ids, each) {
-    action("export_cut", {shot_ids: ids, quality, apart: each, overlay: withOverlay && !!desk.ffmpeg, blur: withBlur && !!desk.ffmpeg, look: withLook && !!desk.ffmpeg, haze: withHaze && !!desk.ffmpeg, trails: withTrails && !!desk.ffmpeg && {lead: trailLead, opponent: trailOpponent, seconds: trailSeconds}, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
+    action("export_cut", {shot_ids: ids, quality, apart: each, expect: costOf(ids, each).total, overlay: withOverlay && !!desk.ffmpeg, blur: withBlur && !!desk.ffmpeg, look: withLook && !!desk.ffmpeg, haze: withHaze && !!desk.ffmpeg, trails: withTrails && !!desk.ffmpeg && {lead: trailLead, opponent: trailOpponent, seconds: trailSeconds}, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
   }
 
   // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
@@ -506,6 +506,15 @@ export function App() {
   const place = t => Math.max(0, Math.min(100, (t - from) / (to - from) * 100));
   const span = s => ({left: `${place(s.start)}%`, width: `${place(s.end) - place(s.start)}%`});
   const chosen = shots.filter(s => !skipped.has(s.id)).map(s => s.id);
+  // What rendering these shots would take and what each effect adds to it, said before the render is asked for.
+  // The desk learns this PC's pace from its own renders; until one is done at a size, it is the measured PC's.
+  function costOf(ids, each) {
+    const picked = shots.filter(s => ids.includes(s.id)), film = picked.reduce((sum, s) => sum + s.end - s.start, 0);
+    return {film, videos: videosOf(picked, each), ...renderCost({film, videos: videosOf(picked, each), quality, blur: withBlur && !!desk.ffmpeg,
+      look: withLook && !!desk.ffmpeg, haze: withHaze && !!desk.ffmpeg, trails: withTrails && !!desk.ffmpeg, trailSeconds}, desk.pace?.[quality] ?? 1)};
+  }
+  const cost = costOf(chosen, apart);
+  const price = seconds => chosen.length > 0 && !!desk.ffmpeg && <small className="cost">+ {howLong(seconds)}</small>;
   const video = desk.preview?.kind === "video" && desk.preview.url !== closedVideo ? desk.preview : null;
   const still = desk.preview?.kind === "image" ? desk.preview : null;
   const status = working ? desk.job?.message || "Submitting operation" : desk.job?.error || (desk.connected ? "Ready" : "Start Film Viewer, then connect");
@@ -674,10 +683,10 @@ export function App() {
           <select aria-label="Render quality" value={quality} onChange={e => setQuality(e.target.value)}><option value="final">1080p60</option><option value="4k">4K · 2160p60</option><option value="draft">Quick draft</option></select>
           <select aria-label="Render as" value={apart ? "apart" : "one"} onChange={e => setApart(e.target.value === "apart")} title="One video with the gaps left out, or a file for every shot to cut in an editor"><option value="one">One video</option><option value="apart">A file per shot</option></select>
           <label className="option" title={desk.ffmpeg ? "Beside every video, a transparent film of your speed, height, climb and G and the range to your opponent, to lay over it in an editor: one for a 16:9 timeline, one for a 9:16 reel" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withOverlay && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithOverlay(e.target.checked)}/> Data overlay (16:9 and 9:16)</label>
-          <label className="option" title={desk.ffmpeg ? "Film Viewer renders the video four times, a quarter of a frame apart, and ffmpeg blends them like a camera's shutter: real blur on fast motion. Takes about four times as long" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withBlur && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithBlur(e.target.checked)}/> Motion blur</label>
-          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Colour, bloom, a red glow round highlights, a vignette and grain, like a film camera: fitted to a DaVinci Resolve grade of this footage" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withLook && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithLook(e.target.checked)}/> Film look (experimental)</label>
-          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Mist along the horizon: the far ground and the sky just above it fade into haze, found by colour. Aircraft against the sky and the cockpit stay clear" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withHaze && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithHaze(e.target.checked)}/> Haze (experimental)</label>
-          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Two smooth lines from the wingtips of the shot's aircraft, fading behind them, with a soft glow. Not in the pilot's view or the bomb ride" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withTrails && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithTrails(e.target.checked)}/> Trails (experimental)</label>
+          <label className="option" title={desk.ffmpeg ? "Film Viewer renders the video four times, a quarter of a frame apart, and ffmpeg blends them like a camera's shutter: real blur on fast motion. Takes about four times as long" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withBlur && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithBlur(e.target.checked)}/> Motion blur{price(cost.blur)}</label>
+          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Colour, bloom, a red glow round highlights, a vignette and grain, like a film camera: fitted to a DaVinci Resolve grade of this footage" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withLook && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithLook(e.target.checked)}/> Film look (experimental){price(cost.look)}</label>
+          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Mist along the horizon: the far ground and the sky just above it fade into haze, found by colour. Aircraft against the sky and the cockpit stay clear" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withHaze && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithHaze(e.target.checked)}/> Haze (experimental){price(cost.haze)}</label>
+          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Two smooth lines from the wingtips of the shot's aircraft, fading behind them, with a soft glow. Not in the pilot's view or the bomb ride" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withTrails && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithTrails(e.target.checked)}/> Trails (experimental){price(cost.trails)}</label>
           {withTrails && !!desk.ffmpeg && <>
             <input type="color" className="swatch" value={trailLead} onChange={e => setTrailLead(e.target.value)} title="Your trails' colour (the lead aircraft of each shot)" aria-label="Your trail colour"/>
             <input type="color" className="swatch" value={trailOpponent} onChange={e => setTrailOpponent(e.target.value)} title="Your opponent's trails' colour" aria-label="Opponent's trail colour"/>
@@ -685,6 +694,7 @@ export function App() {
               <option value={2.5}>Short</option><option value={10}>10 s</option><option value={30}>30 s</option><option value={60}>Lasting (1 min)</option>
             </select>
           </>}
+          {chosen.length > 0 && <p className="cost-total" title="The plain render, and what each ticked effect adds to it. Estimates: the desk corrects them to this PC after each render">About <b>{howLong(cost.total)}</b> for {howLong(cost.film)} of film{cost.videos > 1 ? ` in ${cost.videos} videos` : ""}: plain {howLong(cost.render)}{cost.total > cost.render + 1 ? `, effects + ${howLong(cost.total - cost.render)}` : ""}{desk.pace?.[quality] == null ? " · measured on another PC until this one has rendered at this size" : ""}</p>}
           <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; renderCut(chosen, apart); }} title={dirty ? "Add or update the shot first" : apart ? "A video of each ticked shot, in its own file" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>
           <button onClick={openVideos} title={`Finished videos are kept in ${desk.videos}`}><FolderOpen/> Videos folder</button></div>
       </aside>
