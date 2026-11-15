@@ -27,7 +27,7 @@ from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 ACTIONS = ("connect", "open", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "export_cut")
 RENDERS = {"draft": "960 540", "final": "1920 1080", "4k": "3840 2160"}
 # Frames a second of a finished video: 30 unless 60 is asked for (the operator's choice: more like film, and with
-# motion blur one pass of the viewer instead of four, see PASSES).
+# motion blur two passes of the viewer instead of four, see PASSES).
 RATES = (30, 60)
 
 
@@ -487,13 +487,13 @@ class Desk:
             self.progress(f"Film Viewer is finishing the last clip's sound: {math.ceil(self.quiet - time.monotonic())} s, so this one keeps its own")
             time.sleep(.25)
         self._go_on()
-        self._stage(label or f"Rendering {end - start:.1f} s of film")
         if abs(self.data["now"] - (start - early)) > .5:
             # A render that began far from where the film stood came out with its first second silent, just after
             # opening a film (-49 dB, 5 of 5). A seek there and 2 s paused kept it whole (2 of 2); a seek alone, or
             # with a still drawn, did not. Paused, not playing: playing before a render thins its sound (see LEAD).
             self._seek(start - early)
             time.sleep(2 * self.pace)
+        self._stage(label or f"Rendering {end - start:.1f} s of film")  # after the seek, whose message it replaces
         whole = path.with_name(path.stem + "-lead" + path.suffix) if early or blur or filters else path
         parts = [whole.with_name(f"{whole.stem}{n}{whole.suffix}") for n in range(PASSES[blur])] if blur else [whole]
         # The viewer answers a render only when it is done (measured: 1.1 to 1.7 times the stretch at 1080p, 4K not

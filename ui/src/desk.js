@@ -443,7 +443,7 @@ const COSTS = {
   "4k": {rate: 60, viewer: 2.9, fast: 3.4, plain: .85, blend: 1.6, look: 4.8, haze: 4.0, trails: 14.7, lasting: 6.0},
 };
 const LEAD = 2, PAUSE = 4;  // each video starts two seconds early; a seek, a pause and the last clip's sound come before it
-const PASSES = {30: 1, 60: 4};  // motion blur's renders by the viewer at 120 fps, for a video at 30 or 60 fps (finishing.py)
+const PASSES = {30: 2, 60: 4};  // motion blur's renders by the viewer at 120 fps, for a video at 30 or 60 fps (finishing.py)
 
 // What a render takes, in seconds, before it is asked for: `render` the plain render, then what each effect would
 // add (whether it is ticked or not: the page shows the price of each), and `total` for those that are ticked.

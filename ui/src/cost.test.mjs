@@ -27,10 +27,10 @@ assert.ok(plain.blur > plain.trails && plain.trails > plain.look);
 assert.ok(renderCost({...ask, trailSeconds: 30}).trails > plain.trails);
 assert.ok(renderCost({...ask, quality: "4k"}).total > plain.total && plain.total > renderCost({...ask, quality: "draft"}).total);
 assert.ok(renderCost({...ask, film: 60}).look === 2 * plain.look);
-// At 30 fps, the default, ffmpeg's work and the trails' are half, and motion blur is one pass of the viewer.
+// At 30 fps, the default, ffmpeg's work and the trails' are half, and motion blur is two passes of the viewer.
 const film = renderCost({...ask, fps: 30});
 assert.ok(Math.abs(film.look - plain.look / 2) < 1e-9 && Math.abs(film.trails - plain.trails / 2) < 1e-9);
-assert.ok(film.blur > 0 && film.blur < plain.blur / 4 && film.render < plain.render);
+assert.ok(film.blur > 0 && film.blur < plain.blur / 2 && film.render < plain.render);
 // The desk's pace for this PC scales all of it.
 assert.ok(Math.abs(renderCost({...ask, blur: true}, 1.5).total - 1.5 * renderCost({...ask, blur: true}).total) < 1e-9);
 

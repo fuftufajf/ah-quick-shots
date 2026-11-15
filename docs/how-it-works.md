@@ -286,12 +286,14 @@ Motion blur renders each video at 120 fps, the viewer's most, and ffmpeg makes
 each frame the mean of all the frames in its time, as a 360° shutter does. The
 blur is made of the viewer's own frames: nothing is guessed. At 30 fps (the
 default, and why motion blur is ticked from the start: 30 frames without it
-look jerky) one pass gives four frames a frame. At 60 fps the video is rendered
-four times, each pass a quarter of a frame (1/480 s) after the one before, and
-ffmpeg weaves the passes: eight frames a frame. There a film camera's 180° (the
-first four) left too little to see, two a frame at 120 fps gave a double image
-instead of a streak, and ffmpeg's motion interpolation took 130 times the film's
-length. One pass at 30 fps has not been looked at on a render yet. The sound is
+look jerky) the video is rendered twice, the second pass half a frame of
+120 fps (1/240 s) after the first; at 60 fps four times, each a quarter of a
+frame (1/480 s) after the one before. ffmpeg weaves the passes: eight frames a
+frame either way. A film camera's 180° (half of them) left too little to see;
+two a frame at 120 fps gave a double image instead of a streak; one pass at
+30 fps, four a frame, drew the edges of an aircraft in a fast roll as four
+steps (a 15 s render at 1080p30, 46 s in all). ffmpeg's motion interpolation
+took 130 times the film's length. The sound is
 the first pass's. Measured on a 7 s shot at 1080p60: 67 s with blur, 17 s
 without.
 
@@ -384,9 +386,12 @@ shot of film13):
 | trails, half a minute long | + 1.0 more | + 6.0 more |
 
 At 30 fps the page takes ffmpeg's share and the trails' as half of these,
-blending as a quarter (one pass instead of four), and the viewer's own render
-as at 60: worked out, not timed. Motion blur then costs a pass at 120 fps less
-the plain render, about a third of a second a second at 1080p instead of 5.6.
+blending as half (two passes instead of four), and the viewer's own render as
+at 60: worked out, not timed. Motion blur then costs two passes at 120 fps less
+the plain render, about 2.2 s a second at 1080p instead of 5.6. One render
+seen at 1080p30 with one pass (15 s of film, 46 s in all, of which about 5 s
+waiting for the last clip's sound and 3 s of ffmpeg) came out a third slower
+than said; the desk's pace took that in.
 
 The effects add up nearly as a sum (look, haze and lasting trails together:
 6.8 against 6.4). A lasting trail is cut off a picture's width outside the

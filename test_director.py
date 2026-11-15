@@ -486,9 +486,9 @@ class DeskTests(unittest.TestCase):
             self.run_action({"action": "export_cut", "quality": "4k", "effects": {"blur": True, "look": True}})
         videos = [c.split() for c in commands if c.startswith("video ")]
         self.assertEqual([(v[1], v[2], v[4:]) for v in videos[:4]], [(f"{1 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
-        # At 30 fps, the default, one pass at 120 fps gives four frames a frame.
-        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[4:]], [("1.00000000", "5.00000000", ["3840", "2160", "120"])])
-        self.assertEqual(blends, [([True] * 4, 2, 60, ""), ([True], 2, 30, finishing.style(3840, 2160, True, True))])
+        # At 30 fps, the default, two passes half a frame of 120 fps apart give eight frames a frame, as at 60.
+        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[4:]], [(f"{1 + n / 240:.8f}", f"{5 + n / 240:.8f}", ["3840", "2160", "120"]) for n in range(2)])
+        self.assertEqual(blends, [([True] * 4, 2, 60, ""), ([True] * 2, 2, 30, finishing.style(3840, 2160, True, True))])
 
     def test_the_film_look_goes_on_in_ffmpeg_even_with_no_lead_in_to_cut(self):
         trims = []
@@ -561,10 +561,11 @@ class DeskTests(unittest.TestCase):
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,nb_frames",
                                 "-of", "csv=p=0", str(parts[0])], capture_output=True, text=True).stdout.split()
         self.assertEqual(probe[0], "video,30")
-        # At 30 fps a single pass is blended, four of its frames a frame.
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=120:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
-                        "-c:v", "libx264", "-c:a", "aac", str(parts[1])], check=True)
-        finishing.blend(parts[1:2], target, .5, 30)
+        # At 30 fps two passes are blended, eight of their frames a frame.
+        for part in parts[1:3]:
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=120:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
+                            "-c:v", "libx264", "-c:a", "aac", str(part)], check=True)
+        finishing.blend(parts[1:3], target, .5, 30)
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
                                 "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.split()
         self.assertEqual(probe[0], "video,30/1,30")

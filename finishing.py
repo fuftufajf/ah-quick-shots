@@ -9,12 +9,12 @@ import threading
 # With motion blur a video is rendered PASSES[its frame rate] times at the viewer's most, FASTEST frames a second ("fps
 # 1 to 120", it answers to more), each pass that share of a frame of FASTEST later, and ffmpeg weaves them and makes
 # each frame the mean of all the frames in its time, as a 360° shutter does: real blur from the viewer's own frames.
-# At 60 fps four passes, eight frames a frame: half of them (a film camera's 180°) left too little to see, and two
-# frames a frame at 120 showed a double image, not a streak. At 30 fps one pass gives four frames a frame (the
-# operator's choice: the render four times shorter; not yet looked at on a render). ffmpeg's motion interpolation
+# Eight frames a frame: four passes at 60 fps, two at 30. Half of them (a film camera's 180°) left too little to see;
+# two frames a frame at 120 showed a double image, not a streak; one pass at 30 fps, four frames a frame, showed the
+# edges of an aircraft in a fast roll as four steps (operator's render, 15 Nov 2026). ffmpeg's motion interpolation
 # took 130 times the film's length.
 FASTEST = 120
-PASSES = {30: 1, 60: 4}
+PASSES = {30: 2, 60: 4}
 # The film look: the colour of a DaVinci Resolve grade (Film Look Creator), fitted as a LUT to stills of the same
 # footage before and after it, then bloom, a red halation round highlights, a vignette and grain. As faint as the grade
 # (its colour mixed in at half, corners 10% darker, grain about 1/255) it could not be seen, so all are stronger: the
@@ -85,9 +85,9 @@ def blend(sources, target, seconds, fps, filters=""):
     """The passes of a blurred video (see PASSES), as `target` at `fps` with the first pass's sound: as `trim`."""
     rate = FASTEST * len(sources)
     each = rate // fps  # woven frames in one frame's time: all of them make it
-    weave = ("".join(f"[{n}:v]setpts=PTS+{n}/{rate}/TB[w{n}];" for n in range(len(sources))) + "".join(f"[w{n}]" for n in range(len(sources)))
-             + f"interleave=nb_inputs={len(sources)}," if len(sources) > 1 else "[0:v]")
-    graph = (weave + f"tmix=frames={each},select='eq(mod(n,{each}),{each - 1})',setpts=N/{fps}/TB"
+    weave = "".join(f"[{n}:v]setpts=PTS+{n}/{rate}/TB[w{n}];" for n in range(len(sources)))
+    graph = (weave + "".join(f"[w{n}]" for n in range(len(sources))) + f"interleave=nb_inputs={len(sources)},"
+             f"tmix=frames={each},select='eq(mod(n,{each}),{each - 1})',setpts=N/{fps}/TB"
              + (f",{filters}" if filters else "") + "[v]")
     encode([a for s in sources for a in ("-ss", f"{seconds:.6f}", "-i", str(s))],
            ["-filter_complex", graph, "-map", "[v]", "-map", "0:a?", "-r", str(fps)], sources, target, "blend the motion blur")
