@@ -22,9 +22,19 @@ connection disconnects the first.
 
 ## Working down the page
 
-**Moments.** The film library lists the newest film first; the bin beside Open
-moves the chosen replay to the Recycle Bin (not the open one, which Film Viewer
-holds; its saved shots and videos stay). "Fights" is one row
+**Moments.** The film library lists the replays opened lately (up to eight),
+then all of them, the newest first; the bin beside Open moves the chosen
+replay to the Recycle Bin (its saved shots and videos stay). Film Viewer
+holds the open replay and has no command to let go of a film, only to open
+another; Windows then refuses to delete or rename the file (checked on the
+viewer: a sharing violation). So the bin only marks the open one, the count
+of marked replays shows on it, and the desk moves them to the Recycle Bin
+when another replay is opened; a second press takes the mark off. The open
+replay's name stands large above the picture: type another and press Enter
+(Rename), and its file is renamed with its saved shots, the record of its
+videos and its assembly. For that the desk has the viewer open another
+replay, renames the file and opens it again, so it needs a second replay in
+the films folder. "Fights" is one row
 per engagement of the recording pilot: their bursts, hits given and taken and
 kills, grouped when less than twelve seconds apart, and closed by a kill of
 theirs. A row names the kill, or the hits, and its opponent is whoever took the
@@ -704,8 +714,11 @@ most 5 s later). One action runs at a time; a second is refused while
   With `overlay: true` (needs ffmpeg, `state.ffmpeg`)
   every entry of `files` also has `overlays`: the 16:9 and the 9:16 data overlay kept beside it
 - POST `/api/folder` `{}` shows the videos folder in Explorer
-- POST `/api/delete-film` `{film}` moves a replay from `state.films` to the Recycle Bin (not the open one:
-  Film Viewer holds it). Answers `{films}`
+- POST `/api/delete-film` `{film}` moves a replay from `state.films` to the Recycle Bin. The open one,
+  which Film Viewer holds, is marked in `state.waiting` instead (asked again: unmarked) and goes when another
+  replay is opened. Answers `{films, waiting}`. `state.recent` lists the replays opened last, newest first
+- POST `/api/action` `{action: "rename", film, name}` renames a replay's file (`name` without `.ahf`) and
+  takes its saved shots along; the open one is opened again under its new name
 - POST `/api/forget` `{expected_revision, shot_ids, files}` takes shots out of the plan; with `files: true`
   their finished videos and overlays on record (`state.renders`: `file`, `shots`, `overlays`) go to the
   Recycle Bin. Answers `{project, renders, recycled}`

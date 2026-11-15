@@ -24,7 +24,7 @@ from shot_plan import (RIDES, compile_shot, filmer_path, ground_moments, nearby,
                        validate_plan, validate_shot, videos as video_rows)
 from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 
-ACTIONS = ("connect", "open", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "export_cut")
+ACTIONS = ("connect", "open", "rename", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "export_cut")
 RENDERS = {"draft": "960 540", "final": "1920 1080", "4k": "3840 2160"}
 # Frames a second of a finished video: 30 unless 60 is asked for (the operator's choice: more like film, and with
 # fewer frames for ffmpeg and the trails to work on).
@@ -163,7 +163,10 @@ class Desk:
         self.halt = threading.Event()  # the page asks the playing in Film Viewer's window to stop where it is
         self.waves = {}  # (file, its time) -> its waveform, see wave
         self.films_folder = None  # where the viewer keeps its films, as its `films` reply says
-        self.data = {"connected": False, "films": [], "project": None, "planes": [],
+        kept = lambda name: json.loads((self.root / name).read_text(encoding="utf-8")) if (self.root / name).exists() else []
+        # `recent`: the replays opened last, newest first; `waiting`: those to go to the Recycle Bin once the viewer,
+        # which holds the open one, has been given another.
+        self.data = {"connected": False, "films": [], "project": None, "planes": [], "recent": kept("recent.json"), "waiting": kept("waiting.json"),
                      "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None, "flight": None,
                      "preview": None, "proposals": [], "job": None, "videos": str(self.videos), "renders": [],
                      "ffmpeg": bool(shutil.which("ffmpeg")), "overlays": None, "assembly": None, "assembling": None,
@@ -303,24 +306,102 @@ class Desk:
                 self.data["renders"] = kept
             return {"project": copy.deepcopy(project), "renders": copy.deepcopy(self.data["renders"]), "recycled": len(paths)}
 
+    def _note(self, name, paths):
+        """The recent or the waiting replays, kept with the desk."""
+        with self.lock:
+            self._write(self.root / (name + ".json"), paths)
+            self.data[name] = paths
+
+    def _replay(self, film):
+        """A replay of the viewer's list and its file in the films folder: nothing else is deleted or renamed."""
+        row = next((f for f in self.data["films"] if f["path"] == film), None)
+        if row is None or self.films_folder is None:
+            raise ValueError("Choose a replay from the list")
+        folder = self.films_folder.resolve()
+        path = (folder / row["name"]).resolve()
+        if path.parent != folder or path.suffix.lower() != ".ahf":
+            raise ValueError("Only a replay in the films folder can be deleted or renamed")
+        return row, path
+
     def delete_film(self, raw):
-        """Move a replay from the viewer's films folder to the Recycle Bin. Not the open one: Film Viewer holds it.
-        Its saved shots stay with the desk and its finished videos in the videos folder."""
+        """Move a replay from the viewer's films folder to the Recycle Bin. Film Viewer holds the open one (Windows
+        refuses to delete or rename it: checked), so that one is marked instead and goes when another replay is
+        opened (_let_go); asked again, the mark is taken off. Its saved shots stay with the desk and its finished
+        videos in the videos folder."""
         with self.lock:
             self._idle()
-            row = next((f for f in self.data["films"] if f["path"] == raw.get("film")), None)
-            if row is None or self.films_folder is None:
-                raise ValueError("Choose a replay from the list")
+            row, path = self._replay(raw.get("film"))
+            waiting = [f for f in self.data["waiting"] if f != row["path"]]
             if self.data["project"] and self.data["project"]["film"] == row["path"]:
-                raise ValueError("Open another replay first: Film Viewer holds the one that is open")
-            folder = self.films_folder.resolve()
-            path = (folder / row["name"]).resolve()
-            if path.parent != folder or path.suffix.lower() != ".ahf":
-                raise ValueError("Only a replay in the films folder can be deleted")
-            if path.exists():
-                to_recycle_bin([path])
-            self.data["films"] = [f for f in self.data["films"] if f["path"] != row["path"]]
-            return {"films": copy.deepcopy(self.data["films"])}
+                self._note("waiting", waiting if row["path"] in self.data["waiting"] else [*waiting, row["path"]])
+            else:
+                if path.exists():
+                    to_recycle_bin([path])
+                self.data["films"] = [f for f in self.data["films"] if f["path"] != row["path"]]
+                self._note("waiting", waiting)
+            return {"films": copy.deepcopy(self.data["films"]), "waiting": list(self.data["waiting"])}
+
+    def _let_go(self, film):
+        """The viewer now holds `film`: it is the newest of the recent ones, and the replays marked while the viewer
+        held them go to the Recycle Bin. One that Windows still keeps stays marked for the next time."""
+        with self.lock:
+            left = []
+            for marked in self.data["waiting"]:
+                try:
+                    row, path = self._replay(marked)
+                    if marked == film:
+                        left.append(marked)
+                        continue
+                    if path.exists():
+                        to_recycle_bin([path])
+                    self.data["films"] = [f for f in self.data["films"] if f["path"] != marked]
+                except ValueError:
+                    pass  # no longer in the films folder: there is nothing to delete
+                except OSError:
+                    left.append(marked)
+            if left != self.data["waiting"]:
+                self._note("waiting", left)
+            self._note("recent", [film, *(f for f in self.data["recent"] if f != film)][:8])
+
+    def _library(self):
+        listing = self.command("films")
+        self.films_folder = next((Path(line[7:]) for line in listing if line.startswith("folder ")), None)
+        with self.lock:
+            self.data["films"] = film_rows(listing, os.path.getmtime)
+
+    def _rename(self, raw):
+        """A replay under another name; its saved shots, the record of its videos and its assembly go with it.
+        Film Viewer holds the open one and has no command to let go of a film, only to open another: so it is given
+        another replay to hold, and this one again under its new name."""
+        film = raw.get("film")
+        row, path = self._replay(film)
+        name = raw["name"].strip().removesuffix(".ahf").strip(" .") if isinstance(raw.get("name"), str) else ""
+        if not name or len(name) > 100 or re.search(r'[\\/:*?"<>|\x00-\x1f]', name):
+            raise ValueError('A replay\'s name is 1 to 100 characters, without \\ / : * ? " < > |')
+        target, new = path.with_name(name + ".ahf"), f"films/{name}.ahf"
+        if target.exists() and not target.samefile(path):
+            raise ValueError("There is a replay of that name already")
+        held = bool(self.data["project"]) and self.data["project"]["film"] == film
+        if held:
+            other = next((f["path"] for f in self.data["films"] if f["path"] != film and f["path"] not in self.data["waiting"]), None)
+            if other is None:
+                raise ValueError("Film Viewer lets go of the open replay only for another one, and there is no other in the films folder")
+            self.progress("Renaming the replay: Film Viewer holds another one meanwhile")
+            self.command("open " + other)
+        try:
+            path.rename(target)
+        except OSError:
+            if held:
+                self._open(film)
+            raise ValueError("Windows did not let the replay be renamed") from None
+        for kind in ("", ".renders", ".assembly"):
+            if self._file(film, kind).exists():
+                os.replace(self._file(film, kind), self._file(new, kind))
+        for kept in ("recent", "waiting"):
+            self._note(kept, [new if f == film else f for f in self.data[kept]])
+        self._library()
+        if held:
+            self._open(new)
 
     def video(self, ident):
         """The file of a finished video on record, by its id: the page plays the assembly's clips from it."""
@@ -529,9 +610,9 @@ class Desk:
             self._idle()
             if action != "connect" and not self.data["connected"]:
                 raise ValueError("Connect to Film Viewer first")
-            if action not in ("connect", "open"):
+            if action not in ("connect", "open", "rename"):
                 self._revision(raw)
-            elif action == "open" and self.data["project"]:
+            elif action != "connect" and self.data["project"]:
                 self._revision(raw)
             self.halt.clear()  # a Pause or Cancel meant for the job before
             # `video` of `videos`: which video of a render is being made; `cancelling`: Cancel was pressed
@@ -635,6 +716,7 @@ class Desk:
             assembly = self._file(film, ".assembly")
             self.data.update(project=project, now=1, preview=None, proposals=[], renders=self._load_renders(film),
                              assembly=json.loads(assembly.read_text(encoding="utf-8")) if assembly.exists() else None)
+        self._let_go(film)
         self._seek(min(1, length))
         self._settle()
         self._frame(project["revision"])
@@ -1211,17 +1293,17 @@ class Desk:
             greeting = self.viewer.connect(self.progress)
             if int(greeting.split()[1]) < 5:
                 raise ValueError("Update Film Viewer to 3.07 Patch 2 or newer")
-            listing = self.command("films")
-            films = film_rows(listing, os.path.getmtime)
-            self.films_folder = next((Path(line[7:]) for line in listing if line.startswith("folder ")), None)
+            self._library()
             self.command("icons " + ("on" if self.data["icons"] else "off"))
             with self.lock:
-                self.data.update(connected=True, films=films)
+                self.data["connected"] = True
             if self.data["project"]:
                 self._open(self.data["project"]["film"])
             return
         if action == "open":
             return self._open(raw.get("film"))
+        if action == "rename":
+            return self._rename(raw)
         project = self.snapshot()["project"]
         if action == "suggest":
             return self._suggest(raw, project)

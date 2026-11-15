@@ -1416,13 +1416,60 @@ class DeskTests(unittest.TestCase):
                                    {"path": "films/test.ahf", "name": "test.ahf", "mb": 1.0, "modified": 0}]
         moved = []
         with patch("director_core.to_recycle_bin", lambda paths: [moved.extend(paths), *(p.unlink() for p in paths)]):
-            with self.assertRaises(ValueError):  # the open one: Film Viewer holds it
-                self.desk.delete_film({"film": "films/test.ahf"})
             with self.assertRaises(ValueError):  # only what the viewer listed
                 self.desk.delete_film({"film": "films/../../director_api.py"})
             left = self.desk.delete_film({"film": "films/old.ahf"})
-        self.assertEqual(([p.name for p in moved], [f["name"] for f in left["films"]]), (["old.ahf"], ["test.ahf"]))
-        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["test.ahf"])
+            self.assertEqual(([p.name for p in moved], [f["name"] for f in left["films"]]), (["old.ahf"], ["test.ahf"]))
+            # The open one, which Film Viewer holds, is marked instead; asked again, the mark is taken off.
+            self.assertEqual(self.desk.delete_film({"film": "films/test.ahf"})["waiting"], ["films/test.ahf"])
+            self.assertEqual(self.desk.delete_film({"film": "films/test.ahf"})["waiting"], [])
+            self.desk.delete_film({"film": "films/test.ahf"})
+            self.assertEqual(Desk(self.temp.name, self.viewer).data["waiting"], ["films/test.ahf"])  # kept with the desk
+            self.desk._let_go("films/test.ahf")  # opened again: still held
+            self.assertEqual((sorted(p.name for p in folder.iterdir()), self.desk.data["waiting"]), (["test.ahf"], ["films/test.ahf"]))
+            # It goes when the viewer is given another replay, which becomes the newest of the recent ones.
+            (folder / "next.ahf").write_bytes(b"film")
+            self.desk.data["films"].append({"path": "films/next.ahf", "name": "next.ahf", "mb": 1.0, "modified": 0})
+            self.desk._let_go("films/next.ahf")
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["next.ahf"])
+        self.assertEqual((self.desk.data["waiting"], self.desk.data["recent"], [f["name"] for f in self.desk.data["films"]]),
+                         ([], ["films/next.ahf", "films/test.ahf"], ["next.ahf"]))
+
+    def test_a_replay_is_renamed_with_its_saved_shots_while_the_viewer_holds_another(self):
+        folder = Path(self.temp.name) / "films"
+        folder.mkdir()
+        for name in ("other.ahf", "test.ahf"):
+            (folder / name).write_bytes(b"film")
+        commands = []
+        def native(command, progress):
+            commands.append(command)
+            if command == "films":
+                return [f"folder {folder}", *(f"film films/{p.name} 1.0 MB" for p in sorted(folder.iterdir())), "2 films"]
+            if command.startswith("open "):
+                return [f"opened {command[5:]} length 20.0 s in 0.1 s"]
+            return []
+        self.desk.viewer.command = native
+        self.desk._library()
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "kind": "cockpit", "target": None}]})
+        self.desk._note("recent", ["films/test.ahf"])
+        for refused in ("", "a/b", "other", "x" * 101):  # no name, a path, one that is taken, too long
+            self.desk.start({"action": "rename", "film": "films/test.ahf", "name": refused, "expected_revision": self.desk.snapshot()["project"]["revision"]})
+            while self.desk.snapshot()["job"]["running"]:
+                time.sleep(.01)
+            self.assertIsNotNone(self.desk.snapshot()["job"]["error"], refused)
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["other.ahf", "test.ahf"])
+        del commands[:]
+        self.run_action({"action": "rename", "film": "films/test.ahf", "name": " My kill.ahf "})
+        state = self.desk.snapshot()
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["My kill.ahf", "other.ahf"])
+        self.assertEqual([c for c in commands if c.startswith("open ")], ["open films/other.ahf", "open films/My kill.ahf"])
+        self.assertEqual((state["project"]["film"], [s["kind"] for s in state["project"]["shots"]], state["recent"]),
+                         ("films/My kill.ahf", ["cockpit"], ["films/My kill.ahf"]))
+        self.assertFalse(self.desk._file("films/test.ahf").exists())
+        # One that is not open is renamed where it lies: the viewer is not asked to open anything.
+        del commands[:]
+        self.run_action({"action": "rename", "film": "films/other.ahf", "name": "Dull"})
+        self.assertEqual((sorted(p.name for p in folder.iterdir()), [c for c in commands if c.startswith("open ")]), (["Dull.ahf", "My kill.ahf"], []))
 
     def test_the_observer_lets_go_of_an_aircraft_that_leaves_the_film(self):
         # He crosses ahead of the hero and leaves the film at 6 s (shot down). Held at his last place, he pulled the

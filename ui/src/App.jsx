@@ -45,6 +45,7 @@ export function App() {
   const [skipped, setSkipped] = useState(() => new Set());
   const [forgetting, setForgetting] = useState(null);  // {ids, label}: shots asked to be removed, waiting for a choice
   const [trashing, setTrashing] = useState(null);  // a replay asked to go to the Recycle Bin, waiting for a yes
+  const [naming, setNaming] = useState(null);  // the open replay's name as it is being typed over, until Rename or Esc
   const [quality, setQuality] = useState("final");
   const [apart, setApart] = useState(false);
   const [fps, setFps] = useState(30);  // the operator's choice: more like film; 60 stays an option
@@ -120,6 +121,7 @@ export function App() {
   }, [desk.connected, desk.job]);
 
   useEffect(() => {
+    setNaming(null);
     if (dirty) {setError("The active film changed. Your unsaved shot is kept until you discard it."); return;}
     setDraft(null); setMoment(null); setCursor(0); setRated(""); setSkipped(new Set());
     you.current = null;
@@ -497,15 +499,27 @@ export function App() {
     if (saved) { setDraft(saved.shots.find(s => s.id === draft.id)); setDirty(false); setBaseRevision(saved.revision); }
   }
   function remove() { setForgetting({ids: [draft.id], label: draft.name}); }
-  async function deleteFilm() {
-    const film = trashing;
+  async function deleteFilm(film = trashing) {
     setSending(true); setError("");
     try {
       const result = await request("/api/delete-film", {film: film.path});
-      setDesk(s => ({...s, films: result.films}));
-      setFilmChoice("");
+      setDesk(s => ({...s, ...result}));
+      if (film.path !== project?.film) setFilmChoice("");
     } catch (e) { setError(e.message); }
     finally { setSending(false); setTrashing(null); }
+  }
+  // Film Viewer holds the open replay, so the bin only marks that one (and takes the mark off again): the desk moves
+  // the marked ones to the Recycle Bin when another replay is opened. Any other replay goes at once, after a yes.
+  const waiting = desk.waiting || [], picked = desk.films.find(f => f.path === (filmChoice || project?.film));
+  function trash() { if (picked.path === project?.film) deleteFilm(picked); else setTrashing(picked); }
+  // The open replay's name, large at the top: typed over and confirmed, its file is renamed.
+  const stem = project ? project.film.replace(/^films\//, "").replace(/\.ahf$/i, "") : "";
+  function rename(e) {
+    e.preventDefault();
+    const name = (naming || "").trim();
+    if (!name || name === stem || keepDraft()) return;
+    setDraft(null); setDirty(false); setNaming(null);
+    action("rename", {film: project.film, name});
   }
   // The finished videos (and their overlays) the desk kept of these shots and that are still on disk.
   function filesOf(ids) {
@@ -658,13 +672,24 @@ export function App() {
         <button role="tab" aria-selected={view === "shots"} aria-pressed={view === "shots"} onClick={() => setView("shots")} title="Moments, cameras and the cut">Shots</button>
         <button role="tab" aria-selected={view === "assembly"} aria-pressed={view === "assembly"} onClick={() => { film.current?.pause(); setView("assembly"); }} title="The rendered shots in a row, cut and set to music">Assembly</button>
       </div>
-      <div className="open-film"><select aria-label="Film" value={filmChoice || project?.film || ""} onChange={e => setFilmChoice(e.target.value)}><option value="">Choose a replay</option>{desk.films.map(f => <option key={f.path} value={f.path}>{f.name}{f.modified ? ` · ${new Date(f.modified * 1000).toLocaleDateString()}` : ""}</option>)}</select><button disabled={!(filmChoice || project?.film) || (running && desk.job.action === "export_cut")} onClick={load} title="Open this replay; an operation in progress finishes first">Open</button>
-        <button className="danger" aria-label="Delete this replay" disabled={!filmChoice || filmChoice === project?.film || working} onClick={() => setTrashing(desk.films.find(f => f.path === filmChoice))} title={filmChoice && filmChoice === project?.film ? "Open another replay first: Film Viewer holds the one that is open" : "Move the chosen replay to the Recycle Bin"}><Trash/></button></div>
+      <div className="open-film"><select aria-label="Film" value={filmChoice || project?.film || ""} onChange={e => setFilmChoice(e.target.value)}><option value="">Choose a replay</option>{(() => {
+          const option = f => <option key={f.path} value={f.path}>{f.name}{f.modified ? ` · ${new Date(f.modified * 1000).toLocaleDateString()}` : ""}{waiting.includes(f.path) ? " · to be deleted" : ""}</option>;
+          const lately = (desk.recent || []).map(path => desk.films.find(f => f.path === path)).filter(Boolean);
+          return lately.length > 1 ? <><optgroup label="Opened lately">{lately.map(option)}</optgroup><optgroup label="All replays">{desk.films.map(option)}</optgroup></> : desk.films.map(option);
+        })()}</select><button disabled={!(filmChoice || project?.film) || (running && desk.job.action === "export_cut")} onClick={load} title="Open this replay; an operation in progress finishes first">Open</button>
+        <button className="danger" aria-label={`Delete this replay${waiting.length ? ` · ${waiting.length} waiting` : ""}`} aria-pressed={picked ? waiting.includes(picked.path) : undefined} disabled={!picked || working} onClick={trash}
+          title={!picked ? "Choose a replay" : picked.path !== project?.film ? "Move the chosen replay to the Recycle Bin" : waiting.includes(picked.path) ? "Keep this replay after all" : "Film Viewer holds the open replay: mark it, and it goes to the Recycle Bin when you open another"}><Trash/>{waiting.length > 0 && <span>{waiting.length}</span>}</button></div>
       <div className={`operation ${working ? "working" : desk.job?.error ? "failed" : ""}`} role="status" aria-live="polite">
         <span className={working ? "spinner" : "status-dot"}/><strong>{status}</strong>{working && <span className="elapsed">{Math.floor(desk.job?.elapsed || 0)}s</span>}
       </div>
       <button disabled={working} onClick={() => action("connect")}><ArrowClockwise/> {desk.connected ? "Reconnect" : "Connect viewer"}</button>
     </header>
+    {project && <form className="replay" onSubmit={rename}>
+      <input aria-label="The open replay's name" value={naming ?? stem} maxLength={100} disabled={working} spellCheck={false} onChange={e => setNaming(e.target.value)} onKeyDown={e => e.key === "Escape" && setNaming(null)} title="The open replay. Type another name and press Enter to rename its file"/>
+      {naming != null && naming.trim() !== stem && <><button className="primary" disabled={working || !naming.trim()}>Rename</button><button type="button" onClick={() => setNaming(null)}>Cancel</button>
+        <small>Film Viewer shows another replay for a moment while the file is renamed; saved shots keep.</small></>}
+      {waiting.length > 0 && <small className="waiting" role="status">{waiting.length === 1 ? "1 replay goes" : `${waiting.length} replays go`} to the Recycle Bin when you open another: {waiting.map(path => path.replace(/^films\//, "")).join(", ")}</small>}
+    </form>}
     {desk.stale && <div className="notice" role="alert">AH Quick Shots was updated while it was running: the desk still runs the old version, and the page may ask it for things it cannot do. An unsaved shot is lost on restart.<button onClick={restartDesk}>Restart the desk</button></div>}
     {(error || conflict) && <div className="notice" role="alert">{conflict ? "The shared plan changed while you were editing. Discard your changes to load it, then redo them." : error}{!conflict && <button onClick={() => setError("")} aria-label="Dismiss message">×</button>}</div>}
 
