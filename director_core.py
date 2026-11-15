@@ -53,7 +53,7 @@ LEAD = 2.0
 # after the one before was full, whatever happened in between (6 of 6). After a 4 s stretch, 3 s were enough.
 TAIL = 1.5  # seconds added to the last rendered stretch's length before the next render may start
 FINE = .02  # the step aircraft paths are read at (see Desk._tracks)
-CAMERAS = 9  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
+CAMERAS = 10  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
 
 
 def to_recycle_bin(paths):
