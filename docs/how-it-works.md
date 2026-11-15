@@ -268,6 +268,18 @@ ones in the next. Three shots of one stretch come out as three videos of the
 same length, each saved under its shot's name and camera. On the desk, the
 first shot of a stretch is the one that plays until another is selected.
 
+Each shot keeps the effects it is rendered with (`effects` in the plan: the
+data overlay, motion blur, the film look and its haze, trails with their
+colours, length, tail trail and exact path), so a refresh no longer loses
+them. The options under The cut show and set the selected shot's, kept with it
+when it is added or updated; with no shot selected, those a new shot gets,
+which are always the last ones set. A shot saved before shots kept their
+effects is given those on its first save. One video renders every shot its own
+way: it is cut wherever the effects change, so shots of other effects come out
+as videos of their own and those alike as one. Effects are not the camera:
+changing them renders no preview again and does not mark a shot's video as
+changed.
+
 Motion blur renders each video four times at 120 fps, the viewer's most, each
 pass a quarter of a frame (1/480 s) after the one before, and ffmpeg weaves the
 passes and makes each frame the mean of all eight in its time, as a 360°
@@ -615,13 +627,16 @@ most 5 s later). One action runs at a time; a second is refused while
   `state.proposals` gets `{id, score, size, quality}` each: `score` the share of
   the shot with both aircraft in frame, `size` the lead's mean width in the
   picture, `quality` (0 to 1) how well it reads. It ignores terrain
-- `export_cut` `{shot_ids?, quality, apart?, blur?, look?, haze?, trails?}` — draft|final|4k: the chosen saved shots
+- `export_cut` `{shot_ids?, quality, apart?, effects?}` — draft|final|4k: the chosen saved shots
   (all when omitted) as one 16:9 MP4 with sound, the gaps left out; with
   `apart: true` an MP4 of each shot, in time order. Overlapping
-  shots cannot share a video: `state.preview.files` then lists several,
+  shots cannot share a video, nor can shots of other effects: `state.preview.files` then lists several,
   `[{url, file, shots}]`; `file` is where the video was kept (`state.videos`
   is that folder). `labels` `{shot id: camera name}` names each shot's camera
-  in its file name; without it the shot's `kind` is used. `blur: true` (needs ffmpeg) adds motion blur, `look: true` (needs ffmpeg) the film look, `haze: true` (needs ffmpeg) haze along the horizon, `trails` (needs ffmpeg) wingtip trails: `true`, or `{lead, opponent, seconds, tail?, exact?}` with colours as `#rrggbb` and 1 to 120 seconds; `tail` is the colour of a third trail from the tip of the fin (placed by the aircraft's proportions: 0.9 of its visible radius behind its middle, 0.25 above), `exact: true` draws the path as flown, nothing averaged. The page sends `look` and `haze` together, from one switch.
+  in its file name; without it the shot's `kind` is used. Each shot is rendered with its own `effects` (a shot's
+  field in the plan); `effects` here is for a shot that has none. `effects` is `{overlay?, blur?, look?, trails?}`,
+  each needing ffmpeg: `blur: true` motion blur, `look: true` the film look with its haze along the horizon,
+  `trails` wingtip trails: `true`, or `{lead, opponent, seconds, tail?, exact?}` with colours as `#rrggbb` and 1 to 120 seconds; `tail` is the colour of a third trail from the tip of the fin (placed by the aircraft's proportions: 0.9 of its visible radius behind its middle, 0.25 above), `exact: true` draws the path as flown, nothing averaged.
   With `overlay: true` (needs ffmpeg, `state.ffmpeg`)
   every entry of `files` also has `overlays`: the 16:9 and the 9:16 data overlay kept beside it
 - POST `/api/folder` `{}` shows the videos folder in Explorer

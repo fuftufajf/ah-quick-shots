@@ -3,6 +3,7 @@ import math
 import statistics
 import uuid
 
+from trails import SECONDS, STYLE, colour
 from viewer_socket import number, safe_text
 
 # Cameras on the lead aircraft, from the viewer's `help director` table: right, up, ahead (feet from the
@@ -73,7 +74,28 @@ def validate_shot(raw, length):
             shot["keys"] = [kept[t] for t in sorted(kept)]
             if raw.get("path") == "own":
                 shot["path"] = "own"
+    if raw.get("effects") is not None:
+        shot["effects"] = validate_effects(raw["effects"])
     return shot
+
+
+def validate_effects(raw):
+    """What a shot is rendered with besides its camera, as the page sends it: `overlay` (the data overlay), `blur`,
+    `look` (the film look and its haze, one switch) and `trails` ({lead, opponent, tail: "#rrggbb", tail None for
+    none; seconds; exact}). {} is none of them."""
+    if not isinstance(raw, dict):
+        raise ValueError("A shot's effects are an object")
+    effects = {name: True for name in ("overlay", "blur", "look") if raw.get(name) is True}
+    if raw.get("trails"):
+        asked = raw["trails"] if isinstance(raw["trails"], dict) else {}
+        drawn = {"lead": asked.get("lead", "#e8f4ff"), "opponent": asked.get("opponent", "#ff9e6b"), "tail": asked.get("tail") or None}
+        for key, value in drawn.items():
+            if value is not None:
+                colour(value)  # "#rrggbb", or refused
+                drawn[key] = value.lower()  # so two shots of one colour are rendered together
+        effects["trails"] = {**drawn, "seconds": number(asked.get("seconds", STYLE["seconds"]), *SECONDS, "trail length"),
+                             "exact": asked.get("exact") is True}
+    return effects
 
 
 def _glide(times, values, t):
@@ -531,4 +553,20 @@ def passes(shots):
             row.append(shot)
         else:
             rows.append([shot])
+    return rows
+
+
+def videos(shots, apart=False):
+    """The videos a render of these shots in film order makes, a row of shots each: a shot each when asked `apart`;
+    else the passes, each cut where the effects change, so every video is one stretch of film rendered one way."""
+    if apart:
+        return [[shot] for shot in shots]
+    rows = []
+    for row in passes(shots):
+        rows.append(row[:1])
+        for a, b in zip(row, row[1:]):
+            if a.get("effects") == b.get("effects"):
+                rows[-1].append(b)
+            else:
+                rows.append([b])
     return rows

@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
-import {howLong, renderCost, videosOf} from "./desk.js";
+import {cutCost, howLong, renderCost, videoRows} from "./desk.js";
 
 // Two takes of one stretch cannot share a video; asked apart, every shot is one.
-const shots = [{start: 10, end: 14}, {start: 12, end: 16}, {start: 20, end: 26}];
-assert.deepEqual([videosOf(shots, false), videosOf(shots, true), videosOf([], false)], [2, 3, 0]);
+const shots = [{start: 10, end: 14}, {start: 12, end: 16}, {start: 20, end: 26}].map(s => ({...s, effects: {}}));
+assert.deepEqual([videoRows(shots, false).length, videoRows(shots, true).length, videoRows([], false).length], [2, 3, 0]);
+// A video is cut where the effects change (as the desk deals them): the plain shot after the blurred one is a video of
+// its own, and each video costs what its own effects do.
+const mixed = [{start: 0, end: 4, effects: {blur: true}}, {start: 4, end: 6, effects: {blur: true, overlay: false}}, {start: 6, end: 9, effects: {}}];
+assert.deepEqual(videoRows(mixed, false).map(row => row.map(s => s.start)), [[0, 4], [6]]);
+const blurred = renderCost({film: 6, videos: 1, quality: "final", blur: true}), bare = renderCost({film: 3, videos: 1, quality: "final"});
+const both = cutCost(videoRows(mixed, false), "final", true);
+assert.deepEqual([both.film, both.videos], [9, 2]);
+assert.ok(Math.abs(both.total - blurred.total - bare.total) < 1e-9 && Math.abs(both.render - blurred.render - bare.render) < 1e-9);
+assert.equal(cutCost(videoRows(mixed, false), "final", false).total, both.render);  // without ffmpeg no effect is made
 
 // Every effect has its price whether it is ticked or not; the total is the plain render and the ticked ones.
 const ask = {film: 30, videos: 2, quality: "final"};

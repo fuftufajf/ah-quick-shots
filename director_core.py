@@ -20,7 +20,8 @@ from finishing import FASTEST, PASSES, assemble, blend, style, trim
 from flight_data import derive, pair, read_kept
 import overlay
 import trails
-from shot_plan import RIDES, compile_shot, filmer_path, ground_moments, nearby, passes, probe_cameras, track_rows, validate_plan, validate_shot
+from shot_plan import (RIDES, compile_shot, filmer_path, ground_moments, nearby, passes, probe_cameras, track_rows, validate_effects,
+                       validate_plan, validate_shot, videos as video_rows)
 from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 
 ACTIONS = ("connect", "open", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "export_cut")
@@ -76,7 +77,8 @@ class Conflict(ValueError):
 
 
 def camera_key(shot):
-    return json.dumps({k: v for k, v in shot.items() if k not in ("id", "name")}, sort_keys=True)
+    """What a shot films. Its effects are not in it: changing them re-renders no preview and changes no video's camera."""
+    return json.dumps({k: v for k, v in shot.items() if k not in ("id", "name", "effects")}, sort_keys=True)
 
 
 MUSIC = "mp3|wav|m4a|aac|flac|ogg"  # what the assembly takes as music
@@ -1064,61 +1066,63 @@ class Desk:
             self.data["proposals"] = proposals
 
     def _export(self, raw, project):
-        """The chosen saved shots as videos in the videos folder, with what was asked to go with them: a data overlay,
-        motion blur, the film look, haze, trails."""
+        """The chosen saved shots as videos in the videos folder, each with the effects its shot keeps (see
+        validate_effects): a data overlay, motion blur, the film look and its haze, trails. A shot saved before shots
+        kept their effects has those the page sends as `effects`. Shots of other effects are videos of their own."""
         ids = raw.get("shot_ids")
         if ids is not None and not isinstance(ids, list):
             raise ValueError("shot_ids must be a list")
-        shots = [s for s in project["shots"] if ids is None or s["id"] in ids]
+        fallback = validate_effects(raw.get("effects") or {})
+        shots = [{**s, "effects": s.get("effects", fallback)} for s in project["shots"] if ids is None or s["id"] in ids]
         if not shots:
             raise ValueError("Select at least one saved shot")
         if " " in str(self.media_root):
             raise ValueError("Film Viewer video paths cannot contain spaces: move AH Quick Shots to a folder without spaces in its path")
+        ffmpeg = bool(shutil.which("ffmpeg"))
+        for name, what in (("overlay", "A data overlay needs"), ("trails", "Trails need")):
+            if not ffmpeg and any(s["effects"].get(name) for s in shots):
+                raise ValueError(f"{what} ffmpeg: install it, then try again")
         quality = raw.get("quality") if raw.get("quality") in RENDERS else "final"
         size = RENDERS[quality].replace(" ", "x", 1).replace(" ", " @ ")
         # The viewer holds one camera at a time: takes of one stretch come out as videos of their own, each the
         # same length, to lay over one another in an editor. Asked apart, every shot is a video of its own.
-        rows = [[s] for s in sorted(shots, key=lambda s: s["start"])] if raw.get("apart") else passes(shots)
-        segments = {}
-        if raw.get("overlay"):
-            if not shutil.which("ffmpeg"):
-                raise ValueError("A data overlay needs ffmpeg: install it, then try again")
-            # Read before the first render: touching the film between renders can thin the next one's sound (TAIL).
-            segments = {s["id"]: self._segment(project, s) for s in shots}
+        rows = video_rows(sorted(shots, key=lambda s: s["start"]), bool(raw.get("apart")))
+        # Read before the first render: touching the film between renders can thin the next one's sound (TAIL).
+        segments = {s["id"]: self._segment(project, s) for s in shots if s["effects"].get("overlay")}
         files = []
         # How long it should take: the page says (it shows what each effect costs before the render is asked for:
         # renderCost in desk.js). Without that, only a draft is known: about real time.
         expect = number(raw["expect"], 1, 86400, "expect") if raw.get("expect") is not None else (
             sum(s["end"] - s["start"] for s in shots) + 2 * len(rows) if quality == "draft" else None)
         width, height, fps = map(int, RENDERS[quality].split())
-        blur = fps if raw.get("blur") and shutil.which("ffmpeg") else None
-        filters = style(width, height, bool(raw.get("look")), bool(raw.get("haze"))) if shutil.which("ffmpeg") else ""
+        # What each video is made with, all its shots alike: (motion blur's frame rate or None, the looks' filters,
+        # the trails asked for or None).
+        made = [(fps if ffmpeg and e.get("blur") else None, style(width, height, bool(e.get("look")), bool(e.get("look"))) if ffmpeg else "",
+                 e.get("trails")) for e in (row[0]["effects"] for row in rows)]
         # The steps the page counts through: for each video the viewer's render (four with motion blur) and what
         # ffmpeg then does to it, and before them the trails' cameras.
-        ffmpeg = lambda row: bool(shutil.which("ffmpeg")) and bool(blur or filters or raw.get("trails") or row[0]["start"] >= .05)
         with self.lock:
             self.data["job"].update(expect=expect and round(expect, 1), steps=sum(
-                (PASSES if blur else 1) + ffmpeg(row) + bool(raw.get("trails")) for row in rows))
+                (PASSES if blur else 1) + (ffmpeg and bool(blur or filters or drawn or row[0]["start"] >= .05)) + bool(drawn)
+                for row, (blur, filters, drawn) in zip(rows, made)))
         mark = self.data["job"]["clock"]
         scripts = []
         try:
-            if raw.get("trails"):
-                if not shutil.which("ffmpeg"):
-                    raise ValueError("Trails need ffmpeg: install it, then try again")
-                asked = raw["trails"] if isinstance(raw["trails"], dict) else {}
-                ours, theirs = (trails.colour(asked.get(key, default)) for key, default in (("lead", "#e8f4ff"), ("opponent", "#ff9e6b")))
-                drawing = trails.style_for(number(asked.get("seconds", trails.STYLE["seconds"]), *trails.SECONDS, "trail length"))
-                if asked.get("exact"):  # the flight path as it was flown, to be read: nothing averaged
+            # Worked out before the first render, as the overlay's numbers are: touching the film between renders
+            # can thin the next one's sound (TAIL).
+            for row, (_blur, _filters, asked) in zip(rows, made):
+                if not asked:
+                    scripts.append(None)
+                    continue
+                drawing = trails.style_for(asked["seconds"])
+                if asked["exact"]:  # the flight path as it was flown, to be read: nothing averaged
                     drawing["smooth"] = 0
-                tail = trails.colour(asked["tail"]) if asked.get("tail") else None
-                # Worked out before the first render, as the overlay's numbers are: touching the film between renders
-                # can thin the next one's sound (TAIL).
-                for row in rows:
-                    scripts.append(self._trails(project, row, width, height, fps, trails.paint(row, ours, theirs), drawing, tail))
-            for n, row in enumerate(rows, 1):
+                scripts.append(self._trails(project, row, width, height, fps, trails.paint(row, trails.colour(asked["lead"]), trails.colour(asked["opponent"])),
+                                            drawing, asked["tail"] and trails.colour(asked["tail"])))
+            for n, (row, (blur, filters, _asked), script) in enumerate(zip(rows, made, scripts), 1):
                 self._cut(project, row)
                 path = self.media_root / (uuid.uuid4().hex + ".mp4")
-                drawn = trails.filters(scripts[n - 1], height) if scripts else ""
+                drawn = trails.filters(script, height) if script else ""
                 self._render(row[0]["start"], row[-1]["end"], path, f"{width} {height} {FASTEST}" if blur else RENDERS[quality],
                              f"Rendering {len(row)} shot{'s' * (len(row) > 1)} at {size}" + (" with motion blur" if blur else "")
                              + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""), blur,
@@ -1126,18 +1130,21 @@ class Desk:
                 saved = self._keep(path, project, row, raw.get("labels"))
                 files.append({"url": "/media/" + path.name, "file": str(saved), "shots": [s["id"] for s in row]})
                 # What the assembly needs to know of a video: which it is, how it was made and what cameras it shows.
+                e = row[0]["effects"]
                 record = {"id": uuid.uuid4().hex, "file": str(saved), "shots": [s["id"] for s in row], "made": round(time.time()),
-                          "quality": quality, "extras": [name for name in ("blur", "look", "haze", "trails") if raw.get(name)],
+                          "quality": quality, "extras": [name for name, on in (("blur", e.get("blur")), ("look", e.get("look")),
+                                                                               ("haze", e.get("look")), ("trails", e.get("trails"))) if on],
                           "seconds": round(sum(s["end"] - s["start"] for s in row), 3), "takes": {s["id"]: camera_key(s) for s in row},
                           # How long it took to make, in seconds: the first video's holds what was prepared for them all.
                           "took": round(time.monotonic() - mark)}
                 mark = time.monotonic()
-                if segments:
+                if e.get("overlay"):
                     files[-1]["overlays"] = record["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality)
                 self._record_render(project["film"], record)
         finally:
             for script in scripts:  # those of videos never reached too: a render that fails leaves none behind
-                script.unlink(missing_ok=True)
+                if script:
+                    script.unlink(missing_ok=True)
         if raw.get("expect") is not None:
             self._paced(quality, (time.monotonic() - self.data["job"]["clock"]) / expect)
         self._tidy()

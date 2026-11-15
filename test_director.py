@@ -423,11 +423,11 @@ class DeskTests(unittest.TestCase):
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 3, "end": 5, "kind": "cockpit"}]})
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.blend", blend):
-            self.run_action({"action": "export_cut", "quality": "final", "blur": True})
-            self.run_action({"action": "export_cut", "quality": "4k", "blur": True, "look": True})
+            self.run_action({"action": "export_cut", "quality": "final", "effects": {"blur": True}})
+            self.run_action({"action": "export_cut", "quality": "4k", "effects": {"blur": True, "look": True}})
         videos = [c.split() for c in commands if c.startswith("video ")]
         self.assertEqual([(v[1], v[2], v[4:]) for v in videos[:4]], [(f"{1 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
-        self.assertEqual(blends, [([True] * 4, 2, 60, ""), ([True] * 4, 2, 60, finishing.style(3840, 2160, film=True))])
+        self.assertEqual(blends, [([True] * 4, 2, 60, ""), ([True] * 4, 2, 60, finishing.style(3840, 2160, True, True))])
 
     def test_the_film_look_goes_on_in_ffmpeg_even_with_no_lead_in_to_cut(self):
         trims = []
@@ -441,11 +441,48 @@ class DeskTests(unittest.TestCase):
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 0, "end": 2, "kind": "cockpit"}]})
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", trim):
-            self.run_action({"action": "export_cut", "quality": "draft", "look": True})
-            self.run_action({"action": "export_cut", "quality": "draft", "haze": True, "look": True})
+            self.run_action({"action": "export_cut", "quality": "draft", "effects": {"look": True}})
             self.run_action({"action": "export_cut", "quality": "draft"})
-        # At the film's start there is no lead-in: only the looks need ffmpeg. The haze goes first, as in the grade.
-        self.assertEqual(trims, [(0, finishing.look(540)), (0, finishing.haze(960, 540) + "," + finishing.look(540))])
+        # At the film's start there is no lead-in: only the looks need ffmpeg. The film look brings its haze, laid
+        # first, as in the grade.
+        self.assertEqual(trims, [(0, finishing.haze(960, 540) + "," + finishing.look(540))])
+
+    def test_each_shot_is_rendered_with_its_own_effects_and_alike_ones_together(self):
+        renders, trims = [], []
+        def native(command, progress):
+            if command.startswith("video "):
+                renders.append(tuple(map(float, command.split()[1:3])))
+                Path(command.split()[3]).write_bytes(b"film")
+            return []
+        def trim(source, target, seconds, filters=""):
+            trims.append(filters)
+            Path(target).write_bytes(b"cut")
+        self.desk.viewer.command = native
+        seat = {**SHOT, "kind": "cockpit", "target": None}
+        look = {"look": True}
+        # One video asked for: the two shots that keep the film look are one stretch of it, the plain one after them
+        # another; a shot that keeps nothing of its own has what the page sends.
+        self.desk.save({"expected_revision": 1, "shots": [{**seat, "id": "a", "start": 2, "end": 4, "effects": look},
+                                                          {**seat, "id": "b", "start": 4, "end": 6, "effects": {"look": True, "overlay": False}},
+                                                          {**seat, "id": "c", "start": 6, "end": 8, "effects": {}}, {**seat, "id": "d", "start": 8, "end": 9}]})
+        self.assertEqual(self.desk.snapshot()["project"]["shots"][1]["effects"], look)  # kept as the page sent it, falses left out
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", trim):
+            self.run_action({"action": "export_cut", "quality": "draft", "effects": look})
+        self.assertEqual(renders, [(0, 6), (4, 8), (6, 9)])  # each from two seconds early
+        styled = finishing.style(960, 540, True, True)
+        self.assertEqual(trims, [styled, "", styled])
+        self.assertEqual([(r["shots"], r["extras"]) for r in self.desk.snapshot()["renders"]],
+                         [(["a", "b"], ["look", "haze"]), (["c"], []), (["d"], ["look", "haze"])])
+        # Effects are not the camera: changing them leaves the shot's videos current.
+        self.assertFalse(self.desk.snapshot()["versions"]["c"][0]["changed"])
+        plan = self.desk.snapshot()["project"]
+        self.desk.save({"expected_revision": plan["revision"], "shots": [{**s, "effects": {"blur": True}} for s in plan["shots"]]})
+        self.assertFalse(self.desk.snapshot()["versions"]["c"][0]["changed"])
+        for wrong in ({"trails": {"lead": "red"}}, {"trails": {"seconds": 500}}, "all"):
+            with self.subTest(wrong=wrong), self.assertRaises(ValueError):
+                validate_shot({**seat, "effects": wrong}, 20)
+        self.assertEqual(validate_shot({**seat, "effects": {"trails": {"lead": "#ABCDEF", "tail": "#00FF00"}}}, 20)["effects"],
+                         {"trails": {"lead": "#abcdef", "opponent": "#ff9e6b", "tail": "#00ff00", "seconds": 2.5, "exact": False}})
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg")
     def test_the_blend_keeps_the_film_s_length_at_its_own_frame_rate(self):
@@ -622,7 +659,7 @@ class DeskTests(unittest.TestCase):
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "id": "seat", "start": 0, "end": 1, "kind": "cockpit", "target": None},
                                                           {**SHOT, "id": "two", "start": 5, "end": 6}]})
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", trim):
-            self.run_action({"action": "export_cut", "quality": "draft", "apart": True, "trails": {"seconds": 2.5}})
+            self.run_action({"action": "export_cut", "quality": "draft", "apart": True, "effects": {"trails": {"seconds": 2.5}}})
         seat, two = projects[:31], projects[31:]
         self.assertEqual((len(seat), len(two)), (31, 31))  # every frame of a second at 30 a second, both ends
         # Never before the film's start: its first frame is asked in one step, the next from the start up to it.
@@ -643,7 +680,7 @@ class DeskTests(unittest.TestCase):
         self.desk.viewer.command = self.trail_viewer([])
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 5, "end": 6}, {**SHOT, "id": "two", "start": 8, "end": 9}]})
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", trim):
-            self.desk.start({"action": "export_cut", "quality": "draft", "apart": True, "trails": True, "expected_revision": 2})
+            self.desk.start({"action": "export_cut", "quality": "draft", "apart": True, "effects": {"trails": True}, "expected_revision": 2})
             self.desk.worker.join(5)
         self.assertIn("no room", self.desk.snapshot()["job"]["error"])
         self.assertEqual(list(self.desk.media_root.glob("*.ass")), [])  # the second video's script went too
@@ -730,7 +767,7 @@ class DeskTests(unittest.TestCase):
         seat = {**SHOT, "kind": "cockpit", "target": None}
         self.desk.save({"expected_revision": 1, "shots": [seat, {**seat, "id": "two", "start": 5, "end": 8}]})
         self.run_action({"action": "export_cut", "quality": "draft", "apart": True})
-        self.run_action({"action": "export_cut", "quality": "final", "shot_ids": ["one"], "look": True})
+        self.run_action({"action": "export_cut", "quality": "final", "shot_ids": ["one"], "effects": {"look": True}})
         self.run_action({"action": "export_cut", "quality": "draft"})
         return self.desk.snapshot()["versions"]
 
@@ -738,7 +775,7 @@ class DeskTests(unittest.TestCase):
         found = self.assembly_desk()
         # Newest first; the video of both shots together is nobody's clip.
         self.assertEqual({ident: [(v["quality"], v["extras"], v["seconds"], v["changed"]) for v in videos] for ident, videos in found.items()},
-                         {"one": [("final", ["look"], 2, False), ("draft", [], 2, False)], "two": [("draft", [], 3, False)]})
+                         {"one": [("final", ["look", "haze"], 2, False), ("draft", [], 2, False)], "two": [("draft", [], 3, False)]})
         plan = self.desk.snapshot()["project"]
         self.desk.save({"expected_revision": plan["revision"], "shots": [{**plan["shots"][0], "fov": 40}, plan["shots"][1]]})
         changed = self.desk.snapshot()["versions"]
@@ -1347,7 +1384,7 @@ class DeskTests(unittest.TestCase):
         self.desk.save({"expected_revision": 1, "shots": [SHOT, {**SHOT, "id": "two", "start": 5, "end": 7, "target": None, "kind": "cockpit"}]})
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", lambda a, b, s, h=None: Path(b).write_bytes(b"cut")), \
                 patch("director_core.overlay.render", draw):
-            self.run_action({"action": "export_cut", "quality": "final", "overlay": True})
+            self.run_action({"action": "export_cut", "quality": "final", "effects": {"overlay": True}})
             # The overlays are drawn while the desk goes on: the render's job is over, the viewer free.
             self.assertTrue(drawing.wait(2))
             state = self.desk.snapshot()
@@ -1364,7 +1401,7 @@ class DeskTests(unittest.TestCase):
                                 ("9x16", both, "test 00.01-00.07 cut of 2 shots - overlay 9x16.mov", 1920, 60)])
         self.assertEqual(len(self.desk.snapshot()["preview"]["files"][0]["overlays"]), 2)
         with patch("director_core.shutil.which", return_value=None):
-            self.desk.start({"action": "export_cut", "overlay": True, "expected_revision": 2})
+            self.desk.start({"action": "export_cut", "effects": {"overlay": True}, "expected_revision": 2})
             self.desk.worker.join(2)
         self.assertIn("needs ffmpeg", self.desk.snapshot()["job"]["error"])
 

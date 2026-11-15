@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, Copy, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, SkipBack, Sparkle, Stop, Trash, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dragCamera, fights, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, videosOf, zoomCamera} from "./desk.js";
+import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dragCamera, fights, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
@@ -14,6 +14,10 @@ const TUNING = [["orbit", "Around", "°", -180, 180, 1, FREE], ["distance", "Dis
   // Cameras on the airframe that never lock on him: where they look (a drag on the picture does the same).
   ["turn", "Turn (left +)", "°", -180, 180, 1, ["cockpit", "nose", "belly", "gear"]], ["tilt", "Tilt (up +)", "°", -89, 89, 1, ["cockpit", "nose", "belly", "gear"]]];
 const AS_FLOWN = ["recorded", "weapon"];  // the pilot's own view and the bomb's ride: nothing to adjust
+// Trails when first ticked: your colour, the opponent's, how long they stay, a third from the fin's tip (its colour,
+// or null for none), and `exact`: the path as flown, nothing averaged, for reading a flight.
+const TRAILS = {lead: "#e8f4ff", opponent: "#ff9e6b", seconds: 2.5, tail: null, exact: false};
+const TAIL = "#b9ff9e";
 const CHUNK = 10;  // seconds of film per preview when no shot is selected
 const NEAR = 3000;  // feet: an aircraft that never comes this close is a dot, not someone to film
 
@@ -40,16 +44,9 @@ export function App() {
   const [trashing, setTrashing] = useState(null);  // a replay asked to go to the Recycle Bin, waiting for a yes
   const [quality, setQuality] = useState("final");
   const [apart, setApart] = useState(false);
-  const [withOverlay, setWithOverlay] = useState(false);
-  const [withBlur, setWithBlur] = useState(false);
-  const [withLook, setWithLook] = useState(false);  // the film look and its haze: one switch
-  const [withTrails, setWithTrails] = useState(false);
-  const [trailLead, setTrailLead] = useState("#e8f4ff");
-  const [trailOpponent, setTrailOpponent] = useState("#ff9e6b");
-  const [trailSeconds, setTrailSeconds] = useState(2.5);
-  const [trailTail, setTrailTail] = useState(false);  // a third trail, from the tip of the fin
-  const [tailColour, setTailColour] = useState("#b9ff9e");
-  const [trailExact, setTrailExact] = useState(false);  // the path as flown, nothing averaged: for reading a flight
+  // The effects a shot is rendered with are its own, kept with it. These are what a new shot gets: the last ones set.
+  const [defaults, setDefaults] = useState({});
+  const trailsKept = useRef(TRAILS);  // the trails as last set, back when they are ticked again
   const [hidden, setHidden] = useState("");
   const [closedVideo, setClosedVideo] = useState("");
   const [sending, setSending] = useState(false);
@@ -246,7 +243,9 @@ export function App() {
   async function save(list, expected = project.revision) {
     setSending(true); setError("");
     try {
-      const saved = await request("/api/project", {expected_revision: expected, shots: list});
+      // A shot keeps the effects it was given; one that has none yet (new, or saved before shots kept them) gets the
+      // ones set last, so a refresh no longer takes them away.
+      const saved = await request("/api/project", {expected_revision: expected, shots: list.map(s => s.effects ? s : {...s, effects: defaults})});
       setDesk(s => ({...s, project: saved}));
       return saved;
     } catch (e) { setError(e.message); }
@@ -538,9 +537,10 @@ export function App() {
     else if (!made.length) setError(found.length ? "Your take-offs and landings in this film already have shots" : "No take-off or landing of yours in this film");
   }
 
-  // Shots rendered with the options set under The cut. The assembly asks for a file per shot.
+  // Shots rendered each with its own effects (a shot that has none yet, with the ones set last). The assembly asks
+  // for a file per shot.
   function renderCut(ids, each) {
-    action("export_cut", {shot_ids: ids, quality, apart: each, expect: costOf(ids, each).total, overlay: withOverlay && !!desk.ffmpeg, blur: withBlur && !!desk.ffmpeg, look: withLook && !!desk.ffmpeg, haze: withLook && !!desk.ffmpeg, trails: withTrails && !!desk.ffmpeg && {lead: trailLead, opponent: trailOpponent, seconds: trailSeconds, exact: trailExact, ...(trailTail ? {tail: tailColour} : {})}, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
+    action("export_cut", {shot_ids: ids, quality, apart: each, expect: costOf(ids, each).total, effects: defaults, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
   }
 
   // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
@@ -564,15 +564,19 @@ export function App() {
   const place = t => Math.max(0, Math.min(100, (t - from) / (to - from) * 100));
   const span = s => ({left: `${place(s.start)}%`, width: `${place(s.end) - place(s.start)}%`});
   const chosen = shots.filter(s => !skipped.has(s.id)).map(s => s.id);
-  // What rendering these shots would take and what each effect adds to it, said before the render is asked for.
-  // The desk learns this PC's pace from its own renders; until one is done at a size, it is the measured PC's.
-  function costOf(ids, each) {
-    const picked = shots.filter(s => ids.includes(s.id)), film = picked.reduce((sum, s) => sum + s.end - s.start, 0);
-    return {film, videos: videosOf(picked, each), ...renderCost({film, videos: videosOf(picked, each), quality, blur: withBlur && !!desk.ffmpeg,
-      look: withLook && !!desk.ffmpeg, haze: withLook && !!desk.ffmpeg, trails: withTrails && !!desk.ffmpeg, trailSeconds}, desk.pace?.[quality] ?? 1)};
-  }
+  // What rendering these shots would take, each video with its own shots' effects, said before the render is asked
+  // for. The desk learns this PC's pace from its own renders; until one is done at a size, it is the measured PC's.
+  const effectsOf = s => s.effects ?? defaults, pace = desk.pace?.[quality] ?? 1;
+  const costOf = (ids, each) => cutCost(videoRows(shots.filter(s => ids.includes(s.id)).map(s => ({...s, effects: effectsOf(s)})), each), quality, !!desk.ffmpeg, pace);
   const cost = costOf(chosen, apart);
-  const price = seconds => chosen.length > 0 && !!desk.ffmpeg && <small className="cost">+ {howLong(seconds)}</small>;
+  // The effects the render options show and set: the selected shot's, kept with it, or with none selected those a
+  // new shot gets. Set on a shot, they are also what the next new shot gets.
+  const effects = draft ? effectsOf(draft) : defaults, fixed = !desk.ffmpeg || conflict;
+  function setEffects(next) { setDefaults(next); if (draft) change({...draft, effects: next}); }
+  function setTrails(changes) { trailsKept.current = {...effects.trails, ...changes}; setEffects({...effects, trails: trailsKept.current}); }
+  // What each effect adds to the selected shot's render, ticked or not.
+  const shotCost = draft && renderCost({film: draft.end - draft.start, videos: 1, quality, trailSeconds: effects.trails?.seconds}, pace);
+  const price = seconds => shotCost && !!desk.ffmpeg && <small className="cost">+ {howLong(seconds)}</small>;
   const video = desk.preview?.kind === "video" && desk.preview.url !== closedVideo ? desk.preview : null;
   const still = desk.preview?.kind === "image" ? desk.preview : null;
   // Waiting is said large, over the picture, except where the picture is what is being watched: a stretch playing
@@ -782,19 +786,20 @@ export function App() {
           <button disabled={working || dirty || !project} onClick={airfield} title="A few shots for every take-off and landing of yours that has none yet, found in your flight path">Take-offs & landings</button>
           <select aria-label="Render quality" value={quality} onChange={e => setQuality(e.target.value)}><option value="final">1080p60</option><option value="4k">4K · 2160p60</option><option value="draft">Quick draft</option></select>
           <select aria-label="Render as" value={apart ? "apart" : "one"} onChange={e => setApart(e.target.value === "apart")} title="One video with the gaps left out, or a file for every shot to cut in an editor"><option value="one">One video</option><option value="apart">A file per shot</option></select>
-          <label className="option" title={desk.ffmpeg ? "Beside every video, a transparent film of your speed, height, climb and G and the range to your opponent, to lay over it in an editor: one for a 16:9 timeline, one for a 9:16 reel" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withOverlay && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithOverlay(e.target.checked)}/> Data overlay (16:9 and 9:16)</label>
-          <label className="option" title={desk.ffmpeg ? "Film Viewer renders the video four times, a quarter of a frame apart, and ffmpeg blends them like a camera's shutter: real blur on fast motion. Takes about four times as long" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withBlur && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithBlur(e.target.checked)}/> Motion blur{price(cost.blur)}</label>
-          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Colour, bloom, a red glow round highlights, a vignette and grain, like a film camera: fitted to a DaVinci Resolve grade of this footage. With it, mist along the horizon: the far ground and the sky just above it fade into haze; aircraft against the sky and the cockpit stay clear" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withLook && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithLook(e.target.checked)}/> Film look and haze (experimental){price(cost.look + cost.haze)}</label>
-          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Two smooth lines from the wingtips of the shot's aircraft, fading behind them, with a soft glow. Not in the pilot's view or the bomb ride" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withTrails && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithTrails(e.target.checked)}/> Trails (experimental){price(cost.trails)}</label>
-          {withTrails && !!desk.ffmpeg && <>
-            <input type="color" className="swatch" value={trailLead} onChange={e => setTrailLead(e.target.value)} title="Your trails' colour (the lead aircraft of each shot)" aria-label="Your trail colour"/>
-            <input type="color" className="swatch" value={trailOpponent} onChange={e => setTrailOpponent(e.target.value)} title="Your opponent's trails' colour" aria-label="Opponent's trail colour"/>
-            <select value={trailSeconds} onChange={e => setTrailSeconds(Number(e.target.value))} title="How long a trail stays in the sky: short ones follow the aircraft, lasting ones leave the fight's ribbons to look at afterwards" aria-label="Trail length">
+          <p className="cost-total" title="Each shot keeps its own effects and is rendered with them; shots of other effects come out as videos of their own">{draft ? <>Effects of <b>{draft.name}</b>, kept with the shot</> : "Effects a new shot gets"}</p>
+          <label className="option" title={desk.ffmpeg ? "Beside every video, a transparent film of your speed, height, climb and G and the range to your opponent, to lay over it in an editor: one for a 16:9 timeline, one for a 9:16 reel" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={!!effects.overlay && !!desk.ffmpeg} disabled={fixed} onChange={e => setEffects({...effects, overlay: e.target.checked})}/> Data overlay (16:9 and 9:16)</label>
+          <label className="option" title={desk.ffmpeg ? "Film Viewer renders the video four times, a quarter of a frame apart, and ffmpeg blends them like a camera's shutter: real blur on fast motion. Takes about four times as long" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={!!effects.blur && !!desk.ffmpeg} disabled={fixed} onChange={e => setEffects({...effects, blur: e.target.checked})}/> Motion blur{price(shotCost?.blur)}</label>
+          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Colour, bloom, a red glow round highlights, a vignette and grain, like a film camera: fitted to a DaVinci Resolve grade of this footage. With it, mist along the horizon: the far ground and the sky just above it fade into haze; aircraft against the sky and the cockpit stay clear" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={!!effects.look && !!desk.ffmpeg} disabled={fixed} onChange={e => setEffects({...effects, look: e.target.checked})}/> Film look and haze (experimental){price(shotCost && shotCost.look + shotCost.haze)}</label>
+          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Two smooth lines from the wingtips of the shot's aircraft, fading behind them, with a soft glow. Not in the pilot's view or the bomb ride" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={!!effects.trails && !!desk.ffmpeg} disabled={fixed} onChange={e => setEffects({...effects, trails: e.target.checked ? trailsKept.current : null})}/> Trails (experimental){price(shotCost?.trails)}</label>
+          {effects.trails && !!desk.ffmpeg && <>
+            <input type="color" className="swatch" value={effects.trails.lead} disabled={fixed} onChange={e => setTrails({lead: e.target.value})} title="Your trails' colour (the lead aircraft of each shot)" aria-label="Your trail colour"/>
+            <input type="color" className="swatch" value={effects.trails.opponent} disabled={fixed} onChange={e => setTrails({opponent: e.target.value})} title="Your opponent's trails' colour" aria-label="Opponent's trail colour"/>
+            <select value={effects.trails.seconds} disabled={fixed} onChange={e => setTrails({seconds: Number(e.target.value)})} title="How long a trail stays in the sky: short ones follow the aircraft, lasting ones leave the fight's ribbons to look at afterwards" aria-label="Trail length">
               <option value={2.5}>Short</option><option value={10}>10 s</option><option value={30}>30 s</option><option value={60}>Lasting (1 min)</option>
             </select>
-            <label className="option" title="A third trail from the tip of the fin, in a colour of its own. The viewer does not tell an aircraft's size, so the tip is placed by its proportions: on some types a little off"><input type="checkbox" checked={trailTail} onChange={e => setTrailTail(e.target.checked)}/> Tail trail</label>
-            {trailTail && <input type="color" className="swatch" value={tailColour} onChange={e => setTailColour(e.target.value)} title="The tail trail's colour" aria-label="Tail trail colour"/>}
-            <label className="option" title="The trail exactly as the aircraft flew, nothing smoothed: for reading a flight path. It may tremble a little at the aircraft"><input type="checkbox" checked={trailExact} onChange={e => setTrailExact(e.target.checked)}/> Exact path</label>
+            <label className="option" title="A third trail from the tip of the fin, in a colour of its own. The viewer does not tell an aircraft's size, so the tip is placed by its proportions: on some types a little off"><input type="checkbox" checked={!!effects.trails.tail} disabled={fixed} onChange={e => setTrails({tail: e.target.checked ? TAIL : null})}/> Tail trail</label>
+            {effects.trails.tail && <input type="color" className="swatch" value={effects.trails.tail} disabled={fixed} onChange={e => setTrails({tail: e.target.value})} title="The tail trail's colour" aria-label="Tail trail colour"/>}
+            <label className="option" title="The trail exactly as the aircraft flew, nothing smoothed: for reading a flight path. It may tremble a little at the aircraft"><input type="checkbox" checked={!!effects.trails.exact} disabled={fixed} onChange={e => setTrails({exact: e.target.checked})}/> Exact path</label>
           </>}
           {chosen.length > 0 && <p className="cost-total" title="The plain render, and what each ticked effect adds to it. Estimates: the desk corrects them to this PC after each render">About <b>{howLong(cost.total)}</b> for {howLong(cost.film)} of film{cost.videos > 1 ? ` in ${cost.videos} videos` : ""}: plain {howLong(cost.render)}{cost.total > cost.render + 1 ? `, effects + ${howLong(cost.total - cost.render)}` : ""}{desk.pace?.[quality] == null ? " · measured on another PC until this one has rendered at this size" : ""}</p>}
           <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; renderCut(chosen, apart); }} title={dirty ? "Add or update the shot first" : apart ? "A video of each ticked shot, in its own file" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>

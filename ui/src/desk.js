@@ -110,7 +110,7 @@ export function copyName(name, shots) {
 
 // What a preview clip shows: the stretch, the shot's camera (not its name) and the picture switches.
 export function clipKey(start, end, shot, flags) {
-  const {id, name, ...camera} = shot || {};
+  const {id, name, effects, ...camera} = shot || {};  // a preview clip has no effects: changing them renders none again
   // Sorted: a shot read back from the plan lists the same fields in another order.
   return JSON.stringify([start, end, shot ? Object.keys(camera).sort().map(key => [key, camera[key]]) : null, flags]);
 }
@@ -401,16 +401,32 @@ export function toggleKey(shot, t) {
 // How many seconds of the hero's path the observer flies the average of, when the shot does not say (as shot_plan.py).
 export const looseness = shot => shot.loose ?? (shot.watch === "hero" || shot.target == null ? 1 : Math.max(1, Math.min(2, shot.distance / 200)));
 
-// How many videos a render of these shots makes: one a shot when asked apart, else as few as hold them without two
-// shots of one stretch sharing a video (as the desk deals them: passes in shot_plan.py).
-export function videosOf(shots, apart) {
-  if (apart) return shots.length;
-  const ends = [];
-  for (const shot of [...shots].sort((a, b) => a.start - b.start)) {
-    const row = ends.findIndex(end => end <= shot.start + .001);
-    if (row < 0) ends.push(shot.end); else ends[row] = shot.end;
+// The videos a render of these shots makes, a row of shots each, as the desk deals them (videos in shot_plan.py): one
+// a shot when asked apart; else as few as hold them without two shots of one stretch sharing a video, each cut where
+// the shots' effects change. `effects` must be set on every shot.
+const effectKey = e => JSON.stringify([!!e.overlay, !!e.blur, !!e.look,
+  e.trails ? [e.trails.lead, e.trails.opponent, e.trails.seconds, !!e.trails.exact, e.trails.tail || null] : null]);
+export function videoRows(shots, apart) {
+  const sorted = [...shots].sort((a, b) => a.start - b.start), passes = [];
+  if (apart) return sorted.map(shot => [shot]);
+  for (const shot of sorted) {
+    const row = passes.find(row => row.at(-1).end <= shot.start + .001);
+    if (row) row.push(shot); else passes.push([shot]);
   }
-  return ends.length;
+  return passes.flatMap(row => row.reduce((videos, shot, i) => {
+    if (i && effectKey(shot.effects) === effectKey(row[i - 1].effects)) videos.at(-1).push(shot); else videos.push([shot]);
+    return videos;
+  }, []));
+}
+
+// What rendering those videos takes (see renderCost), each with its own shots' effects: {film, videos, render, total}.
+export function cutCost(rows, quality, ffmpeg, pace = 1) {
+  return rows.reduce((sum, row) => {
+    const e = row[0].effects, film = row.reduce((seconds, shot) => seconds + shot.end - shot.start, 0);
+    const cost = renderCost({film, videos: 1, quality, blur: ffmpeg && !!e.blur, look: ffmpeg && !!e.look, haze: ffmpeg && !!e.look,
+      trails: ffmpeg && !!e.trails, trailSeconds: e.trails?.seconds}, pace);
+    return {film: sum.film + film, videos: sum.videos + 1, render: sum.render + cost.render, total: sum.total + cost.total};
+  }, {film: 0, videos: 0, render: 0, total: 0});
 }
 
 // What a second of film costs, in seconds, on the PC these were measured on (docs/how-it-works.md, "What a render
