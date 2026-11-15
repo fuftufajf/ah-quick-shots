@@ -55,7 +55,7 @@ small{font-size:12px}
 .replay input{flex:0 1 420px;min-width:160px;font-size:20px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink);background:transparent;border:1px solid transparent;border-radius:6px;padding:2px 8px}
 .replay input:hover:not(:disabled),.replay input:focus{border-color:var(--silver);background:#fff}
 .replay small{font-size:12px;color:var(--muted)}
-.replay .waiting{color:var(--red)}
+.replay .marked{color:var(--red)}
 .operation{flex:1;min-width:200px;display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted)}
 .operation strong{font-weight:500}
 .operation.working{color:var(--navy)}

@@ -689,7 +689,7 @@ export function App() {
       <input aria-label="The open replay's name" value={naming ?? stem} maxLength={100} disabled={working} spellCheck={false} onChange={e => setNaming(e.target.value)} onKeyDown={e => e.key === "Escape" && setNaming(null)} title="The open replay. Type another name and press Enter to rename its file"/>
       {naming != null && naming.trim() !== stem && <><button className="primary" disabled={working || !naming.trim()}>Rename</button><button type="button" onClick={() => setNaming(null)}>Cancel</button>
         <small>Film Viewer shows another replay for a moment while the file is renamed; saved shots keep.</small></>}
-      {waiting.length > 0 && <small className="waiting" role="status">{waiting.length === 1 ? "1 replay goes" : `${waiting.length} replays go`} to the Recycle Bin when you open another: {waiting.map(path => path.replace(/^films\//, "")).join(", ")}</small>}
+      {waiting.length > 0 && <small className="marked" role="status">{waiting.length === 1 ? "1 replay goes" : `${waiting.length} replays go`} to the Recycle Bin when you open another: {waiting.map(path => path.replace(/^films\//, "")).join(", ")}</small>}
     </form>}
     {desk.stale && <div className="notice" role="alert">AH Quick Shots was updated while it was running: the desk still runs the old version, and the page may ask it for things it cannot do. An unsaved shot is lost on restart.<button onClick={restartDesk}>Restart the desk</button></div>}
     {(error || conflict) && <div className="notice" role="alert">{conflict ? "The shared plan changed while you were editing. Discard your changes to load it, then redo them." : error}{!conflict && <button onClick={() => setError("")} aria-label="Dismiss message">×</button>}</div>}
