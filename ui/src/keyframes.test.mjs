@@ -40,5 +40,9 @@ assert.deepEqual([11, 12, 13.9, 14.1, 16, 19].map(t => frameOf(shot, t).watch), 
 assert.deepEqual([looseness(shot), looseness({...shot, watch: "hero", keys: [{...shot.keys[0], watch: "hero"}]})], [2, 1]);
 assert.equal(toggleKey(toggleKey(shot, 12), 16).watch, "target");  // the last one taken away leaves the shot its own
 
-assert.deepEqual([looseness(ship),looseness({...ship, loose: 7}), looseness({...ship, watch: "hero"}), looseness({...ship, distance: 900})], [2, 7, 1, 2]);
+// A tripod (one keyframe, a lens that holds the size) is changed where it stands, wherever the playhead is.
+shot = reframe({...ship, zoom: "hold", path: "own", keys: [{t: 12, orbit: 30, distance: 400, height: 50, fov: 40}]}, 17, {...ship, fov: 12});
+assert.deepEqual(shot.keys.map(k => [k.t, k.fov]), [[12, 12]]);
+
+assert.deepEqual([looseness(ship), looseness({...ship, loose: 7}), looseness({...ship, watch: "hero"}), looseness({...ship, distance: 900})], [2, 7, 1, 2]);
 console.log("OK: the observer's keyframes at the playhead");
