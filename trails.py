@@ -272,7 +272,12 @@ def lines(frames, tracks, radii, colours, step, fps, w, h, style=STYLE):
                 runs, run = [], []
                 for s, p, back in zip(stamps, points, feet[::-1]):
                     q = _seen(cam, p, w, h, style["close"][0])
-                    if q is None:  # behind the camera, or at the lens: the trail breaks there
+                    # Behind the camera or at the lens the trail breaks; so it does a picture's width outside the
+                    # picture, where nothing of it is seen. A point near the camera's own plane lands miles off the
+                    # screen, and libass draws each outline into a bitmap as large as the box round it (measured,
+                    # two aircraft circling with 30 s trails at 1080p60: 34 s of ffmpeg a second of film with those
+                    # points, 1.2 s without, the picture the same to 5 parts in 255).
+                    if q is None or not (-w <= q[0] <= 2 * w and -h <= q[1] <= 2 * h):
                         runs.append(run)
                         run = []
                     else:

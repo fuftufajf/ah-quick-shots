@@ -351,7 +351,10 @@ shot of film13):
 | trails, half a minute long | + 1.0 more | + 6.0 more |
 
 The effects add up nearly as a sum (look, haze and lasting trails together:
-6.8 against 6.4). Motion blur is the dearest because the viewer renders the
+6.8 against 6.4). A lasting trail is cut off a picture's width outside the
+picture: with its far-off points drawn, two aircraft circling with 30 s trails
+took 34 s of ffmpeg a second of film instead of 1.2 (a 58 s shot with every
+effect on: 45 minutes against the 19 the page had said). Motion blur is the dearest because the viewer renders the
 film four times; the trails' share is libass drawing and ffmpeg's glow, and
 what the viewer takes to tell where its camera is at every frame has not been
 timed apart (1.5 is assumed). A draft is taken as a sixth of 1080p's ffmpeg

@@ -521,6 +521,12 @@ class DeskTests(unittest.TestCase):
         at_lens = (0.0, 1000.0, 300.0 * 3.5 - 5, 0.0, 0.0, 0.0, 1.2)  # on the flight path itself, looking along it
         behind = trails.script([(3.5, at_lens)], {7: rows}, {7: .1}, {7: (255, 255, 255)}, .02, 60, 1920, 1080)
         self.assertNotIn("Dialogue:", behind)
+        # A trail is cut off a picture's width outside the picture: a point near the camera's own plane lands miles
+        # off the screen, and libass draws an outline into a bitmap as large as the box round it.
+        beside = (60.0, 1000.0, 300.0 * 3.5 - 200, 0.0, 0.0, 0.0, 1.2)  # just off the flight path, looking along it
+        near = trails.script([(3.5, beside)], {7: rows}, {7: 18}, {7: (255, 255, 255)}, .02, 60, 1920, 1080)
+        across = [int(v) / 4 for line in near.splitlines() if line.startswith("Dialogue:") for v in line.split("}")[1].split()[1::2] if v != "l"]
+        self.assertTrue(across and all(-1920 - 10 <= x <= 2 * 1920 + 10 for x in across))
         self.assertFalse([e for e in events if ",0:00:00.01,0:00:00.03," in e])  # no camera, no trails
         self.assertTrue(all("\\1c&H0080FF&" in e for e in events))
         alphas = [int(e.split("\\1a&H")[1][:2], 16) for e in firsts[:seen]]  # one wingtip's, from the wingtip back
