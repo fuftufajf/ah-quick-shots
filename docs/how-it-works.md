@@ -490,6 +490,12 @@ move it a tenth of a second, a second with Shift. Beside Play the buttons jump
 to the start (Home), the cut before (Up), the next cut (Down) and the end
 (End): a cut is where a clip starts or ends, so a dissolve has two.
 
+Under the name of each sound lane is its level in percent (`sound`, the music's
+`level`), typed or stepped by 5: 100% is as recorded, up to 200%. The page
+plays at most at full, so above 100% is heard in the export only. Each clip
+keeps its own sound as well. That is all the sound directing there is, by the
+operator's choice.
+
 The Film sound lane shows each clip's own stretch of its video's waveform, so
 the sound is seen cut with the picture; the Music lane shows the music's from
 where it starts, with its fades. Both are drawn as loud as they are set (the

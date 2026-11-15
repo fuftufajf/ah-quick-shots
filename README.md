@@ -126,7 +126,8 @@ unzipping.
    End), drag a clip to move it, drag the ends of the selected one to trim it, cut it at
    the playhead (S), join two with a cut or a short dissolve, set each clip's
    sound, and add one piece of music of your own under the film's sound. The
-   sound lanes show each clip's waveform and the music's, cut as the picture is.
+   sound lanes show each clip's waveform and the music's, cut as the picture is,
+   and the level of each lane in percent under its name.
    A shot whose camera you changed since is marked Changed; Render what is
    missing renders those and the ones with no video yet. Export video makes
    one video of the timeline with ffmpeg, while the desk goes on. The music

@@ -21,6 +21,12 @@ function Wave({wave, from, seconds, gain}) {
     <polygon points={[...line.map(at), ...line.map(below).reverse()].join(" ")}/></svg>;
 }
 
+// A track's level in percent, typed or stepped by 5: 100% as recorded, up to 200%. The page plays at most at full,
+// so above 100% is heard in the export only.
+const level = (value, set, name) => <label className="level" title={`${name}: 100% is as recorded, up to 200% in the export (the page plays at most 100%)`}>
+  <input type="number" min="0" max="200" step="5" value={Math.round(value * 100)} aria-label={`${name} level, percent`} onFocus={e => e.target.select()}
+    onChange={e => { const n = e.target.valueAsNumber; if (!Number.isNaN(n)) set(Math.max(0, Math.min(200, n)) / 100); }}/>%</label>;
+
 // The second view: the film's rendered shots in a row, trimmed, cut and set to music, then exported as one video by
 // ffmpeg. The viewer has no part in it. What it shows is worked out in assembly.js; the desk keeps it per film.
 export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, openVideos}) {
@@ -263,11 +269,11 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
             {held && <span className="trim-note" style={{left: share(held.edge === "start" ? held.row.at : held.row.at + held.row.seconds)}}>
               {held.edge === "start" ? `Starts ${held.row.start.toFixed(1)} s later` : `Ends ${held.row.end.toFixed(1)} s earlier`} · {held.row.seconds.toFixed(1)} s of {held.row.version.seconds.toFixed(1)} left</span>}
           </div>
-          <span className="lane-name"><b>Film sound</b>engine, guns, radio</span>
+          <span className="lane-name" title="The film's sound: engine, guns, radio"><b>Film sound</b>{level(assembly.sound, sound => commit({...assembly, clips, sound}), "Film sound")}</span>
           {/* The film's sound is cut with the picture: each clip's own stretch of its waveform, as loud as it is set. */}
           <div className="lane thin" onClick={e => go(timeAt(e))}>{rows.map((r, i) => <span key={i} className={`sound ${i === pick ? "current" : ""}`} style={{left: share(r.at), width: share(r.seconds)}}>
             <Wave wave={waves[`video/${r.version.id}`]} from={r.start} seconds={r.seconds} gain={() => r.sound * assembly.sound}/></span>)}</div>
-          <span className="lane-name"><b>Music</b>your own file</span>
+          <span className="lane-name"><b>Music</b>{music ? level(music.level, value => commit({...assembly, clips, music: {...music, level: value}}), "Music") : "your own file"}</span>
           <div className="lane thin" onClick={e => go(timeAt(e))}>
             {music && <span className="music" style={{width: share(length)}}><Wave wave={waves[`music/${music.file}`]} from={music.from} seconds={length} gain={t => music.level * musicGain(music, t, length)}/>
               <span>{music.name} · from {formatTime(music.from)} · in {music.in} s · out {music.out} s</span></span>}
@@ -278,8 +284,6 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
             onPointerDown={scrubDown} onPointerMove={scrubMove} onPointerUp={scrubUp} onPointerCancel={scrubUp} onKeyDown={scrubKey}/></div>}
         </div>
         <div className="lane-tools">
-          <label>Film sound <input type="range" min="0" max="100" value={Math.round(assembly.sound * 100)} aria-label="Film sound level" onChange={e => commit({...assembly, clips, sound: e.target.value / 100})}/></label>
-          {music && <label>Music <input type="range" min="0" max="100" value={Math.round(music.level * 100)} aria-label="Music level" onChange={e => commit({...assembly, clips, music: {...music, level: e.target.value / 100}})}/></label>}
           {music && <label>From · seconds <input type="number" min="0" step="1" value={music.from} aria-label="Where in the music it starts" onChange={e => commit({...assembly, clips, music: {...music, from: Math.max(0, Number(e.target.value) || 0)}})}/></label>}
           <input ref={picker} type="file" accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,audio/*" hidden onChange={chooseMusic}/>
           <button onClick={() => picker.current.click()} title="An mp3, wav, m4a, aac, flac or ogg file of your own: it plays under the film's sound, fades in, and fades out with the last clip"><MusicNotes/> {music ? "Other music…" : "Choose music…"}</button>

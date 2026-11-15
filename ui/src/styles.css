@@ -270,7 +270,10 @@ button.small{min-height:26px;padding:3px 8px;font-size:12px}
 .ruler span{position:absolute;top:0;transform:translateX(-50%)}
 .ruler span:first-child{transform:none}
 .assembly .lane{height:44px;cursor:pointer}
-.assembly .lane.thin{height:30px}
+.assembly .lane.thin{height:36px}
+/* A sound lane's level, in percent, under its name. */
+.level{display:flex;align-items:center;gap:3px;margin-top:3px;font-size:12px;color:var(--muted)}
+.level input{width:60px;padding:2px 5px;font-size:12px;font-variant-numeric:tabular-nums}
 .clip{position:absolute;top:3px;bottom:3px;min-height:0;padding:0 7px;display:block;text-align:left;border:1px solid var(--silver);border-radius:3px;background:#dfe2e6;overflow:hidden;white-space:nowrap;font-size:11px;line-height:1.25;color:var(--ink)}
 .clip b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;margin-top:4px}
 .clip i{font-style:normal;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -299,7 +302,7 @@ button.small{min-height:26px;padding:3px 8px;font-size:12px}
 .scrub .playhead:focus-visible{outline:2px solid var(--navy);outline-offset:2px}
 .sound,.music{position:absolute;top:3px;bottom:3px;left:0;border:1px solid var(--silver);border-radius:3px;background:#e9ebee;overflow:hidden}
 .sound.current{border-color:var(--navy)}
-.music{white-space:nowrap;text-overflow:ellipsis;font-size:11px;line-height:22px;color:var(--ink);padding:0 9px}
+.music{white-space:nowrap;text-overflow:ellipsis;font-size:11px;line-height:28px;color:var(--ink);padding:0 9px}
 .music>span{position:relative}
 /* A waveform fills its box, in the quiet grey of the lanes; the selected clip's in navy. */
 .wave{position:absolute;inset:0;width:100%;height:100%}
