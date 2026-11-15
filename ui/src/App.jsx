@@ -86,7 +86,7 @@ export function App() {
   const live = running && desk.job.action === "live";  // a stretch is playing in Film Viewer's own window
   const busy = running || sending || looking;  // the viewer cannot take another request yet
   // Worth showing: a look at a changed camera is back before a spinner could be read.
-  const working = sending || (running && (!["seek", "icons"].includes(desk.job.action) || (desk.job.elapsed || 0) >= .5));
+  const working = sending || (running && (!["seek", "icons", "around"].includes(desk.job.action) || (desk.job.elapsed || 0) >= .5));
   const failure = !working && desk.job?.error && desk.job.id !== hidden ? desk.job.error : "";
   const problems = desk.problems || {};
   const isSaved = Boolean(draft) && shots.some(s => s.id === draft.id);
@@ -152,6 +152,18 @@ export function App() {
     const timer = setTimeout(() => setWanted({action: "seek", body: {seconds: desk.now, rough: true, wait: true, ...(draft ? {shot: draft} : {})}}), 2000);
     return () => clearTimeout(timer);
   }, [desk.preview?.url, desk.preview?.fresh, busy, wanted]);
+  // Who is near is measured over the shot's own stretch (Opponent, Rate cameras): when its ends have moved, it is
+  // measured again once they rest. A shot made longer kept the aircraft of the stretch it began with, and one that
+  // came near later was never offered. Its camera reads the same tracks, so this costs little.
+  const nearAsked = useRef("");
+  const measured = desk.nearby ? JSON.stringify([desk.nearby.start, desk.nearby.end, desk.nearby.hero]) : "";  // the state is new every poll
+  useEffect(() => {
+    if (!draft || cast.lead == null || !project || busy || wanted || trimGrab.current) return;
+    const key = JSON.stringify([draft.start, draft.end, cast.lead]);
+    if (measured === key || nearAsked.current === key) return;
+    const timer = setTimeout(() => { nearAsked.current = key; setWanted({action: "around", body: {start: draft.start, end: draft.end, hero: cast.lead}}); }, 800);
+    return () => clearTimeout(timer);
+  }, [draft?.start, draft?.end, cast.lead, measured, busy, wanted]);
   // One request waits for the viewer; a newer one replaces it.
   useEffect(() => {
     if (!wanted || busy || (!project && wanted.action !== "open")) return;
@@ -353,13 +365,16 @@ export function App() {
 
   function pick(e) {
     setMoment(e);
-    if (keepDraft()) return goTo(e.time);
+    // The playhead goes to where the moment begins: a fight at its first burst or hit, anything else where its own
+    // shot begins, so Play shows it whole. (At a fight's time, its kill message, Play showed what came after it.)
+    const begin = e.fight ? e.start : newShot(project, desk.planes, e, e.time).start;
+    if (keepDraft()) return goTo(begin);
     const inside = shots.find(s => e.time >= s.start && e.time <= s.end);
     const shot = inside ? {...inside} : fitShot(newShot(project, desk.planes, e, e.time), shots);
-    const lead = castOf(shot, desk.planes).lead;
-    open(shot, false); setCursor(e.time);
-    if (inside || shot.hero == null || AS_FLOWN.includes(shot.kind)) return show(shot, e.time, lead);
-    casting.current = {id: shot.id, still: e.time};
+    const lead = castOf(shot, desk.planes).lead, at = Math.max(shot.start, Math.min(shot.end - .5, begin));
+    open(shot, false); setCursor(at);
+    if (inside || shot.hero == null || AS_FLOWN.includes(shot.kind)) return show(shot, at, lead);
+    casting.current = {id: shot.id, still: at};
     setWanted({action: "around", body: {start: shot.start, end: shot.end, hero: lead}});
   }
   // A sequence just added: its first shot selected and shown as a still, so Play shows the whole sequence.
@@ -586,7 +601,7 @@ export function App() {
   const still = desk.preview?.kind === "image" ? desk.preview : null;
   // Waiting is said large, over the picture, except where the picture is what is being watched: a stretch playing
   // in the viewer's window and a camera's still that is back within a second.
-  const job = desk.job || {}, quick = running && (live || (["seek", "icons"].includes(job.action) && (job.elapsed || 0) < 1));
+  const job = desk.job || {}, quick = running && (live || (["seek", "icons", "around"].includes(job.action) && (job.elapsed || 0) < 1));
   // A render (one with steps or an estimate) can be cancelled: what Film Viewer renders it finishes, ffmpeg stops at once.
   const rendering = running && ["export_cut", "clip"].includes(job.action) && Boolean(job.steps || job.expect);
   // How far the job is. A render counts its steps and ffmpeg's say how far they are (share); the viewer says nothing

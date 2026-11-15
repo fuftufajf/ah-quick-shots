@@ -38,9 +38,17 @@ key moment (the heaviest hits) to three after; a kill, or a fight that ends in
 one, from five seconds before the kill message to two and a half past it; a
 drop from one second before to fourteen after; anything else from five before
 to two after. The film's ends and the saved shots beside it trim that. A
-moment inside a saved shot selects that shot instead. Before the clip is made
+moment inside a saved shot selects that shot instead. The playhead goes to
+where the moment begins, inside that shot: a fight at its first burst or hit,
+anything else where its own shot begins, so Play shows it whole (at a fight's
+time, its kill message, Play went on after the kill). Before the clip is made
 the desk reads who was around: if the moment's aircraft never comes within
 3,000 ft while another passes within 1,500 ft, the nearer one is taken.
+Who was around is measured over the shot's own stretch, again whenever its ends
+have moved and rest: Opponent offers whoever comes within 3,000 ft there. The
+observer and Rate cameras frame you and that one opponent only; a third
+aircraft is in the picture by chance. A shot that spans fights with two
+opponents is better made as two shots.
 
 **Picture.** The socket has no picture stream, and the viewer renders a video
 in about the time it plays, whatever its size (measured: five seconds of film
