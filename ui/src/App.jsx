@@ -90,6 +90,8 @@ export function App() {
   const problems = desk.problems || {};
   const isSaved = Boolean(draft) && shots.some(s => s.id === draft.id);
   const conflict = dirty && isSaved && baseRevision !== project?.revision;
+  // Keyframes and camera changes are kept only with the shot: until then a refresh, a restart or another replay loses them.
+  const unsaved = Boolean(draft) && (dirty || !isSaved) && !conflict;
   const clip = desk.preview?.kind === "clip" ? desk.preview : null;
   const sequence = draft && isSaved ? sequenceOf(draft, shots) : [];
   const flags = [Boolean(desk.icons)];
@@ -716,7 +718,8 @@ export function App() {
 
         <div className="angles panel">
           <div className="panel-heading"><h2>3 <span>Cameras</span></h2>
-            <div className="chips"><button disabled={working || !draft || cast.lead == null || draft.end - draft.start < .5} onClick={() => { setRated(rateKey); action("suggest", {shots: candidates(draft, stage)}); }} title="Measure every camera over the whole shot: each then opens on the framing that reads best"><Sparkle/> Rate cameras</button><button className="primary" disabled={working || conflict || !draft || (isSaved && !dirty)} onClick={commit}><Plus/> {isSaved ? "Update shot" : "Add to cut"}</button></div>
+            <div className="chips"><button disabled={working || !draft || cast.lead == null || draft.end - draft.start < .5} onClick={() => { setRated(rateKey); action("suggest", {shots: candidates(draft, stage)}); }} title="Measure every camera over the whole shot: each then opens on the framing that reads best"><Sparkle/> Rate cameras</button><button className={`primary ${unsaved ? "unsaved" : ""}`} disabled={working || conflict || !draft || (isSaved && !dirty)} onClick={commit}
+              title={unsaved ? "Not saved yet: a refresh, a desk restart or another replay loses what is not in the cut" : undefined}><Plus/> {isSaved ? "Update shot" : "Add to cut"}</button></div>
           </div>
           {draft ? <>
             {problems[draft.id] && <p className="problem" role="alert">{problems[draft.id]}</p>}
@@ -762,7 +765,7 @@ export function App() {
         <div className="panel-heading"><h2>4 <span>The cut</span></h2><span className="heading-actions">{shots.length} shots<button className="danger small" disabled={working || !shots.length} onClick={() => setForgetting({ids: shots.map(s => s.id), label: "all"})} title="Remove every shot from the cut, and choose whether their videos go too"><Trash/> Clear</button></span></div>
         <div className="cut-list">{shots.map(s => <div key={s.id} className={`cut-row ${draft?.id === s.id ? "selected" : ""}`}>
           <input type="checkbox" aria-label={`Render ${s.name}`} checked={!skipped.has(s.id)} onChange={() => setSkipped(old => { const next = new Set(old); if (!next.delete(s.id)) next.add(s.id); return next; })}/>
-          <button onClick={() => choose(s)}><strong>{s.name}</strong><small>{formatTime(s.start)} — {formatTime(s.end)} · {camera(s)}</small>{problems[s.id] && <small className="problem">Cannot be filmed: open it for the reason</small>}</button>
+          <button onClick={() => choose(s)}><strong>{dirty && draft?.id === s.id && <span className="unsaved-dot" role="img" aria-label="Unsaved changes" title="Changed and not saved: Update shot keeps it"/>}{s.name}</strong><small>{formatTime(s.start)} — {formatTime(s.end)} · {camera(s)}</small>{problems[s.id] && <small className="problem">Cannot be filmed: open it for the reason</small>}</button>
           <button className="forget" disabled={working} onClick={() => setForgetting({ids: [s.id], label: s.name})} aria-label={`Remove ${s.name}`} title="Remove this shot from the cut"><X weight="bold"/></button>
         </div>)}
           {!shots.length && <p className="hint">Shots you add appear here. Tick the ones to render.</p>}

@@ -1,7 +1,8 @@
 /* White and greys carry the page. The accents are the US Air Force insignia colours, used only on points:
-   navy for what is active, selected or in progress, red for a warning, silver for quiet marks. Never a surface. */
+   navy for what is active, selected or in progress, red for a warning, silver for quiet marks. Never a surface.
+   One more, amber, says only this: a change not saved yet. */
 :root{font-family:"Source Sans 3","Source Sans Pro","Segoe UI",system-ui,sans-serif;color:#3c4043;background:#f6f7f8;font-synthesis:none;color-scheme:light;
-  --ink:#202124;--muted:#5f6368;--edge:#dadce0;--line:#bdc1c6;--wash:#f1f3f4;--navy:#00308f;--navy-wash:#eef2f9;--red:#b5102d;--red-wash:#fdf3f5;--silver:#9aa0a6}
+  --ink:#202124;--muted:#5f6368;--edge:#dadce0;--line:#bdc1c6;--wash:#f1f3f4;--navy:#00308f;--navy-wash:#eef2f9;--red:#b5102d;--red-wash:#fdf3f5;--silver:#9aa0a6;--amber:#e37400}
 
 *{box-sizing:border-box}
 body{margin:0;min-width:360px}
@@ -30,6 +31,11 @@ h2{font-size:13px;font-weight:600}
 small{font-size:12px}
 .primary{background:var(--navy);color:#fff;border-color:var(--navy);font-weight:600}
 .primary:hover:not(:disabled){background:#002470;border-color:#002470;color:#fff}
+/* The button that keeps an unsaved change: its frame breathes amber, once every 1.5 s; held still for reduced motion. */
+.unsaved{box-shadow:0 0 0 2px var(--amber);animation:unsaved 1.5s ease-in-out infinite}
+@keyframes unsaved{50%{box-shadow:0 0 0 3px #e3740033}}
+@media(prefers-reduced-motion:reduce){.unsaved{animation:none}}
+.unsaved-dot{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--amber);vertical-align:1px}
 .selected{border-color:var(--navy)!important;background:var(--navy-wash)!important}
 .hint,.empty-small{font-size:12px;color:var(--muted);line-height:1.5;padding:10px 14px}
 
