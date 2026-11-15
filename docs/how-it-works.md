@@ -292,7 +292,8 @@ frame (1/480 s) after the one before. ffmpeg weaves the passes: eight frames a
 frame either way. A film camera's 180° (half of them) left too little to see;
 two a frame at 120 fps gave a double image instead of a streak; one pass at
 30 fps, four a frame, drew the edges of an aircraft in a fast roll as four
-steps (a 15 s render at 1080p30, 46 s in all). ffmpeg's motion interpolation
+steps (a 15 s render at 1080p30); two passes drew them smooth, leaving only a
+faint fan of eight at the wingtip in the fastest of the roll. ffmpeg's motion interpolation
 took 130 times the film's length. The sound is
 the first pass's. Measured on a 7 s shot at 1080p60: 67 s with blur, 17 s
 without.
@@ -388,10 +389,11 @@ shot of film13):
 At 30 fps the page takes ffmpeg's share and the trails' as half of these,
 blending as half (two passes instead of four), and the viewer's own render as
 at 60: worked out, not timed. Motion blur then costs two passes at 120 fps less
-the plain render, about 2.2 s a second at 1080p instead of 5.6. One render
-seen at 1080p30 with one pass (15 s of film, 46 s in all, of which about 5 s
-waiting for the last clip's sound and 3 s of ffmpeg) came out a third slower
-than said; the desk's pace took that in.
+the plain render, about 2.2 s a second at 1080p instead of 5.6. Timed on 15 s
+of film at 1080p30 with motion blur: with one pass 46 s in all (about 5 s of it
+waiting for the last clip's sound), a third more than said; with two passes 74 s,
+6% more, each pass of the viewer about 1.9 s for a second rendered (1.7 assumed)
+and ffmpeg 0.23. The desk's pace took both in.
 
 The effects add up nearly as a sum (look, haze and lasting trails together:
 6.8 against 6.4). A lasting trail is cut off a picture's width outside the
