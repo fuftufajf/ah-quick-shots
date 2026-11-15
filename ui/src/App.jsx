@@ -18,6 +18,9 @@ const AS_FLOWN = ["recorded", "weapon"];  // the pilot's own view and the bomb's
 // or null for none), and `exact`: the path as flown, nothing averaged, for reading a flight.
 const TRAILS = {lead: "#e8f4ff", opponent: "#ff9e6b", seconds: 2.5, tail: null, exact: false};
 const TAIL = "#b9ff9e";
+// The effects a shot has until others are set: motion blur, since 30 frames a second without it look jerky (and at
+// 30 it is one pass of the viewer). A shot saved before shots kept their effects has these too, whatever is set since.
+const FIRST = {blur: true};
 const CHUNK = 10;  // seconds of film per preview when no shot is selected
 const NEAR = 3000;  // feet: an aircraft that never comes this close is a dot, not someone to film
 
@@ -46,8 +49,7 @@ export function App() {
   const [apart, setApart] = useState(false);
   const [fps, setFps] = useState(30);  // the operator's choice: more like film; 60 stays an option
   // The effects a shot is rendered with are its own, kept with it. These are what a new shot gets: the last ones set.
-  // Motion blur from the start: 30 frames a second without it look jerky, and at 30 it is one pass of the viewer.
-  const [defaults, setDefaults] = useState({blur: true});
+  const [defaults, setDefaults] = useState(FIRST);
   const trailsKept = useRef(TRAILS);  // the trails as last set, back when they are ticked again
   const [hidden, setHidden] = useState("");
   const [closedVideo, setClosedVideo] = useState("");
@@ -245,9 +247,9 @@ export function App() {
   async function save(list, expected = project.revision) {
     setSending(true); setError("");
     try {
-      // A shot keeps the effects it was given; one that has none yet (new, or saved before shots kept them) gets the
-      // ones set last, so a refresh no longer takes them away.
-      const saved = await request("/api/project", {expected_revision: expected, shots: list.map(s => s.effects ? s : {...s, effects: defaults})});
+      // A shot keeps the effects it was given; one that has none yet gets those it is shown with (effectsOf), so a
+      // refresh no longer takes them away.
+      const saved = await request("/api/project", {expected_revision: expected, shots: list.map(s => s.effects ? s : {...s, effects: effectsOf(s)})});
       setDesk(s => ({...s, project: saved}));
       return saved;
     } catch (e) { setError(e.message); }
@@ -380,12 +382,12 @@ export function App() {
   function another() {
     const at = Math.round(cursor * 10) / 10;
     if (!again) return fresh(at, Math.min(project.length, at + 6));
-    setDraft({...draft, id: crypto.randomUUID(), name: copyName(draft.name, shots)}); setDirty(true); setBaseRevision(project.revision);
+    setDraft({...draft, id: crypto.randomUUID(), name: copyName(draft.name, shots), effects: effectsOf(draft)}); setDirty(true); setBaseRevision(project.revision);
   }
   // The same from The cut: a copy of a saved shot, selected and not in the cut until Add to cut.
   function duplicate(shot) {
     if (keepDraft()) return;
-    const copy = {...shot, id: crypto.randomUUID(), name: copyName(shot.name, shots)};
+    const copy = {...shot, id: crypto.randomUUID(), name: copyName(shot.name, shots), effects: effectsOf(shot)};
     open(copy, true); setCursor(copy.start); show(copy, copy.start, castOf(copy, desk.planes).lead);
   }
   function mark(edge) {
@@ -539,10 +541,10 @@ export function App() {
     else if (!made.length) setError(found.length ? "Your take-offs and landings in this film already have shots" : "No take-off or landing of yours in this film");
   }
 
-  // Shots rendered each with its own effects (a shot that has none yet, with the ones set last). The assembly asks
-  // for a file per shot.
+  // Shots rendered each with its own effects (a saved shot that has none yet, with FIRST). The assembly asks for a file
+  // per shot.
   function renderCut(ids, each) {
-    action("export_cut", {shot_ids: ids, quality, fps, apart: each, expect: costOf(ids, each).total, effects: defaults, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
+    action("export_cut", {shot_ids: ids, quality, fps, apart: each, expect: costOf(ids, each).total, effects: FIRST, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
   }
 
   // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
@@ -568,7 +570,8 @@ export function App() {
   const chosen = shots.filter(s => !skipped.has(s.id)).map(s => s.id);
   // What rendering these shots would take, each video with its own shots' effects, said before the render is asked
   // for. The desk learns this PC's pace from its own renders; until one is done at a size, it is the measured PC's.
-  const effectsOf = s => s.effects ?? defaults, pace = desk.pace?.[quality] ?? 1;
+  // A shot without effects of its own: a new one has the ones set last, a saved one (saved before shots kept them) FIRST.
+  const effectsOf = s => s.effects ?? (shots.some(saved => saved.id === s.id) ? FIRST : defaults), pace = desk.pace?.[quality] ?? 1;
   const costOf = (ids, each) => cutCost(videoRows(shots.filter(s => ids.includes(s.id)).map(s => ({...s, effects: effectsOf(s)})), each), quality, fps, !!desk.ffmpeg, pace);
   const cost = costOf(chosen, apart);
   // The effects the render options show and set: the selected shot's, kept with it, or with none selected those a

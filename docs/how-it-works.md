@@ -274,8 +274,9 @@ data overlay, motion blur, the film look and its haze, trails with their
 colours, length, tail trail and exact path), so a refresh no longer loses
 them. The options under The cut show and set the selected shot's, kept with it
 when it is added or updated; with no shot selected, those a new shot gets,
-which are always the last ones set. A shot saved before shots kept their
-effects is given those on its first save. One video renders every shot its own
+which are always the last ones set (motion blur alone at first). A shot saved
+before shots kept their effects has that first set, motion blur alone, until it
+is given others: setting another shot's effects does not touch it. One video renders every shot its own
 way: it is cut wherever the effects change, so shots of other effects come out
 as videos of their own and those alike as one. Effects are not the camera:
 changing them renders no preview again and does not mark a shot's video as
