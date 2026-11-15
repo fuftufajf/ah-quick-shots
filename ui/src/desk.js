@@ -329,6 +329,64 @@ export function momentLabel(event) {
   return event.text;
 }
 
+// The observer can be directed. A keyframe is a framing (where the ship sits, and its lens) kept at a moment of the
+// shot; between keyframes the ship glides from one to the next (shot_plan.py: _glide and framed, the same numbers).
+export const KEYED = {orbit: [-Infinity, Infinity], distance: [20, 10000], height: [-2000, 5000], fov: [6, 140]};
+export const keyable = shot => shot?.kind === "escort";
+const framing = from => Object.fromEntries(Object.keys(KEYED).map(name => [name, from[name]]));
+
+// A value through keyframes at t: held before the first and after the last; between them on a cubic that passes
+// each at the pace of its neighbours and is flat at the two ends.
+export function glide(times, values, t) {
+  const last = times.length - 1;
+  if (t <= times[0] || !last) return values[0];
+  if (t >= times[last]) return values[last];
+  let i = 0;
+  while (times[i + 1] <= t) i++;
+  const pace = k => k === 0 || k === last ? 0 : (values[k + 1] - values[k - 1]) / (times[k + 1] - times[k - 1]);
+  const h = times[i + 1] - times[i], s = (t - times[i]) / h;
+  return (2 * s ** 3 - 3 * s ** 2 + 1) * values[i] + (s ** 3 - 2 * s ** 2 + s) * h * pace(i)
+    + (-2 * s ** 3 + 3 * s ** 2) * values[i + 1] + (s ** 3 - s ** 2) * h * pace(i + 1);
+}
+
+// The shot as its keyframes set it at film time t: what the sliders show there and a drag starts from.
+export function frameOf(shot, t) {
+  if (!shot.keys?.length) return shot;
+  const times = shot.keys.map(k => k.t), out = {...shot};
+  for (const [name, [low, high]] of Object.entries(KEYED)) {
+    const values = shot.keys.map(k => k[name]);
+    if (name === "orbit") for (let k = 1; k < values.length; k++) values[k] = values[k - 1] + ((values[k] - values[k - 1] + 540) % 360 + 360) % 360 - 180;
+    const value = Math.min(high, Math.max(low, glide(times, values, t)));
+    out[name] = name === "orbit" ? Math.round((((value + 180) % 360 + 360) % 360 - 180) * 10) / 10 : Math.round(value * 10) / 10;
+  }
+  return out;
+}
+
+// The keyframe at the playhead, if one is within a quarter of a second of it: -1 when none.
+export const keyAt = (shot, t) => (shot.keys || []).findIndex(k => Math.abs(k.t - t) <= .25);
+
+// The shot after its camera was changed at the playhead to `next` (the framing there, changed). Before the first
+// keyframe that is the whole shot's camera. With keyframes a change is a keyframe at the playhead: the one already
+// there, or a new one.
+export function reframe(shot, t, next) {
+  if (!shot.keys?.length) return next;
+  const at = keyAt(shot, t), key = {t: Math.round(t * 100) / 100, ...framing(next)};
+  const keys = at >= 0 ? shot.keys.map((k, i) => i === at ? {...key, t: k.t} : k) : [...shot.keys, key].sort((a, b) => a.t - b.t);
+  return {...next, ...framing(shot), keys};
+}
+
+// The keyframe at the playhead put there, or taken away when there is one. The first keeps the shot's camera as it
+// is; with the last one gone the shot keeps that one's camera, flying with the aircraft again.
+export function toggleKey(shot, t) {
+  const at = keyAt(shot, t);
+  if (at < 0) return {...shot, keys: [...(shot.keys || []), {t: Math.round(t * 100) / 100, ...framing(frameOf(shot, t))}].sort((a, b) => a.t - b.t)};
+  const keys = shot.keys.filter((_k, i) => i !== at);
+  return keys.length ? {...shot, keys} : {...shot, ...framing(shot.keys[at]), keys: undefined, path: undefined};
+}
+
+// How many seconds of the hero's path the observer flies the average of, when the shot does not say (as shot_plan.py).
+export const looseness = shot => shot.loose ?? (shot.watch === "hero" || shot.target == null ? 1 : Math.max(1, Math.min(4, shot.distance / 130)));
+
 // How many videos a render of these shots makes: one a shot when asked apart, else as few as hold them without two
 // shots of one stretch sharing a video (as the desk deals them: passes in shot_plan.py).
 export function videosOf(shots, apart) {

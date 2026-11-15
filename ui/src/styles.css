@@ -124,6 +124,9 @@ p.problem{font-size:13px;padding:10px 14px 0}
 .trim-handle:hover:not(:disabled),.trim-handle:active{background:#002470;border-color:#002470}
 .dot{position:absolute;top:8px;width:10px;height:10px;min-height:0;padding:0;margin-left:-5px;border:1px solid #fff;border-radius:50%;background:var(--silver);z-index:1}
 .dot:hover:not(:disabled),.dot.selected{background:var(--navy)!important;border-color:#fff!important}
+/* A keyframe on the shot: a small diamond at its moment, in the accent like everything that is set. */
+.keyframe{position:absolute;top:8px;width:11px;height:11px;min-height:0;padding:0;margin-left:-6px;transform:rotate(45deg);border:1px solid #fff;border-radius:2px;background:var(--navy);z-index:3}
+.keyframe:hover:not(:disabled){background:#002470;border-color:#fff}
 .transport{display:flex;align-items:center;gap:8px;padding:4px 14px 8px;flex-wrap:wrap}
 .transport strong{font-size:17px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
 .transport>span{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}

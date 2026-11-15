@@ -22,7 +22,7 @@ import finishing
 import flight_data
 import overlay
 import trails
-from shot_plan import _last_seen, _steady, camera_pose, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
+from shot_plan import _glide, _last_seen, _steady, camera_pose, framed, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
 from viewer_socket import Viewer, film_rows, plane_rows
 
 SHOT = {"id": "one", "name": "Pair", "start": 1, "end": 3, "kind": "pair",
@@ -811,6 +811,44 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(Desk(self.temp.name, self.viewer).data["pace"], self.desk.snapshot()["pace"])  # kept with the desk
         self.run_action({"action": "export_cut", "quality": "4k"})  # no estimate, nothing learned
         self.assertEqual(list(self.desk.snapshot()["pace"]), ["final"])
+
+    def test_the_observer_glides_between_keyframes_and_can_fly_a_path_of_its_own(self):
+        # Through keyframes a value is held before the first and after the last, passes each one, and does not halt
+        # at one on the way (the same numbers as the page's own, in ui/src/keyframes.test.mjs).
+        self.assertEqual([round(_glide([2, 4, 7], [0, 10, 4], t), 4) for t in (1, 2, 3, 4, 5.5, 7, 9)], [0, 0, 4.8, 10, 7.3, 4, 4])
+        turning = {"keys": [{"t": 0, "orbit": 170, "distance": 100, "height": 0, "fov": 40}, {"t": 2, "orbit": -170, "distance": 300, "height": 50, "fov": 60}]}
+        self.assertEqual([framed(turning, 1)[name] for name in ("orbit", "distance", "height", "fov")], [180, 200, 25, 50])  # the short way round
+        # A hero in a steady turn with another aircraft beside it, 12 s of tracks half a second apart.
+        def spot(t, off):
+            return (2000 * math.cos(t * .15) + off, 3000 + off / 10, 2000 * math.sin(t * .15), t * .15, 0, .5)
+        tracks = {t / 2: {19: spot(t / 2, 0), 10: spot(t / 2 + 1.5, 300)} for t in range(25)}
+        at = sorted(tracks).index
+        ship = {**SHOT, "kind": "escort", "start": 0, "end": 12, "orbit": 30, "distance": 400, "height": 50, "fov": 40, "loose": 3}
+        wide = {"orbit": -120, "distance": 900, "height": 300, "fov": 70}
+        keyed = validate_shot({**ship, "keys": [{"t": 9, **wide}, {"t": 3, **{name: ship[name] for name in wide}}, {"t": 40, **wide}]}, 60)
+        self.assertEqual([key["t"] for key in keyed["keys"]], [3, 9])  # in order; the one outside the shot went with the trim
+        self.assertNotIn("keys", validate_shot({**SHOT, "keys": keyed["keys"], "path": "own", "loose": 5}, 60))  # the observer's alone
+        self.assertNotIn("path", validate_shot({**ship, "path": "own"}, 60))  # a path of its own needs a place to pin
+        place = lambda poses, t: tuple(round(v, 6) for v in poses[at(t)][:3])
+        plain, far, moved = (escort_poses(validate_shot(shot, 60), tracks) for shot in (ship, {**ship, **wide}, keyed))
+        # Up to its first keyframe the ship sits as that one says, from its last on as the last says, between them on the way.
+        self.assertEqual([place(moved, t) for t in (0, 3)], [place(plain, t) for t in (0, 3)])
+        self.assertEqual([place(moved, t) for t in (9, 12)], [place(far, t) for t in (9, 12)])
+        self.assertNotIn(place(moved, 6), (place(plain, 6), place(far, 6)))
+        self.assertAlmostEqual(moved[at(12)][6], math.radians(70), places=2)  # the lens too
+        # On a path of its own the keyframes pin it to the sky: it stands at the first pin until then, flies a line
+        # of its own to the last and stays there, whatever the aircraft do. One pin is a camera standing still.
+        own = escort_poses(validate_shot({**keyed, "path": "own"}, 60), tracks)
+        self.assertEqual({place(own, t) for t in (0, 1.5, 3)}, {place(moved, 3)})
+        self.assertEqual({place(own, t) for t in (9, 10.5, 12)}, {place(moved, 9)})
+        self.assertGreater(math.dist(place(own, 6), place(moved, 6)), 50)
+        still = escort_poses(validate_shot({**ship, "path": "own", "keys": [{"t": 6, **wide}]}, 60), tracks)
+        self.assertEqual(len({place(still, t) for t in sorted(tracks)}), 1)
+        self.assertTrue(all(" curve" in line for line in compile_shot(validate_shot({**keyed, "path": "own"}, 60), tracks)))
+        # Looser, it flies the average of more of the hero's path: round a turn, a shorter way.
+        flown = lambda seconds: (lambda poses: sum(math.dist(a[:3], b[:3]) for a, b in zip(poses, poses[1:])))(
+            escort_poses(validate_shot({**ship, "loose": seconds}, 60), tracks))
+        self.assertLess(flown(8), flown(1))
 
     def test_take_offs_and_touchdowns_are_found_in_the_filmer_s_path(self):
         # Parked, a roll, a lift-off at 18 s, a flight, a landing at 60 s that stops at 64 s; then a second sortie

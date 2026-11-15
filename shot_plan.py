@@ -18,6 +18,8 @@ WATCH = ("both", "hero", "target")  # whom a camera ship keeps in its picture
 SIDES = {"right": 90, "left": -90, "rear": 0, "front": 180, "top": 0}
 # The camera travels with the lead aircraft (or is the pilot's own view): no tracks needed.
 RIDES = ("follow", "wing", "cockpit", "weapon", "recorded", *MOUNTS)
+# What a keyframe of the observer holds, with the limits each has on a shot: where the ship sits and its lens.
+KEYED = (("orbit", -180, 180), ("distance", 20, 10000), ("height", -2000, 5000), ("fov", 6, 140))
 
 
 def validate_shot(raw, length):
@@ -53,7 +55,58 @@ def validate_shot(raw, length):
     two = shot["kind"] in ("pair", "ambush") or (shot["kind"] == "escort" and shot["watch"] != "hero")
     if shot["hero"] is None or shot["target"] == shot["hero"] or (two and shot["target"] is None):
         raise ValueError("Choose the lead aircraft and, for a shot of two, a different second aircraft")
+    if kind == "escort":
+        # The observer can be directed: `loose`, the seconds of the hero's path it flies the average of; `keys`,
+        # framings set at moments of the shot, between which it glides; `path` "own", when those moments pin it to
+        # the sky and it flies its own line through them instead of the aircraft's.
+        if raw.get("loose") is not None:
+            shot["loose"] = number(raw["loose"], 1, 12, "looseness")
+        keys = raw.get("keys") or []
+        if not isinstance(keys, list) or len(keys) > 40 or not all(isinstance(key, dict) for key in keys):
+            raise ValueError("A shot holds up to 40 keyframes")
+        kept = {}
+        for key in keys:
+            t = round(number(key.get("t"), 0, length, "keyframe time"), 2)
+            if shot["start"] - .001 <= t <= shot["end"] + .001:  # one outside the shot went with what was trimmed off
+                kept[t] = {"t": t, **{name: number(key.get(name), low, high, name) for name, low, high in KEYED}}
+        if kept:
+            shot["keys"] = [kept[t] for t in sorted(kept)]
+            if raw.get("path") == "own":
+                shot["path"] = "own"
     return shot
+
+
+def _glide(times, values, t):
+    """A value through keyframes at t: held before the first and after the last; between them on a cubic that
+    passes each at the pace of its neighbours and is flat at the two ends, so a move starts and stops gently and
+    does not halt at the keyframes on the way."""
+    if t <= times[0] or len(times) == 1:
+        return values[0]
+    if t >= times[-1]:
+        return values[-1]
+    i = max(k for k in range(len(times) - 1) if times[k] <= t)
+    pace = [0.0 if k in (0, len(times) - 1) else (values[k + 1] - values[k - 1]) / (times[k + 1] - times[k - 1]) for k in (i, i + 1)]
+    h = times[i + 1] - times[i]
+    s = (t - times[i]) / h
+    return ((2 * s**3 - 3 * s**2 + 1) * values[i] + (s**3 - 2 * s**2 + s) * h * pace[0]
+            + (-2 * s**3 + 3 * s**2) * values[i + 1] + (s**3 - s**2) * h * pace[1])
+
+
+def framed(shot, t):
+    """The shot as its keyframes set it at film time t: where the ship sits and its lens. Round the aircraft it goes
+    the short way; a cubic can pass its keyframes' values, so each stays within what a shot may hold."""
+    keys = shot.get("keys")
+    if not keys:
+        return shot
+    times, out = [key["t"] for key in keys], dict(shot)
+    for name, low, high in KEYED:
+        values = [key[name] for key in keys]
+        if name == "orbit":
+            for k in range(1, len(values)):
+                values[k] = values[k - 1] + (values[k] - values[k - 1] + 180) % 360 - 180
+            low, high = -math.inf, math.inf
+        out[name] = min(high, max(low, _glide(times, values, t)))
+    return out
 
 
 def track_rows(lines):
@@ -272,13 +325,15 @@ def escort_poses(shot, tracks, step=None, seen=None):
     last = len(times) - 1
     per = step or ((times[-1] - times[0]) / last if last else 1)
     watch = shot.get("watch", "both")
-    weight = 1 if watch == "hero" or shot["target"] is None else max(1, min(4, shot["distance"] / 130))
+    weight = shot.get("loose") or (1 if watch == "hero" or shot["target"] is None else max(1, min(4, shot["distance"] / 130)))
+    when = [t if step is None else shot["start"] + t * step for t in times]  # film time of each track
+    frames = [framed(shot, t) for t in when]
     reach = max(1, round(weight / per))
     lead = [tracks[t][shot["hero"]][:3] for t in times]
     path = _smooth(lead, reach)
     # The other aircraft without the small steps a distant one moves in.
     other = None if shot["target"] is None else _smooth([tracks[t][shot["target"]][:3] for t in times], max(1, round(.5 / per)))
-    turn = math.radians(shot["orbit"])
+    turns = [math.radians(frame["orbit"]) for frame in frames]
     # When the other aircraft leaves the film (shot down) the ship lets go of him gently. Held at his last place,
     # he stopped the picture dead: turning 27 degrees a second, then 0.6 (measured on a kill at 400 ft), and the
     # lens, open to hold him, snapped back from 31 to 9 degrees in two seconds. Now he flies on as he was going
@@ -297,7 +352,7 @@ def escort_poses(shot, tracks, step=None, seen=None):
         for i, move in enumerate(heading):
             if math.hypot(*move) > 1e-6:  # standing still, it keeps the heading it had
                 behind = math.atan2(-move[0], -move[1])
-            stations.append((behind - turn - sweep * (i / last if last else 0), 0))
+            stations.append((behind - turns[i] - sweep * (i / last if last else 0), 0))
     else:
         # Where the line from the other aircraft through the hero points, turning the short way round from one
         # moment to the next: when the two pass each other the ship swings round in its own time.
@@ -310,24 +365,30 @@ def escort_poses(shot, tracks, step=None, seen=None):
             climb = math.atan2(a[1] - b[1], math.hypot(a[0] - b[0], a[2] - b[2]))
             line.append((line[-1][0] + (angle - line[-1][0] + math.pi) % (2 * math.pi) - math.pi if line else angle,
                          max(-.9, min(.9, climb))))  # not straight over or under the hero
-        stations = [(angle + turn, climb) for angle, climb in _smooth(line, max(1, round(max(1.5, weight) / per)))]
+        stations = [(angle + turns[i], climb) for i, (angle, climb) in enumerate(_smooth(line, max(1, round(max(1.5, weight) / per))))]
     places = []
     for i, (bearing, climb) in enumerate(stations):
-        distance = shot["distance"] + (shot.get("closer", shot["distance"]) - shot["distance"]) * (i / last if last else 0)
-        up = math.sin(climb) * math.cos(turn) * distance
+        base = frames[i]["distance"]
+        distance = base + (shot.get("closer", base) - base) * (i / last if last else 0)
+        up = math.sin(climb) * math.cos(turns[i]) * distance
         flat = math.sqrt(distance ** 2 - up ** 2)
-        places.append((path[i][0] + math.sin(bearing) * flat, path[i][1] + up + shot["height"], path[i][2] + math.cos(bearing) * flat))
-    fov, both = math.radians(shot["fov"]), watch == "both" and other is not None
-    lenses = [(fov,)] * len(places)
+        places.append((path[i][0] + math.sin(bearing) * flat, path[i][1] + up + frames[i]["height"], path[i][2] + math.cos(bearing) * flat))
+    if shot.get("path") == "own":
+        # Its own path: each keyframe pins the ship to the sky where it then sat, and it flies a smooth line through
+        # those places, standing at the first before it and at the last after. The aircraft come by, pass and leave.
+        pins = [(key["t"], places[min(range(len(when)), key=lambda i: abs(when[i] - key["t"]))]) for key in shot["keys"]]
+        places = [tuple(_glide([t for t, _place in pins], [place[axis] for _t, place in pins], t) for axis in range(3)) for t in when]
+    fovs, both = [math.radians(frame["fov"]) for frame in frames], watch == "both" and other is not None
+    lenses = [(fov,) for fov in fovs]
     if both:  # the lens moves as gently as the ship does
-        raw = [_lens(pos, lead[i], other[i], fov) for i, pos in enumerate(places)]
+        raw = [_lens(pos, lead[i], other[i], fovs[i]) for i, pos in enumerate(places)]
         if any(after):
             left = raw[g]
-            raw = [lens if not after[i] else fov + (left - fov) * _ease(1 - min(1, after[i] / LENS_BACK)) for i, lens in enumerate(raw)]
+            raw = [lens if not after[i] else fovs[i] + (left - fovs[i]) * _ease(1 - min(1, after[i] / LENS_BACK)) for i, lens in enumerate(raw)]
         lenses = _smooth([(lens,) for lens in raw], max(1, round(1.5 / per)))
     poses = []
     for i, pos in enumerate(places):
-        wide = min(WIDEST, max(fov, lenses[i][0]))  # smoothing runs on past either end
+        wide = min(WIDEST, max(fovs[i], lenses[i][0]))  # smoothing runs on past either end
         if both:
             look = _hold(pos, lead[i], other[i], math.degrees(wide))
             pull = 1 - min(1, after[i] / FADE)  # how much he still draws the picture once he has left the film

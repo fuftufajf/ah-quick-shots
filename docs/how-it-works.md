@@ -139,6 +139,27 @@ the two-aircraft cameras then take whoever comes nearest.
   below you is not left out of the picture's height. Looks at chooses whom it
   watches: Both, You alone, or the Opponent alone — a long lens on him from a
   steady seat beside you, which is where a kill's explosion is caught.
+  The observer can be directed, in three steps that each stand alone.
+  Looseness is how many seconds of your path it flies the average of (1 to
+  10; by itself it takes its distance / 130, one to four): more, and it
+  follows you less closely. Keyframe (K) keeps the framing at the playhead:
+  round the aircraft, distance, height and lens. Move the playhead, set
+  another framing, and the observer glides from one to the next: held before
+  the first and after the last, through each one on a cubic that is flat at
+  the two ends, so a move starts and stops gently and does not halt at a
+  keyframe on the way; round the aircraft it goes the short way. Before the
+  first keyframe a change is the whole shot's; once there are keyframes,
+  every change is a keyframe at the playhead (the one within a quarter of a
+  second, or a new one), and the sliders show the camera as it is there.
+  Flies, With you or Its own path: on its own path each keyframe pins the
+  observer to the sky where it then sits, and it flies a smooth line of its
+  own through those places, standing at the first before it and at the last
+  after, while the aircraft come by, pass and leave; it goes on looking at
+  whom it watches. One keyframe on its own path is a camera standing still
+  where you framed it. Between pins the line is the camera's, not the
+  aircraft's: it can come nearer to them or fall further off than either
+  keyframe was. The desk still sends the viewer a move every half second
+  (`curve`), as for every moving camera; the keyframes only say where.
 - Close on you, Close on opponent — the same ship watching one aircraft alone
   from any side (front quarter first; drag the picture round it). The viewer
   holds that aircraft in the middle of the picture, so it can fill the frame
@@ -497,7 +518,10 @@ changed: read it again and merge; never force a revision.
 A shot: `id`, `name`, `start`/`end` (film seconds), `kind`, `hero`/`target`
 (aircraft ids), `orbit` (degrees round the aircraft), `distance`/`height`
 (feet), `fov`/`roll` (degrees), `side` left|right (which wing, shoulder or gear
-leg), `watch` both|hero|target (whom the observer holds in its picture). Shots
+leg), `watch` both|hero|target (whom the observer holds in its picture). The
+observer (`escort`) also takes `loose` (1 to 12 seconds), `keys` (up to 40
+keyframes `{t, orbit, distance, height, fov}`; one outside the shot is
+dropped) and, with keyframes, `path` "own". Shots
 may overlap: takes of one stretch through different cameras, each with its own
 id. Use the recording pilot as hero when possible; remote tracks can be coarse.
 

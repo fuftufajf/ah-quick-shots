@@ -89,7 +89,11 @@ unzipping.
    like a third aircraft, close views, over your shoulder, from your wing,
    behind you, a fly-by, the pilot's own view, cameras on the airframe, riding
    the bomb. Sliders or a drag adjust it (a lift-off or roll-out also has
-   Swing round and Ends at). Add to cut keeps the shot.
+   Swing round and Ends at). The observer can be directed: set the picture,
+   press Keyframe (K), move the playhead, set it again, and it glides from one
+   framing to the next; Looseness says how closely it follows you, and on Its
+   own path each keyframe pins it to the sky, so it flies a line of its own
+   while you come by and pass. Add to cut keeps the shot.
 4. **The cut** — the green arrow beside a moment adds it straight to the cut
    (a kill as four shots); the x beside a shot, or Clear, takes shots out, and
    asks whether their videos go to the Recycle Bin too. Tick the shots you
