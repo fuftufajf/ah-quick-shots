@@ -150,6 +150,7 @@ class Desk:
         self.stills = deque()
         self.drawing = deque()  # data overlays still to draw: ffmpeg's work, the viewer is not needed for it
         self.drawer = None
+        self.halt = threading.Event()  # the page asks the playing in Film Viewer's window to stop where it is
         self.films_folder = None  # where the viewer keeps its films, as its `films` reply says
         self.data = {"connected": False, "films": [], "project": None, "planes": [],
                      "now": 0, "icons": False, "problems": {}, "nearby": None, "airfield": None, "flight": None,
@@ -926,16 +927,22 @@ class Desk:
             self._cut(project, row)
         else:
             self._apply(project, raw)
-        self._seek(start)
-        self.progress(f"Playing {end - start:.1f} s in Film Viewer's window")
+        # From the playhead when the page says where it is (`from`): a pause is then gone on from, not begun again.
+        begin = start if raw.get("from") is None else min(max(start, number(raw["from"], 0, project["length"], "from")), end - .3)
+        self.halt.clear()
+        self._seek(begin)
+        self.progress(f"Playing {end - begin:.1f} s in Film Viewer's window")
         self.command("play")
-        deadline, now = time.monotonic() + 2 * (end - start) + 5, start
+        deadline, now = time.monotonic() + 2 * (end - begin) + 5, begin
         try:
-            while time.monotonic() < deadline and now < end - .05:
+            # Between two waits of six frames the page can stop it (Pause, Stop: POST /api/halt), and sees where it is.
+            while time.monotonic() < deadline and now < end - .05 and not self.halt.is_set():
                 try:
                     now = float(self.command("wait 6")[0].rsplit(" ", 1)[1])  # "waited, time <film seconds>"
                 except (IndexError, ValueError):
                     break
+                with self.lock:
+                    self.data["now"] = min(now, project["length"])
         finally:
             self.command("pause")
             self.quiet = max(self.quiet, time.monotonic() + max(12, end - start + TAIL) * self.pace)

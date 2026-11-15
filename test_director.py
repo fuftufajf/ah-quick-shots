@@ -850,6 +850,27 @@ class DeskTests(unittest.TestCase):
             escort_poses(validate_shot({**ship, "loose": seconds}, 60), tracks))
         self.assertLess(flown(8), flown(1))
 
+    def test_playing_in_the_viewer_is_paused_from_the_page_and_goes_on_from_the_playhead(self):
+        commands, clock = [], [0.0]
+        def native(command, progress):
+            commands.append(command)
+            if command.startswith("seek "):
+                clock[0] = float(command.split()[1])
+            if command.startswith("wait "):
+                clock[0] += .1
+                if clock[0] >= 2.45 and "seek 2.50000000" not in commands:
+                    self.desk.halt.set()  # the page's Pause, while the stretch plays the first time
+                return [f"waited, time {clock[0]:.2f}"]
+            return []
+        self.desk.viewer.command = native
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "kind": "cockpit", "target": None, "start": 1, "end": 9}]})
+        self.run_action({"action": "live", "start": 1, "end": 9, "shot_id": "one"})
+        # Stopped where it was, with the viewer paused; the page sees the moment and can go on from it.
+        self.assertEqual((commands[-1], round(self.desk.snapshot()["now"], 2)), ("pause", 2.5))
+        commands.clear()
+        self.run_action({"action": "live", "start": 1, "end": 9, "from": 2.5})
+        self.assertEqual(([c for c in commands if c.startswith("seek ")][0], commands[-1], round(self.desk.snapshot()["now"], 1)), ("seek 2.50000000", "pause", 9))
+
     def test_take_offs_and_touchdowns_are_found_in_the_filmer_s_path(self):
         # Parked, a roll, a lift-off at 18 s, a flight, a landing at 60 s that stops at 64 s; then a second sortie
         # (a new id) that never leaves the ground.

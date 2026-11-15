@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from "react";
-import {FilmSlate, FolderOpen, MusicNotes, Pause, Play, Scissors, X} from "@phosphor-icons/react";
+import {CaretLeft, CaretRight, FilmSlate, FolderOpen, MusicNotes, Pause, Play, Scissors, Stop, X} from "@phosphor-icons/react";
 import {formatTime, request} from "./desk.js";
 import {cutAt, grouped, laid, lengthOf, moved, musicGain, placed, stateOf, ticked, trimmed, under, without} from "./assembly.js";
 
@@ -23,13 +23,18 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
   const [sought, setSought] = useState(0);  // counts the playhead's jumps: the players follow each
   const [quality, setQuality] = useState("final");
   const [trimming, setTrimming] = useState(null);  // the clips while an end is dragged
+  const [widest, setWidest] = useState(0);  // the longest the assembly has been on this page: the timeline's scale
   const film = useRef(null), song = useRef(null), lane = useRef(null), grab = useRef(null), picker = useRef(null);
 
-  useEffect(() => { setMine(null); setAt(0); setSelected(0); setPlaying(false); }, [project?.film]);
+  useEffect(() => { setMine(null); setAt(0); setSelected(0); setPlaying(false); setWidest(0); }, [project?.film]);
 
   const assembly = mine ?? desk.assembly ?? EMPTY, music = assembly.music;
   const clips = trimming ?? placed(assembly, shots, versions);
   const rows = laid(clips, versions), length = lengthOf(rows);
+  // The timeline never zooms in on what is left: a clip that is shortened is seen to get shorter, and leaves room
+  // behind it. Fitted to the assembly, one clip filled the lane whatever was cut off it.
+  const span = Math.max(widest, length);
+  useEffect(() => { if (length > widest) setWidest(length); }, [length]);
   const index = under(rows, Math.min(at, Math.max(0, length - .01))), row = rows[index];
   const pick = Math.min(selected, rows.length - 1), chosen = rows[pick];
   const byId = new Map(shots.map(s => [s.id, s]));
@@ -102,19 +107,23 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
   // An end of the selected clip dragged: the timeline's scale is the one the drag began on.
   function trimDown(e, i, edge) {
     e.stopPropagation(); e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    grab.current = {i, edge, x: e.clientX, clips, rows, scale: length / lane.current.clientWidth};
+    grab.current = {i, edge, x: e.clientX, clips, rows, scale: span / lane.current.clientWidth};
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* no such pointer: the drag still follows while over the grip */ }
     setPlaying(false);
   }
   function trimMove(e) {
     const held = grab.current;
-    if (held) setTrimming(trimmed(held.clips, held.rows, held.i, held.edge, (e.clientX - held.x) * held.scale));
+    if (!held) return;
+    const next = trimmed(held.clips, held.rows, held.i, held.edge, (e.clientX - held.x) * held.scale), now = laid(next, versions)[held.i];
+    setTrimming(next);
+    // The picture shows the frame the clip now begins or ends on: what is cut is seen while it is cut.
+    setAt(held.edge === "start" ? now.at + .01 : now.at + now.seconds - .05); setSought(n => n + 1);
   }
   function trimUp() {
     if (grab.current && trimming) change(trimming);
     grab.current = null; setTrimming(null);
   }
-  const timeAt = e => { const box = lane.current.getBoundingClientRect(); return (e.clientX - box.left) / box.width * length; };
+  const timeAt = e => { const box = lane.current.getBoundingClientRect(); return (e.clientX - box.left) / box.width * span; };
 
   async function chooseMusic(e) {
     const file = e.target.files[0];
@@ -134,8 +143,9 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
   }
 
   if (!project) return <section className="assembly"><p className="empty-small">Open a replay in Shots first: its rendered shots line up here.</p></section>;
-  const step = length <= 60 ? 10 : length <= 300 ? 30 : 60;
-  const share = seconds => `${length ? seconds / length * 100 : 0}%`;
+  const step = span <= 60 ? 10 : span <= 300 ? 30 : 60;
+  const share = seconds => `${span ? seconds / span * 100 : 0}%`;
+  const held = trimming && grab.current ? {...grab.current, row: rows[grab.current.i]} : null;
   const partOf = id => { const shot = byId.get(id); return shot.name.includes(" · ") ? shot.name.split(" · ").slice(1).join(" · ") : shot.name; };
 
   return <section className="assembly">
@@ -179,7 +189,9 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
           {music && <audio ref={song} src={`/media/music/${music.file}`} preload="auto"/>}
         </div>
         <div className="transport">
-          <button className="play" disabled={!rows.length} onClick={play} aria-label={playing ? "Pause" : "Play"} title="Play the assembly (Space)">{playing ? <Pause weight="fill"/> : <Play weight="fill"/>}</button>
+          <button className="play" disabled={!rows.length || playing} onClick={play} aria-label="Play" title="Play the assembly (Space)"><Play weight="fill"/></button>
+          <button className="play" disabled={!playing} onClick={() => setPlaying(false)} aria-label="Pause" title="Pause (Space)"><Pause weight="fill"/></button>
+          <button className="play" disabled={!rows.length || (!playing && at === 0)} onClick={() => { setPlaying(false); go(0); }} aria-label="Stop" title="Stop and go back to the start"><Stop weight="fill"/></button>
           <strong>{formatTime(at)}</strong><span>/ {formatTime(length)}</span>
           <button disabled={!cutAt(clips, rows, at)} onClick={cut} title="Cuts the clip under the playhead in two (S)"><Scissors/> Cut at the playhead</button>
           <button disabled={!chosen} onClick={() => remove(pick)} title="Takes the selected clip off the timeline; its video stays in the Videos folder">Remove clip</button>
@@ -188,10 +200,10 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
       </div>
 
       <div className="panel">
-        <div className="panel-heading"><h2>3 <span>Timeline</span></h2><span>Drag a clip to move it · drag the ends of the selected one to trim it</span></div>
+        <div className="panel-heading"><h2>3 <span>Timeline</span></h2><span>Drag a clip to move it · drag the arrows at the ends of the selected one to shorten it</span></div>
         <div className="lanes">
           <span/>
-          <div className="ruler">{Array.from({length: Math.floor(length / step) + 1}, (_v, n) => <span key={n} style={{left: share(n * step)}}>{formatTime(n * step).slice(0, 5)}</span>)}</div>
+          <div className="ruler">{Array.from({length: Math.floor(span / step) + 1}, (_v, n) => <span key={n} style={{left: share(n * step)}}>{formatTime(n * step).slice(0, 5)}</span>)}</div>
           <span className="lane-name"><b>Video</b>the shots, in order</span>
           <div className="lane" ref={lane} onClick={e => go(timeAt(e))}>
             {rows.map((r, i) => <button key={i} className={`clip ${i === pick ? "current" : ""} ${r.version.changed ? "changed" : ""}`}
@@ -201,16 +213,18 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
               onDrop={e => { e.preventDefault(); const from = Number(e.dataTransfer.getData("text/plain")); if (Number.isInteger(from) && from !== i) { change(moved(clips, from, i)); setSelected(i); } }}
               onClick={e => { e.stopPropagation(); setSelected(i); go(timeAt(e)); }}>
               {i === pick && ["start", "end"].map(edge => <span key={edge} className={`trim ${edge}`} title="Drag to trim this end"
-                onPointerDown={e => trimDown(e, i, edge)} onPointerMove={trimMove} onPointerUp={trimUp} onPointerCancel={trimUp} onClick={e => e.stopPropagation()}/>)}
+                onPointerDown={e => trimDown(e, i, edge)} onPointerMove={trimMove} onPointerUp={trimUp} onPointerCancel={trimUp} onClick={e => e.stopPropagation()}>{edge === "start" ? <CaretLeft weight="bold"/> : <CaretRight weight="bold"/>}</span>)}
               <b>{partOf(r.shot)}</b><i>{r.seconds.toFixed(1)} s{r.seconds < r.version.seconds - .005 ? ` of ${r.version.seconds.toFixed(1)}` : ""}{r.version.changed ? " · changed" : ""}</i>
             </button>)}
+            {held && <span className="trim-note" style={{left: share(held.edge === "start" ? held.row.at : held.row.at + held.row.seconds)}}>
+              {held.edge === "start" ? `Starts ${held.row.start.toFixed(1)} s later` : `Ends ${held.row.end.toFixed(1)} s earlier`} · {held.row.seconds.toFixed(1)} s of {held.row.version.seconds.toFixed(1)} left</span>}
             {rows.length > 0 && <span className="playhead top" style={{left: share(at)}}/>}
           </div>
           <span className="lane-name"><b>Film sound</b>engine, guns, radio</span>
-          <div className="lane thin" onClick={e => go(timeAt(e))}>{rows.length > 0 && <><span className="sound"/><span className="playhead" style={{left: share(at)}}/></>}</div>
+          <div className="lane thin" onClick={e => go(timeAt(e))}>{rows.length > 0 && <><span className="sound" style={{right: "auto", width: share(length)}}/><span className="playhead" style={{left: share(at)}}/></>}</div>
           <span className="lane-name"><b>Music</b>your own file</span>
           <div className="lane thin" onClick={e => go(timeAt(e))}>
-            {music && <span className="music">{music.name} · from {formatTime(music.from)} · in {music.in} s · out {music.out} s</span>}
+            {music && <span className="music" style={{right: "auto", width: share(length)}}>{music.name} · from {formatTime(music.from)} · in {music.in} s · out {music.out} s</span>}
             {rows.length > 0 && <span className="playhead" style={{left: share(at)}}/>}
           </div>
         </div>

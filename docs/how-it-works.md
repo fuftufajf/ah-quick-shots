@@ -588,6 +588,9 @@ most 5 s later). One action runs at a time; a second is refused while
 - POST `/api/forget` `{expected_revision, shot_ids, files}` takes shots out of the plan; with `files: true`
   their finished videos and overlays on record (`state.renders`: `file`, `shots`, `overlays`) go to the
   Recycle Bin. Answers `{project, renders, recycled}`
+- POST `/api/halt` `{}` stops a stretch that is playing in Film Viewer's own window (`live`) where it is: the
+  viewer pauses and `state.now` says the moment, which `live` takes back as `from` to go on. The page's Pause and
+  Stop: Pause holds the clip on the page or the viewer's playing, Stop also goes back to the start
 - POST `/api/assembly` `{assembly}` keeps the open film's assembly (see "The assembly"); answers `{assembly}`
   as kept. POST `/api/assemble` `{assembly, quality}` keeps it and makes its video in the videos folder:
   202 at once, `state.assembling` (`running`, `message`, `error`, `file`) says how it stands

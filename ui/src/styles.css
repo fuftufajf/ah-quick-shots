@@ -237,11 +237,16 @@ button.small{min-height:26px;padding:3px 8px;font-size:12px}
 .clip{position:absolute;top:3px;bottom:3px;min-height:0;padding:0 7px;display:block;text-align:left;border:1px solid var(--silver);border-radius:3px;background:#dfe2e6;overflow:hidden;white-space:nowrap;font-size:11px;line-height:1.25;color:var(--ink)}
 .clip b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;margin-top:4px}
 .clip i{font-style:normal;color:var(--muted);font-variant-numeric:tabular-nums}
-.clip.current{border-color:var(--navy);background:#d9e2f3;padding:0 16px}
+.clip.current{border-color:var(--navy);background:#d9e2f3;padding:0 22px}
 .clip.changed{border-color:var(--red)}
 .clip.changed i{color:var(--red)}
 /* The trim handles stand inside the selected clip, at its two ends: they never cover its neighbours. */
-.trim{position:absolute;top:0;bottom:0;width:10px;background:var(--navy);cursor:ew-resize;touch-action:none}
+/* Arrows, as on the shot's own ends in Shots: a grip that says which way it shortens. While one is dragged, a note
+   above it says what the clip has lost and what is left, large enough to read. */
+.trim{position:absolute;top:0;bottom:0;width:16px;display:grid;place-items:center;color:#fff;background:var(--navy);cursor:ew-resize;touch-action:none}
+.trim:hover{background:#002470}
+.trim svg{width:12px;height:12px}
+.trim-note{position:absolute;bottom:calc(100% + 5px);transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:600;color:var(--ink);background:#fff;border:1px solid var(--navy);border-radius:4px;padding:2px 9px;z-index:4;pointer-events:none}
 .trim.start{left:0}
 .trim.end{right:0}
 .playhead{position:absolute;top:-4px;bottom:-4px;width:1px;background:var(--navy);z-index:3;pointer-events:none}

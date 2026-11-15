@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useRef, useState} from "react";
-import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Trash, X} from "@phosphor-icons/react";
+import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, Sparkle, Stop, Trash, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
 import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, dragCamera, fights, frameOf, keyAt, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, videosOf, zoomCamera} from "./desk.js";
 
@@ -64,6 +64,7 @@ export function App() {
   const grab = useRef(null);  // a drag on the picture: where it began and the camera as it was
   const trimGrab = useRef(null);
   const dragged = useRef(false);
+  const stopped = useRef(null);  // Stop was pressed while Film Viewer played: where to go back to once it has paused
   const latest = useRef(null);  // the shot as last changed: wheel notches arrive faster than renders
   const onWheel = useRef(null);
   const you = useRef(null);  // the recorder, remembered while they are between sorties
@@ -75,6 +76,7 @@ export function App() {
   const events = project?.events || [];
   const length = project?.length || 1;
   const running = Boolean(desk.job?.running);
+  const live = running && desk.job.action === "live";  // a stretch is playing in Film Viewer's own window
   const busy = running || sending || looking;  // the viewer cannot take another request yet
   // Worth showing: a look at a changed camera is back before a spinner could be read.
   const working = sending || (running && (!["seek", "icons"].includes(desk.job.action) || (desk.job.elapsed || 0) >= .5));
@@ -126,7 +128,7 @@ export function App() {
     if (shot) setDraft({...shot});
   }, [project?.revision]);
 
-  useEffect(() => { if (desk.now != null && !scrubbing.current && wanted == null && !clip) setCursor(desk.now); }, [desk.now]);
+  useEffect(() => { if (desk.now != null && !scrubbing.current && wanted == null && (!clip || live)) setCursor(desk.now); }, [desk.now]);
 
   // Outside the clip on screen, dragging the playhead fetches a still as soon as it rests.
   useEffect(() => {
@@ -153,6 +155,7 @@ export function App() {
     if (!job || job.running) return;
     const own = clip && Array.isArray(asking.current) && clip.start === asking.current[0] && clip.end === asking.current[1];
     if (job.action === "clip" && !job.error && own && player && !trimGrab.current && (!draft || asking.current[2] === "sequence" || (clip.start === draft.start && clip.end === draft.end))) { asking.current = null; player.currentTime = 0; player.play().catch(() => {}); }
+    if (job.action === "live" && stopped.current != null) { const start = stopped.current; stopped.current = null; goTo(start); }
     if (job.action === "airfield" && airfieldAsked.current) {
       airfieldAsked.current = false;
       if (!job.error) airfieldReel(desk.airfield?.moments || []);
@@ -194,7 +197,7 @@ export function App() {
       if (e.key === "i") mark("start");
       else if (e.key === "o") mark("end");
       else if (e.key === "k") keyframe();
-      else if (e.key === " ") { e.preventDefault(); play(); }  // also when a button still has focus from the last click
+      else if (e.key === " ") { e.preventDefault(); if (live) pause(); else play(); }  // also when a button still has focus from the last click
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -278,7 +281,20 @@ export function App() {
     film.current?.pause();
     const body = sequence.length > 1 && !dirty ? {shot_ids: sequence.map(s => s.id)}
       : draft ? {start: draft.start, end: draft.end, shot: draft} : {start: cursor, end: Math.min(length, cursor + CHUNK)};
-    setWanted({action: "live", body});
+    // From the playhead when it stands inside the stretch, so a pause is gone on from; else from the start.
+    const [from, to] = body.shot_ids ? [sequence[0].start, sequence.at(-1).end] : [body.start, body.end];
+    setWanted({action: "live", body: cursor > from + .3 && cursor < to - .5 ? {...body, from: cursor} : body});
+  }
+  // Pause holds what is playing where it is: the clip on the page, or the stretch in Film Viewer's window. Stop
+  // does the same and goes back to where it began.
+  function pause() {
+    if (live) request("/api/halt", {}).catch(e => setError(e.message)); else film.current?.pause();
+  }
+  function stop() {
+    const start = draft ? draft.start : clip ? clip.start : cursor, player = film.current;
+    if (live) { stopped.current = start; return pause(); }
+    if (player && clip) { player.pause(); player.currentTime = Math.max(0, start - clip.start); }
+    setCursor(start);
   }
   function playSequence() {
     asking.current = [sequence[0].start, sequence.at(-1).end, "sequence"];
@@ -628,7 +644,9 @@ export function App() {
             }}/>
           </div>
           <div className="transport">
-            <button className="play" disabled={!project} onClick={play} aria-label={rolling ? "Pause" : "Play"} title={sequence.length > 1 && !dirty ? `Play the whole sequence, ${sequence.length} shots (Space)` : draft ? "Play this shot (Space)" : `Play the next ${CHUNK} seconds (Space)`}>{rolling ? <Pause weight="fill"/> : <Play weight="fill"/>}</button>
+            <button className="play" disabled={!project || rolling || live} onClick={play} aria-label="Play" title={sequence.length > 1 && !dirty ? `Play the whole sequence, ${sequence.length} shots (Space)` : draft ? "Play this shot (Space)" : `Play the next ${CHUNK} seconds (Space)`}><Play weight="fill"/></button>
+            <button className="play" disabled={!rolling && !live} onClick={pause} aria-label="Pause" title="Pause what is playing, here or in Film Viewer's window (Space)"><Pause weight="fill"/></button>
+            <button className="play" disabled={!project || (!rolling && !live && !clip)} onClick={stop} aria-label="Stop" title="Stop and go back to the start"><Stop weight="fill"/></button>
             <button disabled={!project || working} onClick={playLive} title="Play it now in Film Viewer's own window (keep that window on screen), with its sound and nothing rendered. A render after it waits about 12 s, so its sound stays whole."><Play/> In Film Viewer</button>
             <strong>{formatTime(cursor)}</strong><span>/ {formatTime(project?.length)}</span>
             <button disabled={!project || conflict} onClick={another} title={again ? "Another shot of this same stretch: pick a camera, then Add to cut" : "Start a new six-second shot at the playhead"}><Plus/> New shot</button>
