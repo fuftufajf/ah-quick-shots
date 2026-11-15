@@ -104,11 +104,13 @@ unzipping.
    to your opponent, to lay over it in DaVinci Resolve or another editor: one
    for a 16:9 timeline, one for a 9:16 reel. Tick Motion blur for the streak
    a film camera leaves on fast motion; the render takes about four times as
-   long. Film look (a film camera's colour, glow, vignette and grain, fitted to
-   a DaVinci Resolve grade of this footage), Haze (mist along the horizon) and
-   Trails (two smooth lines from the wingtips of the shot's aircraft, yours and
-   your opponent's in colours you pick; short ones follow the aircraft, lasting
-   ones leave the fight's ribbons in the sky for a wide shot afterwards) are
+   long. Film look and haze (a film camera's colour, glow, vignette and grain,
+   fitted to a DaVinci Resolve grade of this footage, with mist along the
+   horizon) and Trails (two smooth lines from the wingtips of the shot's
+   aircraft, yours and your opponent's in colours you pick; short ones follow
+   the aircraft, lasting ones leave the fight's ribbons in the sky for a wide
+   shot afterwards; Tail trail adds a third from the fin, Exact path draws
+   the path as flown, for reading a flight) are
    experimental and still being tuned. Beside each of these the page says
    what it adds to the render's time, and above Render selected the whole of
    it: estimates, corrected to your PC after each render. Add my kills makes four

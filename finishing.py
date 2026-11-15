@@ -2,6 +2,7 @@
 blended, the film look and the haze laid on. One encode does all of it."""
 from pathlib import Path
 import subprocess
+import threading
 
 # With motion blur a video is rendered PASSES times at the viewer's most, FASTEST frames a second ("fps 1 to 120", it
 # answers to more), each pass a quarter of a frame later, and ffmpeg weaves them and makes each frame the mean of all
@@ -129,13 +130,40 @@ def assemble(clips, music, target, width, height, fps):
     return total
 
 
+# Who wants to follow an encode sets this before it: (the seconds of video it will make, a function given the share
+# of them made so far, 0 to 1). ffmpeg says how far it is into a file, read twice a second while it runs.
+watch = None
+
+
+def _made(log):
+    """The seconds of video ffmpeg says it has made, from the end of its progress file; None when it says none yet."""
+    try:
+        with log.open("rb") as file:
+            file.seek(max(0, log.stat().st_size - 600))
+            times = [line for line in file.read().decode("ascii", "replace").splitlines() if line.startswith("out_time_us=")]
+        return int(times[-1][12:]) / 1e6
+    except (OSError, IndexError, ValueError):  # no file yet, no line yet, "N/A" before the first frame
+        return None
+
+
 def encode(inputs, graph, sources, target, what):
+    follow, log, over = watch, Path(target).with_suffix(".progress"), threading.Event()
+    def tell():
+        while not over.wait(.5):
+            made = _made(log)
+            if made is not None:
+                follow[1](min(1.0, made / follow[0]))
+    if follow:
+        threading.Thread(target=tell, daemon=True).start()
     try:
         done = subprocess.run(
-            ["ffmpeg", "-v", "error", "-y", *inputs, *graph, "-c:v", "libx264", "-crf", "16",
+            ["ffmpeg", "-v", "error", "-y", *(["-progress", str(log), "-nostats"] if follow else []), *inputs, *graph,
+             "-c:v", "libx264", "-crf", "16",
              "-preset", "fast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(target)],
             capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     finally:
+        over.set()
+        log.unlink(missing_ok=True)
         for source in sources:
             source.unlink(missing_ok=True)
     if done.returncode:

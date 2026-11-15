@@ -15,6 +15,7 @@ import time
 import traceback
 import uuid
 
+import finishing
 from finishing import FASTEST, PASSES, assemble, blend, style, trim
 from flight_data import derive, pair, read_kept
 import overlay
@@ -413,9 +414,25 @@ class Desk:
             self.data["project"] = project
             return copy.deepcopy(project)
 
-    def progress(self, message):
+    def progress(self, message, share=None):
+        """What the job is doing now, and how much of that step is done (0 to 1) when it is known."""
         with self.lock:
-            self.data["job"]["message"] = message
+            self.data["job"].update(message=message, share=share)
+
+    def _stage(self, message):
+        """The next step of a job that counts its steps (a render: `steps` says how many there are)."""
+        with self.lock:
+            self.data["job"]["step"] += 1
+        self.progress(message)
+
+    def _encode(self, message, seconds, work):
+        """A step done by ffmpeg, followed as it goes: `work` makes `seconds` of video."""
+        self._stage(message)
+        finishing.watch = (max(.1, seconds), lambda share: self.progress(message, share))
+        try:
+            work()
+        finally:
+            finishing.watch = None
 
     def command(self, command):
         return self.viewer.command(command, self.progress)
@@ -432,7 +449,7 @@ class Desk:
         while time.monotonic() < self.quiet:
             self.progress(f"Film Viewer is finishing the last clip's sound: {math.ceil(self.quiet - time.monotonic())} s, so this one keeps its own")
             time.sleep(.25)
-        self.progress(label or f"Rendering {end - start:.1f} s of film")
+        self._stage(label or f"Rendering {end - start:.1f} s of film")
         if abs(self.data["now"] - (start - early)) > .5:
             # A render that began far from where the film stood came out with its first second silent, just after
             # opening a film (-49 dB, 5 of 5). A seek there and 2 s paused kept it whole (2 of 2); a seek alone, or
@@ -447,18 +464,18 @@ class Desk:
         try:
             for n, part in enumerate(parts):  # only the first pass's sound is kept: the others need not wait for quiet
                 if n:
-                    self.progress(f"{label}: motion blur pass {n + 1} of {PASSES}")
+                    self._stage(f"{label}: motion blur pass {n + 1} of {PASSES}")
                 shift = n / FASTEST / PASSES
                 self.command(f"video {start - early + shift:.8f} {end + shift:.8f} {part.as_posix()} {size}")
         finally:
             self.viewer.patience = Viewer.patience
         self.quiet = time.monotonic() + (end - start + early + TAIL) * self.pace
         if blur:
-            self.progress("Blending the motion blur with ffmpeg")
-            blend(parts, path, early, blur, filters)
+            self._encode("Blending the motion blur with ffmpeg" + (", with its effects" if filters else ""), end - start,
+                         lambda: blend(parts, path, early, blur, filters))
         elif early or filters:
-            self.progress("Giving it its look with ffmpeg" if filters else "Cutting off the lead-in with ffmpeg")
-            trim(whole, path, early, filters)
+            self._encode("Laying the effects on with ffmpeg" if filters else "Cutting off the lead-in with ffmpeg", end - start,
+                         lambda: trim(whole, path, early, filters))
 
     def start(self, raw):
         action = raw.get("action")
@@ -474,7 +491,8 @@ class Desk:
                 self._revision(raw)
             self.data["job"] = {"id": uuid.uuid4().hex, "running": True, "action": action,
                                 "message": "Connecting to Film Viewer" if action == "connect" else "Preparing " + action,
-                                "clock": time.monotonic(), "elapsed": 0, "expect": None, "error": None}
+                                "clock": time.monotonic(), "elapsed": 0, "expect": None, "error": None,
+                                "step": 0, "steps": None, "share": None}
             job = copy.deepcopy(self.data["job"])
             self.worker = threading.Thread(target=self._work, args=(copy.deepcopy(raw),), daemon=True)
             self.worker.start()
@@ -793,7 +811,7 @@ class Desk:
         elif draft["id"] in self.built:
             raise ValueError(self.built[draft["id"]])
 
-    def _trails(self, project, row, width, height, fps, colours, style):
+    def _trails(self, project, row, width, height, fps, colours, style, tail=None):
         """An ASS script of the wingtip trails over one video of a cut (see trails.py), in the working folder. The
         video runs the row's shots end to end (the gaps between them skipped), from the first one's start."""
         first, last = row[0]["start"], row[-1]["end"]
@@ -809,9 +827,10 @@ class Desk:
             spans.append((offset, shot, self._camera(shot)))
             offset += shot["end"] - shot["start"]
         frames = []
+        self._stage("Finding the camera for the trails")
         for k in range(round(offset * fps) + 1):
             if k % fps == 0:
-                self.progress(f"Finding the camera for the trails: {k // fps} of {math.ceil(offset)} s")
+                self.progress(f"Finding the camera for the trails: {k // fps} of {math.ceil(offset)} s", k / fps / max(.1, offset))
             begin, shot, lines = next(span for span in reversed(spans) if span[0] <= k / fps + 1e-9)
             t = min(shot["end"], shot["start"] + k / fps - begin)
             frames.append((t, self._eye(lines, t, shot)))
@@ -819,7 +838,7 @@ class Desk:
         path = self.media_root / (uuid.uuid4().hex + ".ass")
         with path.open("w", encoding="utf-8") as script:  # line by line: the whole of it need not be held in memory
             script.writelines(line + "\n" for line in trails.lines(frames, flight["rows"], radii, colours, flight["data"]["step"],
-                                                                 fps, width, height, style))
+                                                                 fps, width, height, style, tail))
         return path
 
     def _eye(self, lines, t, shot):
@@ -1071,11 +1090,16 @@ class Desk:
         # renderCost in desk.js). Without that, only a draft is known: about real time.
         expect = number(raw["expect"], 1, 86400, "expect") if raw.get("expect") is not None else (
             sum(s["end"] - s["start"] for s in shots) + 2 * len(rows) if quality == "draft" else None)
-        with self.lock:
-            self.data["job"]["expect"] = expect and round(expect, 1)
         width, height, fps = map(int, RENDERS[quality].split())
         blur = fps if raw.get("blur") and shutil.which("ffmpeg") else None
         filters = style(width, height, bool(raw.get("look")), bool(raw.get("haze"))) if shutil.which("ffmpeg") else ""
+        # The steps the page counts through: for each video the viewer's render (four with motion blur) and what
+        # ffmpeg then does to it, and before them the trails' cameras.
+        ffmpeg = lambda row: bool(shutil.which("ffmpeg")) and bool(blur or filters or raw.get("trails") or row[0]["start"] >= .05)
+        with self.lock:
+            self.data["job"].update(expect=expect and round(expect, 1), steps=sum(
+                (PASSES if blur else 1) + ffmpeg(row) + bool(raw.get("trails")) for row in rows))
+        mark = self.data["job"]["clock"]
         scripts = []
         try:
             if raw.get("trails"):
@@ -1084,10 +1108,13 @@ class Desk:
                 asked = raw["trails"] if isinstance(raw["trails"], dict) else {}
                 ours, theirs = (trails.colour(asked.get(key, default)) for key, default in (("lead", "#e8f4ff"), ("opponent", "#ff9e6b")))
                 drawing = trails.style_for(number(asked.get("seconds", trails.STYLE["seconds"]), *trails.SECONDS, "trail length"))
+                if asked.get("exact"):  # the flight path as it was flown, to be read: nothing averaged
+                    drawing["smooth"] = 0
+                tail = trails.colour(asked["tail"]) if asked.get("tail") else None
                 # Worked out before the first render, as the overlay's numbers are: touching the film between renders
                 # can thin the next one's sound (TAIL).
                 for row in rows:
-                    scripts.append(self._trails(project, row, width, height, fps, trails.paint(row, ours, theirs), drawing))
+                    scripts.append(self._trails(project, row, width, height, fps, trails.paint(row, ours, theirs), drawing, tail))
             for n, row in enumerate(rows, 1):
                 self._cut(project, row)
                 path = self.media_root / (uuid.uuid4().hex + ".mp4")
@@ -1101,7 +1128,10 @@ class Desk:
                 # What the assembly needs to know of a video: which it is, how it was made and what cameras it shows.
                 record = {"id": uuid.uuid4().hex, "file": str(saved), "shots": [s["id"] for s in row], "made": round(time.time()),
                           "quality": quality, "extras": [name for name in ("blur", "look", "haze", "trails") if raw.get(name)],
-                          "seconds": round(sum(s["end"] - s["start"] for s in row), 3), "takes": {s["id"]: camera_key(s) for s in row}}
+                          "seconds": round(sum(s["end"] - s["start"] for s in row), 3), "takes": {s["id"]: camera_key(s) for s in row},
+                          # How long it took to make, in seconds: the first video's holds what was prepared for them all.
+                          "took": round(time.monotonic() - mark)}
+                mark = time.monotonic()
                 if segments:
                     files[-1]["overlays"] = record["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality)
                 self._record_render(project["film"], record)

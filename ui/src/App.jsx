@@ -42,12 +42,14 @@ export function App() {
   const [apart, setApart] = useState(false);
   const [withOverlay, setWithOverlay] = useState(false);
   const [withBlur, setWithBlur] = useState(false);
-  const [withLook, setWithLook] = useState(false);
-  const [withHaze, setWithHaze] = useState(false);
+  const [withLook, setWithLook] = useState(false);  // the film look and its haze: one switch
   const [withTrails, setWithTrails] = useState(false);
   const [trailLead, setTrailLead] = useState("#e8f4ff");
   const [trailOpponent, setTrailOpponent] = useState("#ff9e6b");
   const [trailSeconds, setTrailSeconds] = useState(2.5);
+  const [trailTail, setTrailTail] = useState(false);  // a third trail, from the tip of the fin
+  const [tailColour, setTailColour] = useState("#b9ff9e");
+  const [trailExact, setTrailExact] = useState(false);  // the path as flown, nothing averaged: for reading a flight
   const [hidden, setHidden] = useState("");
   const [closedVideo, setClosedVideo] = useState("");
   const [sending, setSending] = useState(false);
@@ -62,6 +64,8 @@ export function App() {
   const film = useRef(null);  // the preview clip's <video>
   // A clip taken off the page while it plays says nothing: without this Play would stay greyed out.
   const player = useCallback(el => { film.current = el; if (!el) setRolling(false); }, []);
+  const finished = useRef(null);  // a rendered video's <video>: it waits for Play, and Pause and Stop hold it too
+  const made = useCallback(el => { finished.current = el; if (!el) setRolling(false); }, []);
   const screen = useRef(null);
   const grab = useRef(null);  // a drag on the picture: where it began and the camera as it was
   const trimGrab = useRef(null);
@@ -264,7 +268,11 @@ export function App() {
     setWanted({action: switched.action || "seek", body: {seconds: inShot(shot), rough: true, wait: true, ...switched.body, ...(shot ? {shot} : {})}});
   }
   // Play: at once in Film Viewer's own window, with its sound, nothing rendered.
-  function play() { if (project) playLive(); }
+  function play() {
+    if (!project) return;
+    if (finished.current) return finished.current.play();  // a rendered video is on screen: that is what plays
+    playLive();
+  }
   // Render and play: the shot as a small clip, played here on the page. It takes about as long to render as it plays.
   function renderPlay() {
     if (!project) return;
@@ -299,9 +307,10 @@ export function App() {
   // Pause holds what is playing where it is: the clip on the page, or the stretch in Film Viewer's window. Stop
   // does the same and goes back to where it began.
   function pause() {
-    if (live) request("/api/halt", {}).catch(e => setError(e.message)); else film.current?.pause();
+    if (live) request("/api/halt", {}).catch(e => setError(e.message)); else (finished.current || film.current)?.pause();
   }
   function stop() {
+    if (finished.current) { finished.current.pause(); finished.current.currentTime = 0; return; }
     const start = draft ? draft.start : clip ? clip.start : cursor, player = film.current;
     if (live) { stopped.current = start; return pause(); }
     if (player && clip) { player.pause(); player.currentTime = Math.max(0, start - clip.start); }
@@ -521,7 +530,7 @@ export function App() {
 
   // Shots rendered with the options set under The cut. The assembly asks for a file per shot.
   function renderCut(ids, each) {
-    action("export_cut", {shot_ids: ids, quality, apart: each, expect: costOf(ids, each).total, overlay: withOverlay && !!desk.ffmpeg, blur: withBlur && !!desk.ffmpeg, look: withLook && !!desk.ffmpeg, haze: withHaze && !!desk.ffmpeg, trails: withTrails && !!desk.ffmpeg && {lead: trailLead, opponent: trailOpponent, seconds: trailSeconds}, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
+    action("export_cut", {shot_ids: ids, quality, apart: each, expect: costOf(ids, each).total, overlay: withOverlay && !!desk.ffmpeg, blur: withBlur && !!desk.ffmpeg, look: withLook && !!desk.ffmpeg, haze: withLook && !!desk.ffmpeg, trails: withTrails && !!desk.ffmpeg && {lead: trailLead, opponent: trailOpponent, seconds: trailSeconds, exact: trailExact, ...(trailTail ? {tail: tailColour} : {})}, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
   }
 
   // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
@@ -550,12 +559,21 @@ export function App() {
   function costOf(ids, each) {
     const picked = shots.filter(s => ids.includes(s.id)), film = picked.reduce((sum, s) => sum + s.end - s.start, 0);
     return {film, videos: videosOf(picked, each), ...renderCost({film, videos: videosOf(picked, each), quality, blur: withBlur && !!desk.ffmpeg,
-      look: withLook && !!desk.ffmpeg, haze: withHaze && !!desk.ffmpeg, trails: withTrails && !!desk.ffmpeg, trailSeconds}, desk.pace?.[quality] ?? 1)};
+      look: withLook && !!desk.ffmpeg, haze: withLook && !!desk.ffmpeg, trails: withTrails && !!desk.ffmpeg, trailSeconds}, desk.pace?.[quality] ?? 1)};
   }
   const cost = costOf(chosen, apart);
   const price = seconds => chosen.length > 0 && !!desk.ffmpeg && <small className="cost">+ {howLong(seconds)}</small>;
   const video = desk.preview?.kind === "video" && desk.preview.url !== closedVideo ? desk.preview : null;
   const still = desk.preview?.kind === "image" ? desk.preview : null;
+  // Waiting is said large, over the picture, except where the picture is what is being watched: a stretch playing
+  // in the viewer's window and a camera's still that is back within a second.
+  const job = desk.job || {}, quick = running && (live || (["seek", "icons"].includes(job.action) && (job.elapsed || 0) < 1));
+  // How far the job is. A render counts its steps and ffmpeg's say how far they are (share); the viewer says nothing
+  // of its own render, so that step only pulses. Without steps the estimate serves, until it is passed: the bar is
+  // never full while the work goes on.
+  const part = job.steps ? 1 / job.steps : 1, base = job.steps ? Math.max(0, job.step - 1) * part : 0;
+  const within = job.share ?? (!job.steps && job.expect && job.elapsed < job.expect ? job.elapsed / job.expect : null);
+  const clock = seconds => `${Math.floor((seconds || 0) / 60)}:${String(Math.floor((seconds || 0) % 60)).padStart(2, "0")}`;
   const status = working ? desk.job?.message || "Submitting operation" : desk.job?.error || (desk.connected ? "Ready" : "Start Film Viewer, then connect");
   const called = id => {
     const plane = desk.planes.find(p => p.id === id);
@@ -631,11 +649,16 @@ export function App() {
           </div>
           <div ref={screen} className={`screen ${movable ? "movable" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
             onClick={e => { if (!dragged.current && clip && !video && !e.target.closest("button")) renderPlay(); }}>
-            {video ? <video key={video.url} src={video.url} controls autoPlay={asking.current === "cut"} onLoadedData={() => { asking.current = null; }} playsInline/>
+            {video ? <video key={video.url} ref={made} src={video.url} controls onLoadedData={() => { asking.current = null; }} onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} playsInline/>
             : clip ? <video key={clip.url} ref={player} src={clip.url} playsInline onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} onTimeUpdate={e => { if (!scrubbing.current && !trimGrab.current) setCursor(clip.start + e.target.currentTime); }}/>
             : still ? <img src={still.url} draggable={false} alt={`Film Viewer frame at ${formatTime(still.time)}`}/>
             : <div className="empty-preview"><FilmStrip size={44} weight="thin"/><h2>See the film here.</h2><p>Open a replay and click a moment.<br/>The desk renders that shot as a short clip and plays it.</p></div>}
-            {working && <div className="preview-busy"><span className="spinner"/><span>{desk.job?.message || "Working…"}</span>{desk.job?.expect && <span className="meter"><i style={{width: `${Math.min(100, (desk.job.elapsed || 0) / desk.job.expect * 100)}%`}}/></span>}</div>}
+            {working && (quick ? <div className="preview-busy"><span className="spinner"/><span>{job.message || "Working…"}</span></div>
+              : <div className="waiting" role="status"><div>
+                <strong><span className="spinner"/>{job.message || "Working…"}</strong>
+                {running && <small>{job.steps ? `Step ${Math.max(1, job.step)} of ${job.steps} · ` : ""}{clock(job.elapsed)}{job.expect ? (job.elapsed > job.expect ? ` · longer than the ${clock(job.expect)} expected` : ` of about ${clock(job.expect)}`) : ""}</small>}
+                {running && <span className="meter"><i style={{width: `${(base + (within ?? 0) * part) * 100}%`}}/>{within == null && <b style={{left: `${base * 100}%`, width: `${part * 100}%`}}/>}</span>}
+              </div></div>)}
             {failure && <div className="preview-busy failed" role="alert"><span>{failure}</span><button onClick={() => setHidden(desk.job.id)} aria-label="Dismiss message">×</button></div>}
           </div>
           <div className="caption"><span title={video ? (video.files || [video]).map(f => baseName(f.file)).join("\n") : undefined}>{video ? `Rendered by Film Viewer · original sound · ${(video.files || []).length > 1 ? `${video.files.length} videos saved` : `saved as ${baseName(video.file)}`}${(video.files || []).some(f => f.overlays) ? (desk.overlays?.running ? ` · ${desk.overlays.message} (${desk.overlays.left} left), the desk goes on meanwhile ·` : desk.overlays?.error ? ` · data overlay failed: ${desk.overlays.message} ·` : " with data overlays") : ""} in ${desk.videos}`
@@ -672,7 +695,7 @@ export function App() {
             <button className="play" disabled={!project} onClick={toStart} aria-label="To the start" title={draft ? "To the start of this shot (Home)" : "To the start (Home)"}><SkipBack weight="fill"/></button>
             <button className="play" disabled={!project || rolling || live || working} onClick={play} aria-label="Play" title={(sequence.length > 1 && !dirty ? `Play the whole sequence, ${sequence.length} shots` : draft ? "Play this shot" : `Play the next ${CHUNK} seconds`) + " in Film Viewer's own window, at once and with its sound: keep that window on screen (Space)"}><Play weight="fill"/></button>
             <button className="play" disabled={!rolling && !live} onClick={pause} aria-label="Pause" title="Pause what is playing, here or in Film Viewer's window (Space)"><Pause weight="fill"/></button>
-            <button className="play" disabled={!project || (!rolling && !live && !clip)} onClick={stop} aria-label="Stop" title="Stop and go back to the start"><Stop weight="fill"/></button>
+            <button className="play" disabled={!project || (!rolling && !live && !clip && !video)} onClick={stop} aria-label="Stop" title="Stop and go back to the start"><Stop weight="fill"/></button>
             <button disabled={!project || working} onClick={renderPlay} title="Render it as a small clip and play it here on the page. It takes about as long to render as it plays; unchanged, it plays again at once."><FilmSlate/> Render and play</button>
             <strong>{formatTime(cursor)}</strong><span>/ {formatTime(project?.length)}</span>
             <button disabled={!project || conflict} onClick={another} title={again ? "Another shot of this same stretch: pick a camera, then Add to cut" : "Start a new six-second shot at the playhead"}><Plus/> New shot</button>
@@ -749,8 +772,7 @@ export function App() {
           <select aria-label="Render as" value={apart ? "apart" : "one"} onChange={e => setApart(e.target.value === "apart")} title="One video with the gaps left out, or a file for every shot to cut in an editor"><option value="one">One video</option><option value="apart">A file per shot</option></select>
           <label className="option" title={desk.ffmpeg ? "Beside every video, a transparent film of your speed, height, climb and G and the range to your opponent, to lay over it in an editor: one for a 16:9 timeline, one for a 9:16 reel" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withOverlay && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithOverlay(e.target.checked)}/> Data overlay (16:9 and 9:16)</label>
           <label className="option" title={desk.ffmpeg ? "Film Viewer renders the video four times, a quarter of a frame apart, and ffmpeg blends them like a camera's shutter: real blur on fast motion. Takes about four times as long" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withBlur && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithBlur(e.target.checked)}/> Motion blur{price(cost.blur)}</label>
-          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Colour, bloom, a red glow round highlights, a vignette and grain, like a film camera: fitted to a DaVinci Resolve grade of this footage" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withLook && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithLook(e.target.checked)}/> Film look (experimental){price(cost.look)}</label>
-          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Mist along the horizon: the far ground and the sky just above it fade into haze, found by colour. Aircraft against the sky and the cockpit stay clear" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withHaze && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithHaze(e.target.checked)}/> Haze (experimental){price(cost.haze)}</label>
+          <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Colour, bloom, a red glow round highlights, a vignette and grain, like a film camera: fitted to a DaVinci Resolve grade of this footage. With it, mist along the horizon: the far ground and the sky just above it fade into haze; aircraft against the sky and the cockpit stay clear" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withLook && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithLook(e.target.checked)}/> Film look and haze (experimental){price(cost.look + cost.haze)}</label>
           <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Two smooth lines from the wingtips of the shot's aircraft, fading behind them, with a soft glow. Not in the pilot's view or the bomb ride" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={withTrails && !!desk.ffmpeg} disabled={!desk.ffmpeg} onChange={e => setWithTrails(e.target.checked)}/> Trails (experimental){price(cost.trails)}</label>
           {withTrails && !!desk.ffmpeg && <>
             <input type="color" className="swatch" value={trailLead} onChange={e => setTrailLead(e.target.value)} title="Your trails' colour (the lead aircraft of each shot)" aria-label="Your trail colour"/>
@@ -758,6 +780,9 @@ export function App() {
             <select value={trailSeconds} onChange={e => setTrailSeconds(Number(e.target.value))} title="How long a trail stays in the sky: short ones follow the aircraft, lasting ones leave the fight's ribbons to look at afterwards" aria-label="Trail length">
               <option value={2.5}>Short</option><option value={10}>10 s</option><option value={30}>30 s</option><option value={60}>Lasting (1 min)</option>
             </select>
+            <label className="option" title="A third trail from the tip of the fin, in a colour of its own. The viewer does not tell an aircraft's size, so the tip is placed by its proportions: on some types a little off"><input type="checkbox" checked={trailTail} onChange={e => setTrailTail(e.target.checked)}/> Tail trail</label>
+            {trailTail && <input type="color" className="swatch" value={tailColour} onChange={e => setTailColour(e.target.value)} title="The tail trail's colour" aria-label="Tail trail colour"/>}
+            <label className="option" title="The trail exactly as the aircraft flew, nothing smoothed: for reading a flight path. It may tremble a little at the aircraft"><input type="checkbox" checked={trailExact} onChange={e => setTrailExact(e.target.checked)}/> Exact path</label>
           </>}
           {chosen.length > 0 && <p className="cost-total" title="The plain render, and what each ticked effect adds to it. Estimates: the desk corrects them to this PC after each render">About <b>{howLong(cost.total)}</b> for {howLong(cost.film)} of film{cost.videos > 1 ? ` in ${cost.videos} videos` : ""}: plain {howLong(cost.render)}{cost.total > cost.render + 1 ? `, effects + ${howLong(cost.total - cost.render)}` : ""}{desk.pace?.[quality] == null ? " · measured on another PC until this one has rendered at this size" : ""}</p>}
           <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; renderCut(chosen, apart); }} title={dirty ? "Add or update the shot first" : apart ? "A video of each ticked shot, in its own file" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>

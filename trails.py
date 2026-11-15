@@ -39,7 +39,10 @@ STYLE = {
     "glow_gain": 1.4,    # the blurred line brightened this many times
     "bands": 18,         # steps of brightness along a trail, each as large as the next: none stands out as a dash
     "smooth": 2,         # wingtip positions averaged over this many samples either side (not the newest)
-    "fine": 1.5,         # the newest seconds sampled at every kept step; before them, about 300 samples a trail
+    "fine": 1.5,         # the newest seconds sampled at every kept step
+    "coarse": .04,       # before them, a sample this many seconds apart (up to `most` of them): every move of the stick stays in the ribbon
+    "most": 3000,        # a two-minute trail is 3000 samples at that
+    "tail": (.9, .25),   # the fin's tip, behind and above the aircraft's middle, as shares of its visible radius: the viewer tells no other size
     "thin": 1.5,         # screen points nearer than this many pixels to the last one kept are dropped
 }
 SECONDS = (1.0, 120.0)  # the lengths a page may ask for
@@ -93,11 +96,13 @@ def at(rows, t, step):
     return pos, angles
 
 
-def wingtips(pos, yaw, pitch, roll, half):
-    """Left and right wingtip in the world, by the same axes as the flight data (flight_data._axes)."""
+def wingtips(pos, yaw, pitch, roll, half, tail=None):
+    """Left and right wingtip in the world, by the same axes as the flight data (flight_data._axes); with `tail`
+    (feet behind the aircraft's middle, feet above it) the tip of the fin as a third."""
     nose, lift = _axes(yaw, pitch, roll)
     right = _cross(lift, nose)
-    return [tuple(pos[i] + side * half * right[i] for i in range(3)) for side in (-1, 1)]
+    tips = [tuple(pos[i] + side * half * right[i] for i in range(3)) for side in (-1, 1)]
+    return tips + [tuple(pos[i] - tail[0] * nose[i] + tail[1] * lift[i] for i in range(3))] if tail else tips
 
 
 def camera(eye):
@@ -201,7 +206,7 @@ def _samples(rows, t, step, style):
     """The times a trail is drawn through at film time t, oldest first: the kept steps of the newest seconds, and
     before them a coarser grid fixed in film time (so the old part does not shimmer from frame to frame)."""
     first = max(rows[0][0], t - style["seconds"])
-    coarse = max(step, round((style["seconds"] - style["fine"]) / 300 / step) * step)
+    coarse = max(step, round(max(style["coarse"], (style["seconds"] - style["fine"]) / style["most"]) / step) * step)
     edge = max(first, t - style["fine"])
     times = [first]
     for grid, lo, hi in ((coarse, first, edge), (step, edge, t)):
@@ -219,11 +224,11 @@ def script(*args, **options):
     return "\n".join(lines(*args, **options)) + "\n"
 
 
-def lines(frames, tracks, radii, colours, step, fps, w, h, style=STYLE):
+def lines(frames, tracks, radii, colours, step, fps, w, h, style=STYLE, tail=None):
     """The lines of an ASS script drawing the trails of the aircraft in `colours` ({id: (r, g, b)}) on every frame,
     one after another, so a long script can go to its file without being held whole (measured: 1.5 to 3.4 MB a second
     of video). frames: [(film time, eye or None)], one per video frame from its first; tracks: {id: kept rows};
-    radii: {id: visible radius in feet}."""
+    radii: {id: visible radius in feet}; tail: the colour (r, g, b) of a third trail from the tip of each fin."""
     unit = h / 1080
     yield from ("[Script Info]", "ScriptType: v4.00+", f"PlayResX: {w}", f"PlayResY: {h}", "WrapStyle: 2", "ScaledBorderAndShadow: yes",
                 "YCbCr Matrix: None", "", "[V4+ Styles]",
@@ -243,7 +248,7 @@ def lines(frames, tracks, radii, colours, step, fps, w, h, style=STYLE):
             rows = tracks.get(ident)
             if not rows or not rows[0][0] <= t <= rows[-1][0]:
                 continue
-            fill = f"&H{rgb[2]:02X}{rgb[1]:02X}{rgb[0]:02X}&"
+            fills = [f"&H{c[2]:02X}{c[1]:02X}{c[0]:02X}&" for c in ((rgb, rgb, tail) if tail else (rgb, rgb))]
             # How long the bright part lasts: the time this aircraft takes to cross `reach` of the picture's width,
             # where it is now (see the module's own words).
             here, before = at(rows, t, step)[0], at(rows, max(rows[0][0], t - .1), step)[0]
@@ -253,9 +258,10 @@ def lines(frames, tracks, radii, colours, step, fps, w, h, style=STYLE):
             for s in times:
                 if (ident, s) not in tips:
                     pos, (yaw, pitch, roll) = at(rows, s, step)
-                    tips[ident, s] = wingtips(pos, yaw, pitch, roll, radii.get(ident, 18) * style["span"])
+                    size = radii.get(ident, 18)
+                    tips[ident, s] = wingtips(pos, yaw, pitch, roll, size * style["span"], tail and tuple(size * share for share in style["tail"]))
             fine = next(i for i, s in enumerate(times) if s >= edge - 1e-6)
-            for side in (0, 1):
+            for side, fill in enumerate(fills):
                 points = [tips[ident, s][side] for s in times]
                 points = points[:fine] + _smooth(points[fine:], style["smooth"])  # only the steps fine enough to jitter
                 stamps = list(times)

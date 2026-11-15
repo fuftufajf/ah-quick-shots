@@ -316,8 +316,10 @@ spreading a foot and a half a second, so it is thicker near the camera, never
 thinner than a pixel, and within 80 ft of the lens it comes in gently instead
 of cutting the frame. Its brightness falls in equal steps, so none shows as a
 dash. The newest 1.5 s are drawn through every kept step,
-the rest through about 300 points fixed in film time, so a long trail neither
-shimmers nor slows the render much. Before the first render the desk keeps
+the rest through a point every 0.04 s (3000 at most) fixed in film time, so a
+long trail keeps every move of the stick and does not shimmer (measured on two
+aircraft circling at 1080p60: 0.3 to 0.6 s more script a second of film than
+300 points took, ffmpeg the same). Before the first render the desk keeps
 every aircraft's track from the trail's length before the video, and asks the viewer's `project` where the
 shot's camera stands at every frame: a moving camera is first placed on its
 curve (a uniform Catmull-Rom through the shot's points, as the viewer moves it:
@@ -335,8 +337,14 @@ the desk asks for A file per shot.
 
 **What a render costs.** The page says it before the render is asked for:
 beside each effect what it would add, above Render selected the whole
-(`renderCost` in `ui/src/desk.js`), and the desk's progress bar runs on the
-same estimate. Seconds for one second of film, measured on one PC (a 7 s pair
+(`renderCost` in `ui/src/desk.js`). While it renders, the wait is said large
+over the picture, as every wait is: what is being done, which step of how many
+(`step`, `steps` in the job: for each video the viewer's render, four with
+motion blur, then ffmpeg's; before them the trails' cameras), the time gone
+and the time expected. ffmpeg's steps say how far they are (`share`, from the
+file ffmpeg writes with `-progress`); the viewer says nothing of its own
+render, so that step's share of the bar pulses. The bar is never full while
+work goes on. Each video's record keeps how long it took (`took`, seconds). Seconds for one second of film, measured on one PC (a 7 s pair
 shot of film13):
 
 | | 1080p60 | 4K |
@@ -608,7 +616,7 @@ most 5 s later). One action runs at a time; a second is refused while
   shots cannot share a video: `state.preview.files` then lists several,
   `[{url, file, shots}]`; `file` is where the video was kept (`state.videos`
   is that folder). `labels` `{shot id: camera name}` names each shot's camera
-  in its file name; without it the shot's `kind` is used. `blur: true` (needs ffmpeg) adds motion blur, `look: true` (needs ffmpeg) the film look, `haze: true` (needs ffmpeg) haze along the horizon, `trails` (needs ffmpeg) wingtip trails: `true`, or `{lead, opponent, seconds}` with colours as `#rrggbb` and 1 to 120 seconds.
+  in its file name; without it the shot's `kind` is used. `blur: true` (needs ffmpeg) adds motion blur, `look: true` (needs ffmpeg) the film look, `haze: true` (needs ffmpeg) haze along the horizon, `trails` (needs ffmpeg) wingtip trails: `true`, or `{lead, opponent, seconds, tail?, exact?}` with colours as `#rrggbb` and 1 to 120 seconds; `tail` is the colour of a third trail from the tip of the fin (placed by the aircraft's proportions: 0.9 of its visible radius behind its middle, 0.25 above), `exact: true` draws the path as flown, nothing averaged. The page sends `look` and `haze` together, from one switch.
   With `overlay: true` (needs ffmpeg, `state.ffmpeg`)
   every entry of `files` also has `overlays`: the 16:9 and the 9:16 data overlay kept beside it
 - POST `/api/folder` `{}` shows the videos folder in Explorer

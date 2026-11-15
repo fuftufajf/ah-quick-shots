@@ -391,6 +391,18 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(cuts[0][cuts[0].index("-ss") + 1], "2.000000")
         self.assertFalse(Path(video.split()[3]).exists())  # the uncut video is gone
         self.assertEqual(Path(self.desk.snapshot()["preview"]["file"]).read_bytes(), b"cut")
+        # The render counted its steps (the viewer's render, then ffmpeg's cut), followed ffmpeg through its
+        # progress file, and its record says how long it took.
+        job = self.desk.snapshot()["job"]
+        self.assertEqual((job["step"], job["steps"]), (2, 2))
+        self.assertEqual(cuts[0][cuts[0].index("-progress") + 1][-9:], ".progress")
+        self.assertIsNone(finishing.watch)
+        records = json.loads(next(self.desk.root.glob("*.renders.json")).read_text(encoding="utf-8"))
+        self.assertGreaterEqual((records if isinstance(records, list) else records["renders"])[-1]["took"], 0)
+        log = Path(self.temp.name) / "x.progress"
+        self.assertIsNone(finishing._made(log))
+        log.write_text("frame=1\nout_time_us=N/A\nprogress=continue\nframe=90\nout_time_us=1500000\nprogress=continue\n")
+        self.assertEqual(finishing._made(log), 1.5)
         # ffmpeg failing is said, not hidden behind a video two seconds too long.
         failed = lambda args, **_options: subprocess.CompletedProcess(args, 1, "", "Unknown encoder 'libx264'")
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("finishing.subprocess.run", failed):
@@ -540,11 +552,19 @@ class DeskTests(unittest.TestCase):
         lasting = trails.style_for(60)
         self.assertEqual(trails.style_for(trails.STYLE["seconds"]), trails.STYLE)
         self.assertGreater((1 - .5) ** lasting["fade"], .75)  # halfway back a lasting trail is still three quarters as bright
-        # A minute of trail through about 300 points, the newest 1.5 s at every kept step, fixed in film time.
+        # A minute of trail a point every 0.04 s, the newest 1.5 s at every kept step, fixed in film time.
         rows = [(n / 50, 0.0, 0.0, float(n), 0.0, 0.0, 0.0, 0.0, 0.0, 50.0) for n in range(4000)]
         times, edge = trails._samples(rows, 70.0, .02, lasting)
         self.assertEqual((times[0], times[-1], edge), (10.0, 70.0, 68.5))
-        self.assertLess(len(times), 300 + 76 + 3)
+        self.assertLess(len(times), 58.5 / .04 + 76 + 3)
+        self.assertAlmostEqual(times[101] - times[100], .04)
+        # With a colour for it, a third trail leaves the tip of the fin: behind the aircraft's middle and above it.
+        left, right, fin = trails.wingtips((0, 1000, 0), 0, 0, 0, 16, (16.2, 4.5))
+        self.assertEqual([round(v, 3) for v in fin], [0, 1004.5, -16.2])
+        flying = [(t / 50, 0.0, 1000.0, 300 * t / 50, 0.0, 0.0, 0.0, 0.0, 0.0, 300.0) for t in range(200)]
+        eye = (-400.0, 1000.0, 300.0 * 3.5, -math.pi / 2, 0.0, 0.0, 1.2)
+        text = trails.script([(3.5, eye)], {7: flying}, {7: 18}, {7: (255, 255, 255)}, .02, 60, 1920, 1080, tail=(0, 255, 0))
+        self.assertIn("\\1c&H00FF00&", text)
         later, _ = trails._samples(rows, 70.0 + 1 / 60, .02, lasting)
         self.assertEqual(set(t for t in times if 12 < t < 68) - set(later), set())  # the old part stays where it was
 
