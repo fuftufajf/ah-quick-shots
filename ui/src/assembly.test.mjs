@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {DISSOLVE, cutAt, grouped, laid, lengthOf, moved, musicGain, placed, stateOf, ticked, trimmed, under, without} from "./assembly.js";
+import {DISSOLVE, cutAt, cutBeside, grouped, laid, lengthOf, moved, musicGain, placed, stateOf, ticked, trimmed, under, without} from "./assembly.js";
 
 const shots = [{id: "a", name: "Kill: Bandit · closing in", start: 10, end: 14}, {id: "b", name: "Kill: Bandit · guns", start: 14, end: 19},
   {id: "c", name: "Shot at 00:40.0", start: 40, end: 46}, {id: "d", name: "Take-off 00:02.0 · rolling", start: 2, end: 8}];
@@ -27,6 +27,10 @@ rows = laid(clips.map((c, i) => i === 0 ? {...c, join: "dissolve"} : c), version
 assert.deepEqual(rows.map(r => r.at), [0, 6 - DISSOLVE, 9 - DISSOLVE]);
 assert.equal(laid([{...clips[0], join: "dissolve", end: 5.5}, clips[1]], versions)[1].at, .5);  // too short to dissolve: a cut
 assert.deepEqual([under(rows, 0), under(rows, 5.8), under(rows, 99), under([], 1)], [0, 1, 2, -1]);
+// The playhead jumps cut to cut: a dissolve's two ends are both cuts, and the start and end of the whole are the last.
+assert.deepEqual([cutBeside(rows, 0, 1), cutBeside(rows, 5.8, 1), cutBeside(rows, 6, -1), cutBeside(rows, 6.5, 1), cutBeside(rows, 8.7, 1), cutBeside(rows, 13.7, 1)],
+  [6 - DISSOLVE, 6, 6 - DISSOLVE, 9 - DISSOLVE, 14 - DISSOLVE, undefined]);
+assert.deepEqual([cutBeside(rows, 3, -1), cutBeside(rows, 0, -1), cutBeside([], 0, 1)], [0, undefined, undefined]);
 
 // Cut at the playhead: two clips of the same video, meeting where it was cut; never a sliver.
 rows = laid(clips, versions);

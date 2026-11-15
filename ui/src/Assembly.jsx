@@ -1,7 +1,7 @@
 import {useEffect, useRef, useState} from "react";
-import {CaretLeft, CaretRight, FilmSlate, FolderOpen, MusicNotes, Pause, Play, Scissors, Stop, X} from "@phosphor-icons/react";
+import {CaretLeft, CaretLineLeft, CaretLineRight, CaretRight, FilmSlate, FolderOpen, MusicNotes, Pause, Play, Scissors, SkipBack, SkipForward, Stop, X} from "@phosphor-icons/react";
 import {formatTime, request} from "./desk.js";
-import {cutAt, grouped, laid, lengthOf, moved, musicGain, placed, stateOf, ticked, trimmed, under, without} from "./assembly.js";
+import {cutAt, cutBeside, grouped, laid, lengthOf, moved, musicGain, placed, stateOf, ticked, trimmed, under, without} from "./assembly.js";
 
 const EMPTY = {clips: [], off: [], music: null, sound: 1};
 const QUALITY = {draft: "Draft", final: "1080p", "4k": "4K"};
@@ -92,8 +92,11 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
   useEffect(() => {
     function key(e) {
       if (e.ctrlKey || e.metaKey || e.altKey || e.target.matches("input:not([type=range]):not([type=checkbox]),select,textarea,a")) return;
+      // Home and End, the start and end of the whole; Up and Down, the cut before and after, as in an editor.
+      const to = {Home: 0, End: length, ArrowUp: cutBeside(rows, at, -1), ArrowDown: cutBeside(rows, at, 1)}[e.key];
       if (e.key === " ") { e.preventDefault(); play(); }
       else if (e.key === "s") cut();
+      else if (e.key in {Home: 1, End: 1, ArrowUp: 1, ArrowDown: 1} && !e.target.matches("input") && rows.length) { e.preventDefault(); if (to != null) go(to); }
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -206,9 +209,13 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
           {music && <audio ref={song} src={`/media/music/${music.file}`} preload="auto"/>}
         </div>
         <div className="transport">
+          <button className="play" disabled={!rows.length || at <= 0} onClick={() => go(0)} aria-label="To the start" title="To the start (Home)"><SkipBack weight="fill"/></button>
+          <button className="play" disabled={!rows.length || cutBeside(rows, at, -1) == null} onClick={() => go(cutBeside(rows, at, -1))} aria-label="Previous cut" title="To the cut before: where a clip starts or ends (Up arrow)"><CaretLineLeft weight="bold"/></button>
           {playing ? <button className="play" onClick={() => setPlaying(false)} aria-label="Pause" title="Pause (Space)"><Pause weight="fill"/></button>
             : <button className="play" disabled={!rows.length} onClick={play} aria-label="Play" title="Play the assembly (Space)"><Play weight="fill"/></button>}
           <button className="play" disabled={!rows.length || (!playing && at === 0)} onClick={() => { setPlaying(false); go(0); }} aria-label="Stop" title="Stop and go back to the start"><Stop weight="fill"/></button>
+          <button className="play" disabled={!rows.length || cutBeside(rows, at, 1) == null} onClick={() => go(cutBeside(rows, at, 1))} aria-label="Next cut" title="To the next cut: where a clip starts or ends (Down arrow)"><CaretLineRight weight="bold"/></button>
+          <button className="play" disabled={!rows.length || at >= length} onClick={() => go(length)} aria-label="To the end" title="To the end (End)"><SkipForward weight="fill"/></button>
           <strong>{formatTime(at)}</strong><span>/ {formatTime(length)}</span>
           <button disabled={!cutAt(clips, rows, at)} onClick={cut} title="Cuts the clip under the playhead in two (S)"><Scissors/> Cut at the playhead</button>
           <button disabled={!chosen} onClick={() => remove(pick)} title="Takes the selected clip off the timeline; its video stays in the Videos folder">Remove clip</button>

@@ -121,8 +121,9 @@ unzipping.
    a few shots for each: the roll, the wheels, the lift-off with the camera
    swinging round you, the climb; the approach, the touchdown, the roll-out.
 5. **Assembly** (the second view, beside Shots) — every shot rendered as a
-   file of its own lines up on a timeline, in film order, by itself. Drag a
-   clip to move it, drag the ends of the selected one to trim it, cut it at
+   file of its own lines up on a timeline, in film order, by itself. Drag the
+   playhead, jump cut to cut (Up and Down) or to the start and end (Home,
+   End), drag a clip to move it, drag the ends of the selected one to trim it, cut it at
    the playhead (S), join two with a cut or a short dissolve, set each clip's
    sound, and add one piece of music of your own under the film's sound.
    A shot whose camera you changed since is marked Changed; Render what is

@@ -483,6 +483,13 @@ be rendered again: change its camera in Shots, render, and the clip shows the
 new video. The picture plays the clips one after another from their files,
 the music beside them; a dissolve shows there as a cut.
 
+One playhead runs over the ruler and the three lanes: an arrow and a line of
+one element, centred on its moment and laid where the clips are, above them.
+It is dragged (the ruler too), and the picture follows; focused, the arrow keys
+move it a tenth of a second, a second with Shift. Beside Play the buttons jump
+to the start (Home), the cut before (Up), the next cut (Down) and the end
+(End): a cut is where a clip starts or ends, so a dissolve has two.
+
 Export video is ffmpeg's work alone (`assemble()` in finishing.py): each clip
 trimmed and brought to one size and frame rate, joined in turn by `concat` or
 `xfade` and `acrossfade` (a dissolve between clips too short to share it is a

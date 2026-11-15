@@ -50,6 +50,13 @@ export function under(rows, time) {
   return rows.length ? 0 : -1;
 }
 
+// Where the playhead jumps from `time`, back (step -1) or on (1): to the cut before or after it, every clip's start
+// and end, and the start and end of the whole. undefined when there is none that way.
+export function cutBeside(rows, time, step) {
+  const marks = [...new Set([0, ...rows.flatMap(r => [r.at, tidy(r.at + r.seconds)]), lengthOf(rows)])].sort((a, b) => a - b);
+  return step < 0 ? marks.findLast(m => m < time - .01) : marks.find(m => m > time + .01);
+}
+
 // The clip under the playhead cut in two there; null when the cut would leave a piece shorter than SHORTEST.
 export function cutAt(clips, rows, time) {
   const i = under(rows, time), row = rows[i];
