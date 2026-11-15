@@ -1501,6 +1501,17 @@ class DeskTests(unittest.TestCase):
         self.assertLess(max(a - b for a, b in zip(lens, lens[1:])), 5)
         self.assertAlmostEqual(lens[-1], 9, delta=.1)  # back on the shot's own lens
 
+    def test_the_observer_eases_into_and_out_of_its_swing_when_the_two_pass_close_by(self):
+        # Head on, 80 ft apart as they pass at 6 s: the line through both swings half round in half a second, and the
+        # ship swings round the hero after it. With that line averaged once its swing began and ended at once (its
+        # speed changed by 121 ft/s from one half second to the next); it gathers and loses its pace instead (74).
+        tracks = {i / 2: {19: (0, 1000, 150 * i, 0, 0, 0), 10: (80, 1000, 3600 - 150 * i, math.pi, 0, 0)} for i in range(25)}
+        shot = validate_shot({**SHOT, "start": 0, "end": 12, "kind": "escort", "distance": 400, "height": 48, "orbit": -20, "fov": 28, "roll": 0}, 60)
+        poses = escort_poses(shot, tracks)
+        speed = [math.dist(a[:3], b[:3]) / .5 for a, b in zip(poses, poses[1:])]
+        self.assertGreater(max(speed), 500)  # it does swing round: the hero flies 300 ft/s
+        self.assertLess(max(abs(b - a) for a, b in zip(speed, speed[1:])), 90)
+
     def test_the_data_overlay_card(self):
         hero = [{"t": 10 + i / 50, "tas": 605.8, "alt": 1460.3, "climb": 35.2, "g": 7.76} for i in range(101)]
         near = [{"t": 10 + i / 50, "range": 355, "closure": 376.4} for i in range(51)]  # he leaves the film at 11 s

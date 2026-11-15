@@ -421,7 +421,12 @@ def escort_poses(shot, tracks, step=None, seen=None):
             climb = math.atan2(a[1] - b[1], math.hypot(a[0] - b[0], a[2] - b[2]))
             line.append((line[-1][0] + (angle - line[-1][0] + math.pi) % (2 * math.pi) - math.pi if line else angle,
                          max(-STEEPEST, min(STEEPEST, climb))))  # not straight over or under the hero
-        pair = [(angle + turns[i], climb) for i, (angle, climb) in enumerate(_smooth(line, max(1, round(max(1.5, weight) / per))))]
+        # Averaged, and then once more over a second either side, so the ship gathers and loses its pace. When the
+        # two pass close by, that line swings right round in half a second (measured: 150 degrees, passing at 76 ft).
+        # Averaged once, the ship's swing began and ended at once and the picture jerked: see "The observer's swing"
+        # in docs/how-it-works.md for what nine fights showed of this and of three other ways.
+        eased = _smooth(_smooth(line, max(1, round(max(1.5, weight) / per))), max(1, round(1 / per)))
+        pair = [(angle + turns[i], climb) for i, (angle, climb) in enumerate(eased)]
     stations = solo if pair is None else pair
     if solo and pair:
         # Between a keyframe that watches the hero alone and one that does not it goes from one seat to the other

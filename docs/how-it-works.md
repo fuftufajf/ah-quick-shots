@@ -176,6 +176,25 @@ the two-aircraft cameras then take whoever comes nearest.
   its lens comes back to yours over three seconds. Held at the place he was
   last seen, he stopped its turn dead (27 degrees a second, then 0.6) and the
   lens snapped back from 31 to 9 degrees.
+  The observer's swing. When the two pass close by, the line through both
+  swings right round in half a second (measured: 150 degrees, passing at
+  76 ft), and the ship swings round you after it over about four seconds.
+  With that line averaged once the swing began and ended at once, and the
+  picture jerked there: on that fight, at 400 ft, the ship's turn changed
+  by 31 degrees a second from one half second to the next and its speed by
+  145 ft/s; the finished video showed it at the same two moments, sixty
+  times the change between frames elsewhere. The line is now averaged, and
+  then once more over a second either side, so the swing gathers and loses
+  its pace: 11 degrees a second and 50 ft/s on that shot. Over nine fights
+  whose tracks were kept (24 to 118 s, the two aircraft passing at 66 to
+  3,818 ft), each at 300 and at 400 ft, the worst change of the turn was on
+  average 16.9 and 14.5 degrees a second before and is 14.3 and 10.6; of the
+  ship's speed, 59 and 63 ft/s before, 43 and 44 now; both aircraft were in
+  the picture at least 98.3 and 95.8% of the time before, 98.7 and 95.5%
+  now. Averaged twice over 0.7 of the reach instead, it was worse at 300 ft
+  (17.7 degrees a second); once more over half a second only, a little less
+  good (14.6 and 11.1). Not smoothed by this: the look itself when two
+  aircraft pass head on, which turns as fast as they cross.
   Its station follows that line up and down too, so an opponent well above or
   below you is not left out of the picture's height. Looks at chooses whom it
   watches: Both, You alone, or the Opponent alone — a long lens on him from a
