@@ -25,7 +25,7 @@ STYLE = {
     "seconds": 2.5,      # how far back a trail reaches
     "span": .88,         # the wingtip's offset as a share of the aircraft's visible radius (a Yak's radius 17.9 ft, its tips 15.8 ft out)
     "opacity": .75,      # at the wingtip
-    "rise": 3.3,         # feet from the wingtip over which the trail comes in from nothing: it leaves any wing gently, wherever the tip really is
+    "rise": 3.3,         # feet ahead of the wingtip over which the trail comes in from nothing: it leaves any wing gently, wherever the tip really is
     "reach": .3,         # the bright part lasts as long as the aircraft takes to cross this share of the picture's width
     "remain": .07,       # the remainder's brightness, as a share of the wingtip's
     "fade": 1.8,         # the remainder falls as (1 - age / seconds) ** fade
@@ -265,13 +265,13 @@ def lines(frames, tracks, radii, colours, step, fps, w, h, style=STYLE, tail=Non
                 points = [tips[ident, s][side] for s in times]
                 points = points[:fine] + _smooth(points[fine:], style["smooth"])  # only the steps fine enough to jitter
                 stamps = list(times)
-                # The newest step is 6 to 10 ft long at a fighter's speed: points are put inside its last `rise` feet,
-                # so the trail can come in over them.
+                # The trail comes in over `rise` feet, and those lie ahead of the tip, the way it is going: it is whole
+                # at the tip itself and its faint beginning is under the wing. Coming in behind the tip, it began a
+                # metre behind the wing: seen from above in a fast roll, a trail torn off its wingtip.
                 gap = math.dist(points[-1], points[-2]) if len(points) > 1 else 0
-                if gap > style["rise"]:
-                    shares = [style["rise"] * j / 4 / gap for j in (4, 3, 2, 1)]
-                    points[-1:-1] = [tuple(points[-1][c] + (points[-2][c] - points[-1][c]) * f for c in range(3)) for f in shares]
-                    stamps[-1:-1] = [t - (t - times[-2]) * f for f in shares]
+                if gap > 0:
+                    points += [tuple(points[-1][c] + (points[-1][c] - points[-2][c]) / gap * style["rise"] * j / 4 for c in range(3)) for j in (1, 2, 3, 4)]
+                    stamps += [t] * 4
                 feet = [0.0]  # along the trail from the wingtip, newest first
                 for a, b in zip(points[:0:-1], points[-2::-1]):
                     feet.append(feet[-1] + math.dist(a, b))

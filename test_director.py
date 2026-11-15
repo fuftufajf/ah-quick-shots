@@ -537,8 +537,14 @@ class DeskTests(unittest.TestCase):
         # off the screen, and libass draws an outline into a bitmap as large as the box round it.
         beside = (60.0, 1000.0, 300.0 * 3.5 - 200, 0.0, 0.0, 0.0, 1.2)  # just off the flight path, looking along it
         near = trails.script([(3.5, beside)], {7: rows}, {7: 18}, {7: (255, 255, 255)}, .02, 60, 1920, 1080)
-        across = [int(v) / 4 for line in near.splitlines() if line.startswith("Dialogue:") for v in line.split("}")[1].split()[1::2] if v != "l"]
-        self.assertTrue(across and all(-1920 - 10 <= x <= 2 * 1920 + 10 for x in across))
+        def across(lines):  # the x of every point drawn, in pixels
+            return [int(v) / 4 for line in lines if line.startswith("Dialogue:")
+                    for v in [t for t in line.split("}")[1].split() if t not in "ml"][0::2]]
+        self.assertTrue(across(near.splitlines()) and all(-1920 - 10 <= x <= 2 * 1920 + 10 for x in across(near.splitlines())))
+        # The trail comes in ahead of the tip (here in the middle of the picture, flying to one side), so it is
+        # whole at the tip itself: it reaches a metre past it, 11 px at this distance, and far back the other way.
+        reach = across(firsts)
+        self.assertTrue(8 < min(960 - min(reach), max(reach) - 960) < 16, (min(reach), max(reach)))
         self.assertFalse([e for e in events if ",0:00:00.01,0:00:00.03," in e])  # no camera, no trails
         self.assertTrue(all("\\1c&H0080FF&" in e for e in events))
         alphas = [int(e.split("\\1a&H")[1][:2], 16) for e in firsts[:seen]]  # one wingtip's, from the wingtip back
