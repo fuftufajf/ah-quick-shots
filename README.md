@@ -5,7 +5,7 @@ cameras, and render the ones you like. AH Quick Shots is a page in your browser
 that drives the offline Film Viewer for you: the viewer keeps the world, draws
 the picture and renders the video with the film's sound.
 
-![A fight picked from the list, shown through the "You in front" camera, with two shots of it in the cut](docs/screenshot.png)
+![The Shots view: a fight picked from the list, shown through the Observer camera, with its shots in the cut](docs/screenshot.png)
 
 A fight filmed with it, on YouTube:
 
@@ -27,7 +27,7 @@ also needs **Python 3.11 or newer** on the PATH (no extra packages) and,
 optionally, **ffmpeg** on the PATH: with it a video is rendered from two
 seconds early and those seconds are cut off, so the other aircraft are solid
 from the first frame (without it they can fade in during the first second),
-and it draws the data overlay (below). The package brings both.
+and it makes the motion blur and the Assembly's video. The package brings both.
 
 ## Start
 
@@ -58,7 +58,7 @@ checks it.
 
 Inside are the official portable Python from python.org (signed by the Python
 Software Foundation), the free ffmpeg video tool (gyan.dev's build of an FFmpeg
-release), the font of the data overlay and this program's own small source
+release), a font and this program's own small source
 files. There is no installer, no Windows service and no account, and nothing
 is sent anywhere: it talks only to Film Viewer on your own PC, through the
 viewer's documented socket, and to your browser on 127.0.0.1. It does not use
@@ -69,73 +69,62 @@ the download is free and not paid-signed, not because anything is wrong. To
 skip the question, right-click the zip > Properties > tick Unblock > OK before
 unzipping.
 
-## Work down the page
+## How to use it
 
-1. **Moments** — open a film (newest first). "Fights" lists your engagements,
-   one row each, with the opponent you actually fought. Click one: a shot is
-   prepared around it.
-2. **Picture** — a shot shows as a still; Play (Space) plays it at once in
-   Film Viewer's own window (keep it on screen), nothing rendered. Render and
-   play renders a short preview clip with sound, once; after that it replays
-   and scrubs from its file. Set in / Set out (I / O)
-   mark the shot at the playhead; drag the ends of the highlighted range to
-   trim it. Drag the picture to walk the camera round the aircraft, or to
-   turn a camera on the airframe; the wheel over the picture zooms. With a
-   shot of a kill, take-off or landing selected, Play shows all its shots in
-   a row, as the cut will render them; clicking the shot in the cut plays it
-   alone.
-3. **Cameras** — one click shows the moment through that camera, before
-   anything is saved: an observer flying along like a third aircraft (the
-   first, and what a new shot opens on), you or the opponent in front, close views, over your shoulder, from your wing,
-   behind you, a fly-by, the pilot's own view, cameras on the airframe, riding
-   the bomb. Sliders or a drag adjust it (a lift-off or roll-out also has
-   Swing round and Ends at). The observer can be directed: set the picture,
-   press Keyframe (K), move the playhead, set it again, and it glides from one
-   framing to the next, turning to whom that keyframe looks at (both of you,
-   you, or the opponent); Looseness says how closely it follows you, and on Its
-   own path each keyframe pins it to the sky, so it flies a line of its own
-   while you come by and pass. Add to cut keeps the shot.
-4. **The cut** — the green arrow beside a moment adds it straight to the cut
-   (a kill as four shots); the x beside a shot, or Clear, takes shots out, and
-   asks whether their videos go to the Recycle Bin too. Tick the shots you
-   want and Render selected: 1080p, 4K or a
-   quick draft, 30 frames a second or 60, as one video with the gaps between
-   shots left out or as a file per shot for cutting in an editor. The effects
-   below are each shot's own, kept with it: they are set for the selected
-   shot, and a new shot gets the ones set last. Tick Data overlay to get, beside each
-   video, a transparent film of your speed, height, climb and G and the range
-   to your opponent, to lay over it in DaVinci Resolve or another editor: one
-   for a 16:9 timeline, one for a 9:16 reel. Motion blur, the streak a film
-   camera leaves on fast motion, is ticked from the start: the render takes
-   about four times as long, and the blur is smooth even in a fast roll. Film look and haze (a film camera's colour, glow, vignette and grain,
-   fitted to a DaVinci Resolve grade of this footage, with mist along the
-   horizon) and Trails (two smooth lines from the wingtips of the shot's
-   aircraft, yours and your opponent's in colours you pick; short ones follow
-   the aircraft, lasting ones leave the fight's ribbons in the sky for a wide
-   shot afterwards; Tail trail adds a third from the fin, Exact path draws
-   the path as flown, for reading a flight) are
-   experimental and still being tuned. Beside each of these the page says
-   what it adds to the render's time, and above Render selected the whole of
-   it: estimates, corrected to your PC after each render. Add my kills makes four
-   shots for every kill of yours: you closing in, your guns, him going down,
-   you flying on. Take-offs & landings finds yours in your flight path and adds
-   a few shots for each: the roll, the wheels, the lift-off with the camera
-   swinging round you, the climb; the approach, the touchdown, the roll-out.
-5. **Assembly** (the second view, beside Shots) — every shot rendered as a
-   file of its own lines up on a timeline, in film order, by itself. Drag the
-   playhead, jump cut to cut (Up and Down) or to the start and end (Home,
-   End), drag a clip to move it, drag the ends of the selected one to trim it, cut it at
-   the playhead (S), join two with a cut or a short dissolve, set each clip's
-   sound, and add one piece of music of your own under the film's sound. The
-   sound lanes show each clip's waveform and the music's, cut as the picture is,
-   and the level of each lane in percent under its name.
-   A shot whose camera you changed since is marked Changed; Render what is
-   missing renders those and the ones with no video yet. Export video makes
-   one video of the timeline with ffmpeg, while the desk goes on. The music
-   is yours to choose and to have the right to use: none comes with the app.
+**Replays.** Choose a replay (the ones you opened lately come first) and
+press Open. Its name stands large at the top: type over it and press Enter to
+rename the file. The bin deletes the chosen replay; the open one is only
+marked, and goes to the Recycle Bin when you open the next.
+
+**Shots**, the first view, top to bottom:
+
+1. **Moments** — your fights, one row each. Click one and a shot is prepared
+   around it; the green arrow adds it straight to the cut.
+2. **Picture** — Play (Space) plays the shot in Film Viewer's own window,
+   nothing rendered. Render and play makes a clip on the page. Set in and Set
+   out (I, O) mark the shot at the playhead; drag its ends to trim. Drag the
+   picture to move the camera, turn the wheel to zoom. Names shows the pilots'
+   names, in renders too.
+3. **Cameras** — one click shows the shot through that camera; sliders adjust
+   it; Rate cameras measures them all. Add to cut keeps the shot.
+   - **Observer** flies along like a third aircraft. To direct it, set the
+     picture, press Keyframe (K), move the playhead and set it again: it
+     glides between the keyframes. Looks at (Both, You, Opponent) is kept in
+     each keyframe, so it can turn from one aircraft to the other. Its own
+     path pins each keyframe to the sky.
+   - **Tripod** stands still and follows by turning and zooming only.
+   - The rest: you or the opponent in front, close views, over your shoulder,
+     from your wing, behind you, fly-bys, the pilot's view, cameras on the
+     airframe, riding the bomb.
+4. **The cut** — tick the shots to render, choose 1080p, 4K or a quick
+   draft, 30 or 60 frames a second, one video or a file per shot, then Render
+   selected. Motion blur (kept with each shot) takes about four times as long
+   and looks like film. Add my kills makes four shots for every kill; Take-offs
+   & landings finds yours. Videos folder opens the finished videos.
+
+**Assembly**, the second view: your rendered shots in a row on a timeline.
+Drag a clip to move it, drag its ends to trim, cut it at the playhead (S),
+join two with a cut or a dissolve, set each clip's sound and add music of your
+own. Export video makes one film of it.
+
+![The Assembly view: rendered shots on a timeline with their sound and a music track](docs/assembly.png)
+
+| Key | Shots | Assembly |
+| --- | --- | --- |
+| Space | play or pause | play or pause |
+| I, O | shot starts, ends at the playhead | |
+| K, Delete | set or remove a keyframe | |
+| [ and ] | previous, next keyframe | |
+| Home | to the shot's start | to the start (End: to the end) |
+| Up, Down | | previous, next cut |
+| S | | cut the clip at the playhead |
 
 Finished videos are in **Videos\AH Quick Shots**, each named after its film,
-time, shot and camera; Videos folder, under The cut, opens it.
+time, shot and camera.
+
+**Still being made.** A data overlay, a film look with haze, and wingtip
+trails are offered only when AH Quick Shots is run from the source code, not
+by the Windows package: they are experimental.
 
 ## Known limits
 
