@@ -256,8 +256,9 @@ several shots goes with any of them, and videos rendered before that record
 existed are not on it. The green arrow beside a moment adds it to the cut
 without opening it: a kill, or a fight you won, as the four shots of Add my
 kills, anything else as one shot with its first camera. Render selected makes one 16:9
-video of the ticked shots with the film's sound, at 1080p60, 4K (2160p60) or as
-a quick draft (960×540, 30 fps), leaving out everything between them; set to
+video of the ticked shots with the film's sound, at 1080p, 4K (2160p) or as
+a quick draft (960×540), 30 frames a second unless 60 are chosen (the
+operator's choice: more like film), leaving out everything between them; set to
 A file per shot, it makes a video of every ticked shot instead, each starting
 and ending where its shot does, for cutting in an editor (each render waits for
 the viewer to finish the last one's sound, so this takes longer). Between
@@ -280,13 +281,16 @@ as videos of their own and those alike as one. Effects are not the camera:
 changing them renders no preview again and does not mark a shot's video as
 changed.
 
-Motion blur renders each video four times at 120 fps, the viewer's most, each
-pass a quarter of a frame (1/480 s) after the one before, and ffmpeg weaves the
-passes and makes each frame the mean of all eight in its time, as a 360°
-shutter does. The blur is made of the viewer's own frames: nothing is guessed.
-A film camera's 180° (the first four) left too little to see; fewer frames gave
-a double image instead of a streak (two a frame at 120 fps for 60 fps), and
-ffmpeg's motion interpolation took 130 times the film's length. The sound is
+Motion blur renders each video at 120 fps, the viewer's most, and ffmpeg makes
+each frame the mean of all the frames in its time, as a 360° shutter does. The
+blur is made of the viewer's own frames: nothing is guessed. At 30 fps (the
+default, and why motion blur is ticked from the start: 30 frames without it
+look jerky) one pass gives four frames a frame. At 60 fps the video is rendered
+four times, each pass a quarter of a frame (1/480 s) after the one before, and
+ffmpeg weaves the passes: eight frames a frame. There a film camera's 180° (the
+first four) left too little to see, two a frame at 120 fps gave a double image
+instead of a streak, and ffmpeg's motion interpolation took 130 times the film's
+length. One pass at 30 fps has not been looked at on a render yet. The sound is
 the first pass's. Measured on a 7 s shot at 1080p60: 67 s with blur, 17 s
 without.
 
@@ -374,6 +378,11 @@ shot of film13):
 | haze | + 1.1 | + 4.0 |
 | trails, short (ffmpeg 3.1, the script 0.1) | + 3.2 | + 13.2 |
 | trails, half a minute long | + 1.0 more | + 6.0 more |
+
+At 30 fps the page takes ffmpeg's share and the trails' as half of these,
+blending as a quarter (one pass instead of four), and the viewer's own render
+as at 60: worked out, not timed. Motion blur then costs a pass at 120 fps less
+the plain render, about a third of a second a second at 1080p instead of 5.6.
 
 The effects add up nearly as a sum (look, haze and lasting trails together:
 6.8 against 6.4). A lasting trail is cut off a picture's width outside the
@@ -627,7 +636,7 @@ most 5 s later). One action runs at a time; a second is refused while
   `state.proposals` gets `{id, score, size, quality}` each: `score` the share of
   the shot with both aircraft in frame, `size` the lead's mean width in the
   picture, `quality` (0 to 1) how well it reads. It ignores terrain
-- `export_cut` `{shot_ids?, quality, apart?, effects?}` — draft|final|4k: the chosen saved shots
+- `export_cut` `{shot_ids?, quality, fps?, apart?, effects?}` — draft|final|4k, `fps` 30 (when omitted) or 60: the chosen saved shots
   (all when omitted) as one 16:9 MP4 with sound, the gaps left out; with
   `apart: true` an MP4 of each shot, in time order. Overlapping
   shots cannot share a video, nor can shots of other effects: `state.preview.files` then lists several,
@@ -649,7 +658,7 @@ most 5 s later). One action runs at a time; a second is refused while
   viewer pauses and `state.now` says the moment, which `live` takes back as `from` to go on. The page's Pause and
   Stop: Pause holds the clip on the page or the viewer's playing, Stop also goes back to the start
 - POST `/api/assembly` `{assembly}` keeps the open film's assembly (see "The assembly"); answers `{assembly}`
-  as kept. POST `/api/assemble` `{assembly, quality}` keeps it and makes its video in the videos folder:
+  as kept. POST `/api/assemble` `{assembly, quality, fps?}` (30 when omitted, or 60) keeps it and makes its video in the videos folder:
   202 at once, `state.assembling` (`running`, `message`, `error`, `file`) says how it stands
 - POST `/api/music` with the file as the body and its name, percent-encoded, in `X-Name` (mp3, wav, m4a, aac,
   flac or ogg, up to 100 MB) keeps a piece of music; answers `{file, name}` for the assembly's `music`

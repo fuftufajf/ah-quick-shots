@@ -420,10 +420,10 @@ export function videoRows(shots, apart) {
 }
 
 // What rendering those videos takes (see renderCost), each with its own shots' effects: {film, videos, render, total}.
-export function cutCost(rows, quality, ffmpeg, pace = 1) {
+export function cutCost(rows, quality, fps, ffmpeg, pace = 1) {
   return rows.reduce((sum, row) => {
     const e = row[0].effects, film = row.reduce((seconds, shot) => seconds + shot.end - shot.start, 0);
-    const cost = renderCost({film, videos: 1, quality, blur: ffmpeg && !!e.blur, look: ffmpeg && !!e.look, haze: ffmpeg && !!e.look,
+    const cost = renderCost({film, videos: 1, quality, fps, blur: ffmpeg && !!e.blur, look: ffmpeg && !!e.look, haze: ffmpeg && !!e.look,
       trails: ffmpeg && !!e.trails, trailSeconds: e.trails?.seconds}, pace);
     return {film: sum.film + film, videos: sum.videos + 1, render: sum.render + cost.render, total: sum.total + cost.total};
   }, {film: 0, videos: 0, render: 0, total: 0});
@@ -436,24 +436,29 @@ export function cutCost(rows, quality, ffmpeg, pace = 1) {
 // of film in 17 s plain, 67 s with motion blur). Not timed: the viewer at 4K (twice its 1080p speed is assumed), the
 // draft's ffmpeg (a sixth of 1080p's, by its pixels and frames) and the viewer telling the trails where its camera
 // is (1.5 s a second assumed). The desk's own pace (below) corrects the sum after the first render at each size.
+// `rate` is the frame rate they were timed at; `blend` is for four passes.
 const COSTS = {
-  draft: {viewer: 1.0, fast: 1.1, plain: .05, blend: .1, look: .15, haze: .15, trails: 1.4, lasting: .2},
-  final: {viewer: 1.4, fast: 1.7, plain: .22, blend: .4, look: 1.0, haze: 1.1, trails: 4.7, lasting: 1.0},
-  "4k": {viewer: 2.9, fast: 3.4, plain: .85, blend: 1.6, look: 4.8, haze: 4.0, trails: 14.7, lasting: 6.0},
+  draft: {rate: 30, viewer: 1.0, fast: 1.1, plain: .05, blend: .1, look: .15, haze: .15, trails: 1.4, lasting: .2},
+  final: {rate: 60, viewer: 1.4, fast: 1.7, plain: .22, blend: .4, look: 1.0, haze: 1.1, trails: 4.7, lasting: 1.0},
+  "4k": {rate: 60, viewer: 2.9, fast: 3.4, plain: .85, blend: 1.6, look: 4.8, haze: 4.0, trails: 14.7, lasting: 6.0},
 };
 const LEAD = 2, PAUSE = 4;  // each video starts two seconds early; a seek, a pause and the last clip's sound come before it
+const PASSES = {30: 1, 60: 4};  // motion blur's renders by the viewer at 120 fps, for a video at 30 or 60 fps (finishing.py)
 
 // What a render takes, in seconds, before it is asked for: `render` the plain render, then what each effect would
 // add (whether it is ticked or not: the page shows the price of each), and `total` for those that are ticked.
 // `pace` is this PC against the measured one, as the desk has learned it from its own renders (state.pace).
-export function renderCost({film, videos, quality, blur, look, haze, trails, trailSeconds = 2.5}, pace = 1) {
-  const cost = COSTS[quality] || COSTS.final, rendered = film + LEAD * videos;
+// At another frame rate than timed, ffmpeg's work and the trails' (a camera asked for every frame) are taken to
+// follow the frames, the blending how many passes there are, and the viewer's own render to stay as it was.
+// shortcut: worked out, not timed; time renders at 30 fps and set their numbers apart if the estimates stay off
+export function renderCost({film, videos, quality, fps = 30, blur, look, haze, trails, trailSeconds = 2.5}, pace = 1) {
+  const cost = COSTS[quality] || COSTS.final, rendered = film + LEAD * videos, frames = fps / cost.rate, passes = PASSES[fps] ?? 4;
   const parts = {
-    render: (rendered * (cost.viewer + cost.plain) + PAUSE * videos) * pace,
-    blur: rendered * (4 * cost.fast - cost.viewer + cost.blend) * pace,
-    look: film * cost.look * pace,
-    haze: film * cost.haze * pace,
-    trails: film * (cost.trails + cost.lasting * Math.min(2, Math.max(0, (trailSeconds - 2.5) / 27.5))) * pace,
+    render: (rendered * (cost.viewer + cost.plain * frames) + PAUSE * videos) * pace,
+    blur: rendered * (passes * cost.fast - cost.viewer + cost.blend * passes / 4) * pace,
+    look: film * cost.look * frames * pace,
+    haze: film * cost.haze * frames * pace,
+    trails: film * (cost.trails + cost.lasting * Math.min(2, Math.max(0, (trailSeconds - 2.5) / 27.5))) * frames * pace,
   };
   const total = parts.render + (blur ? parts.blur : 0) + (look ? parts.look : 0) + (haze ? parts.haze : 0) + (trails ? parts.trails : 0);
   return {...parts, total};

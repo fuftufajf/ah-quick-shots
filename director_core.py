@@ -25,7 +25,14 @@ from shot_plan import (RIDES, compile_shot, filmer_path, ground_moments, nearby,
 from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 
 ACTIONS = ("connect", "open", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "export_cut")
-RENDERS = {"draft": "960 540 30", "final": "1920 1080 60", "4k": "3840 2160 60"}
+RENDERS = {"draft": "960 540", "final": "1920 1080", "4k": "3840 2160"}
+# Frames a second of a finished video: 30 unless 60 is asked for (the operator's choice: more like film, and with
+# motion blur one pass of the viewer instead of four, see PASSES).
+RATES = (30, 60)
+
+
+def rate(raw):
+    return 60 if raw.get("fps") == 60 else 30
 # The viewer renders in about real time whatever the size (measured: 5 s of film in 5 s at 480x270 and at 960x540).
 CLIP = "960 540 30"
 # After a jump in the film the viewer fades the aircraft in over about two seconds of real time, however many frames
@@ -95,7 +102,7 @@ def versions(project, renders):
         if len(row["shots"]) == 1 and ident in now and "id" in row and row["file"].lower().endswith(".mp4"):
             key, length = now[ident]
             found.setdefault(ident, []).insert(0, {
-                "id": row["id"], "file": row["file"], "made": row.get("made"), "quality": row.get("quality"),
+                "id": row["id"], "file": row["file"], "made": row.get("made"), "quality": row.get("quality"), "fps": row.get("fps"),
                 "extras": row.get("extras", []), "seconds": row.get("seconds", round(length, 3)),
                 "changed": row.get("takes", {}).get(ident, key) != key})
     return found
@@ -255,7 +262,7 @@ class Desk:
         """This PC against the one the page's estimates were measured on. A render that took `ratio` times its
         estimate moves that quality's pace halfway there, and the page multiplies its next estimates by it: after a
         few renders they are this PC's own.
-        shortcut: one number a quality, not one an effect; time each effect apart if the estimates stay off"""
+        shortcut: one number a quality, not one an effect or a frame rate; time them apart if the estimates stay off"""
         with self.lock:
             pace = {**self.data["pace"], quality: round(self.data["pace"].get(quality, 1) * (1 + (min(4, max(.25, ratio)) - 1) / 2), 3)}
             self._write(self.root / "pace.json", pace)
@@ -393,12 +400,12 @@ class Desk:
             target = self._free(f"{Path(project['film']).stem} assembly")
             self.data["assembling"] = {"running": True, "message": f"Assembling {len(clips)} clip{'s' * (len(clips) > 1)} with ffmpeg",
                                        "error": None, "file": None}
-            threading.Thread(target=self._assemble, args=(clips, music, target, quality), daemon=True).start()
+            threading.Thread(target=self._assemble, args=(clips, music, target, quality, rate(raw)), daemon=True).start()
             return copy.deepcopy(self.data["assembling"])
 
-    def _assemble(self, clips, music, target, quality):
+    def _assemble(self, clips, music, target, quality, fps):
         try:
-            assemble(clips, music, target, *map(int, RENDERS[quality].split()))
+            assemble(clips, music, target, *map(int, RENDERS[quality].split()), fps)
             done = {"running": False, "message": "Assembly ready", "error": None, "file": str(target)}
         except Exception as error:  # the desk goes on whatever ffmpeg made of it
             self._log()
@@ -459,15 +466,15 @@ class Desk:
             self._seek(start - early)
             time.sleep(2 * self.pace)
         whole = path.with_name(path.stem + "-lead" + path.suffix) if early or blur or filters else path
-        parts = [whole.with_name(f"{whole.stem}{n}{whole.suffix}") for n in range(PASSES)] if blur else [whole]
+        parts = [whole.with_name(f"{whole.stem}{n}{whole.suffix}") for n in range(PASSES[blur])] if blur else [whole]
         # The viewer answers a render only when it is done (measured: 1.1 to 1.7 times the stretch at 1080p, 4K not
         # timed), so it may take twenty times the stretch before the desk gives it up.
         self.viewer.patience = max(Viewer.patience, 20 * (end - start + early))
         try:
             for n, part in enumerate(parts):  # only the first pass's sound is kept: the others need not wait for quiet
                 if n:
-                    self._stage(f"{label}: motion blur pass {n + 1} of {PASSES}")
-                shift = n / FASTEST / PASSES
+                    self._stage(f"{label}: motion blur pass {n + 1} of {len(parts)}")
+                shift = n / FASTEST / len(parts)
                 self.command(f"video {start - early + shift:.8f} {end + shift:.8f} {part.as_posix()} {size}")
         finally:
             self.viewer.patience = Viewer.patience
@@ -724,11 +731,11 @@ class Desk:
                 "target_name": None if target is None else (aircraft.get(str(target), {}).get("name") or "Opponent"),
                 "pair": pair(rows[hero], rows[target]) if hero in rows and target in rows else None}
 
-    def _overlays(self, video, segments, quality):
+    def _overlays(self, video, segments, quality, fps):
         """Queue the data overlays of a finished video, to be drawn beside it while the desk goes on: one for a 16:9
         timeline at the video's size, one for a 9:16 reel, at the video's frame rate and length. Drawing them in the
         render's own job held the viewer for 80 s after a 37 s render at 4K (measured), and the next camera waited."""
-        _, height, fps = map(int, RENDERS[quality].split())
+        height = int(RENDERS[quality].split()[1])
         made = [(layout, video.with_name(f"{video.stem} - overlay {layout}.mov"), tall)
                 for layout, tall in (("16x9", height), ("9x16", 960 if quality == "draft" else 1920))]
         with self.lock:
@@ -1083,7 +1090,8 @@ class Desk:
             if not ffmpeg and any(s["effects"].get(name) for s in shots):
                 raise ValueError(f"{what} ffmpeg: install it, then try again")
         quality = raw.get("quality") if raw.get("quality") in RENDERS else "final"
-        size = RENDERS[quality].replace(" ", "x", 1).replace(" ", " @ ")
+        (width, height), fps = map(int, RENDERS[quality].split()), rate(raw)
+        size = f"{width}x{height} @ {fps}"
         # The viewer holds one camera at a time: takes of one stretch come out as videos of their own, each the
         # same length, to lay over one another in an editor. Asked apart, every shot is a video of its own.
         rows = video_rows(sorted(shots, key=lambda s: s["start"]), bool(raw.get("apart")))
@@ -1094,16 +1102,15 @@ class Desk:
         # renderCost in desk.js). Without that, only a draft is known: about real time.
         expect = number(raw["expect"], 1, 86400, "expect") if raw.get("expect") is not None else (
             sum(s["end"] - s["start"] for s in shots) + 2 * len(rows) if quality == "draft" else None)
-        width, height, fps = map(int, RENDERS[quality].split())
         # What each video is made with, all its shots alike: (motion blur's frame rate or None, the looks' filters,
         # the trails asked for or None).
         made = [(fps if ffmpeg and e.get("blur") else None, style(width, height, bool(e.get("look")), bool(e.get("look"))) if ffmpeg else "",
                  e.get("trails")) for e in (row[0]["effects"] for row in rows)]
-        # The steps the page counts through: for each video the viewer's render (four with motion blur) and what
+        # The steps the page counts through: for each video the viewer's render (each pass of motion blur) and what
         # ffmpeg then does to it, and before them the trails' cameras.
         with self.lock:
             self.data["job"].update(expect=expect and round(expect, 1), steps=sum(
-                (PASSES if blur else 1) + (ffmpeg and bool(blur or filters or drawn or row[0]["start"] >= .05)) + bool(drawn)
+                (PASSES[blur] if blur else 1) + (ffmpeg and bool(blur or filters or drawn or row[0]["start"] >= .05)) + bool(drawn)
                 for row, (blur, filters, drawn) in zip(rows, made)))
         mark = self.data["job"]["clock"]
         scripts = []
@@ -1123,7 +1130,7 @@ class Desk:
                 self._cut(project, row)
                 path = self.media_root / (uuid.uuid4().hex + ".mp4")
                 drawn = trails.filters(script, height) if script else ""
-                self._render(row[0]["start"], row[-1]["end"], path, f"{width} {height} {FASTEST}" if blur else RENDERS[quality],
+                self._render(row[0]["start"], row[-1]["end"], path, f"{width} {height} {FASTEST if blur else fps}",
                              f"Rendering {len(row)} shot{'s' * (len(row) > 1)} at {size}" + (" with motion blur" if blur else "")
                              + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""), blur,
                              ",".join(f for f in (drawn, filters) if f))
@@ -1132,14 +1139,14 @@ class Desk:
                 # What the assembly needs to know of a video: which it is, how it was made and what cameras it shows.
                 e = row[0]["effects"]
                 record = {"id": uuid.uuid4().hex, "file": str(saved), "shots": [s["id"] for s in row], "made": round(time.time()),
-                          "quality": quality, "extras": [name for name, on in (("blur", e.get("blur")), ("look", e.get("look")),
+                          "quality": quality, "fps": fps, "extras": [name for name, on in (("blur", e.get("blur")), ("look", e.get("look")),
                                                                                ("haze", e.get("look")), ("trails", e.get("trails"))) if on],
                           "seconds": round(sum(s["end"] - s["start"] for s in row), 3), "takes": {s["id"]: camera_key(s) for s in row},
                           # How long it took to make, in seconds: the first video's holds what was prepared for them all.
                           "took": round(time.monotonic() - mark)}
                 mark = time.monotonic()
                 if e.get("overlay"):
-                    files[-1]["overlays"] = record["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality)
+                    files[-1]["overlays"] = record["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality, fps)
                 self._record_render(project["film"], record)
         finally:
             for script in scripts:  # those of videos never reached too: a render that fails leaves none behind

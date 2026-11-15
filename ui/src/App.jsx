@@ -44,8 +44,10 @@ export function App() {
   const [trashing, setTrashing] = useState(null);  // a replay asked to go to the Recycle Bin, waiting for a yes
   const [quality, setQuality] = useState("final");
   const [apart, setApart] = useState(false);
+  const [fps, setFps] = useState(30);  // the operator's choice: more like film; 60 stays an option
   // The effects a shot is rendered with are its own, kept with it. These are what a new shot gets: the last ones set.
-  const [defaults, setDefaults] = useState({});
+  // Motion blur from the start: 30 frames a second without it look jerky, and at 30 it is one pass of the viewer.
+  const [defaults, setDefaults] = useState({blur: true});
   const trailsKept = useRef(TRAILS);  // the trails as last set, back when they are ticked again
   const [hidden, setHidden] = useState("");
   const [closedVideo, setClosedVideo] = useState("");
@@ -540,7 +542,7 @@ export function App() {
   // Shots rendered each with its own effects (a shot that has none yet, with the ones set last). The assembly asks
   // for a file per shot.
   function renderCut(ids, each) {
-    action("export_cut", {shot_ids: ids, quality, apart: each, expect: costOf(ids, each).total, effects: defaults, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
+    action("export_cut", {shot_ids: ids, quality, fps, apart: each, expect: costOf(ids, each).total, effects: defaults, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
   }
 
   // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
@@ -567,7 +569,7 @@ export function App() {
   // What rendering these shots would take, each video with its own shots' effects, said before the render is asked
   // for. The desk learns this PC's pace from its own renders; until one is done at a size, it is the measured PC's.
   const effectsOf = s => s.effects ?? defaults, pace = desk.pace?.[quality] ?? 1;
-  const costOf = (ids, each) => cutCost(videoRows(shots.filter(s => ids.includes(s.id)).map(s => ({...s, effects: effectsOf(s)})), each), quality, !!desk.ffmpeg, pace);
+  const costOf = (ids, each) => cutCost(videoRows(shots.filter(s => ids.includes(s.id)).map(s => ({...s, effects: effectsOf(s)})), each), quality, fps, !!desk.ffmpeg, pace);
   const cost = costOf(chosen, apart);
   // The effects the render options show and set: the selected shot's, kept with it, or with none selected those a
   // new shot gets. Set on a shot, they are also what the next new shot gets.
@@ -575,7 +577,7 @@ export function App() {
   function setEffects(next) { setDefaults(next); if (draft) change({...draft, effects: next}); }
   function setTrails(changes) { trailsKept.current = {...effects.trails, ...changes}; setEffects({...effects, trails: trailsKept.current}); }
   // What each effect adds to the selected shot's render, ticked or not.
-  const shotCost = draft && renderCost({film: draft.end - draft.start, videos: 1, quality, trailSeconds: effects.trails?.seconds}, pace);
+  const shotCost = draft && renderCost({film: draft.end - draft.start, videos: 1, quality, fps, trailSeconds: effects.trails?.seconds}, pace);
   const price = seconds => shotCost && !!desk.ffmpeg && <small className="cost">+ {howLong(seconds)}</small>;
   const video = desk.preview?.kind === "video" && desk.preview.url !== closedVideo ? desk.preview : null;
   const still = desk.preview?.kind === "image" ? desk.preview : null;
@@ -784,11 +786,12 @@ export function App() {
         <div className="cut-actions">
           <button disabled={working || dirty || !uncovered.length} onClick={reel} title="Four shots for every kill of yours that has none yet: closing in, the guns, him going down, you flying on">Add my kills ({uncovered.length})</button>
           <button disabled={working || dirty || !project} onClick={airfield} title="A few shots for every take-off and landing of yours that has none yet, found in your flight path">Take-offs & landings</button>
-          <select aria-label="Render quality" value={quality} onChange={e => setQuality(e.target.value)}><option value="final">1080p60</option><option value="4k">4K · 2160p60</option><option value="draft">Quick draft</option></select>
+          <div className="pair"><select aria-label="Render quality" value={quality} onChange={e => setQuality(e.target.value)}><option value="final">1080p</option><option value="4k">4K · 2160p</option><option value="draft">Quick draft · 540p</option></select>
+            <select aria-label="Frame rate" value={fps} onChange={e => setFps(Number(e.target.value))} title="30 frames a second look more like film, and motion blur is then one pass of Film Viewer instead of four; 60 are smoother"><option value={30}>30 fps</option><option value={60}>60 fps</option></select></div>
           <select aria-label="Render as" value={apart ? "apart" : "one"} onChange={e => setApart(e.target.value === "apart")} title="One video with the gaps left out, or a file for every shot to cut in an editor"><option value="one">One video</option><option value="apart">A file per shot</option></select>
           <p className="cost-total" title="Each shot keeps its own effects and is rendered with them; shots of other effects come out as videos of their own">{draft ? <>Effects of <b>{draft.name}</b>, kept with the shot</> : "Effects a new shot gets"}</p>
           <label className="option" title={desk.ffmpeg ? "Beside every video, a transparent film of your speed, height, climb and G and the range to your opponent, to lay over it in an editor: one for a 16:9 timeline, one for a 9:16 reel" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={!!effects.overlay && !!desk.ffmpeg} disabled={fixed} onChange={e => setEffects({...effects, overlay: e.target.checked})}/> Data overlay (16:9 and 9:16)</label>
-          <label className="option" title={desk.ffmpeg ? "Film Viewer renders the video four times, a quarter of a frame apart, and ffmpeg blends them like a camera's shutter: real blur on fast motion. Takes about four times as long" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={!!effects.blur && !!desk.ffmpeg} disabled={fixed} onChange={e => setEffects({...effects, blur: e.target.checked})}/> Motion blur{price(shotCost?.blur)}</label>
+          <label className="option" title={desk.ffmpeg ? "Film Viewer renders the video at 120 frames a second (at 60 fps four times, a quarter of a frame apart) and ffmpeg blends them like a camera's shutter: real blur on fast motion. At 30 fps it adds little time, at 60 it takes about four times as long" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={!!effects.blur && !!desk.ffmpeg} disabled={fixed} onChange={e => setEffects({...effects, blur: e.target.checked})}/> Motion blur{price(shotCost?.blur)}</label>
           <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Colour, bloom, a red glow round highlights, a vignette and grain, like a film camera: fitted to a DaVinci Resolve grade of this footage. With it, mist along the horizon: the far ground and the sky just above it fade into haze; aircraft against the sky and the cockpit stay clear" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={!!effects.look && !!desk.ffmpeg} disabled={fixed} onChange={e => setEffects({...effects, look: e.target.checked})}/> Film look and haze (experimental){price(shotCost && shotCost.look + shotCost.haze)}</label>
           <label className="option" title={desk.ffmpeg ? "Experimental, still being tuned. Two smooth lines from the wingtips of the shot's aircraft, fading behind them, with a soft glow. Not in the pilot's view or the bomb ride" : "Needs ffmpeg on the PATH"}><input type="checkbox" checked={!!effects.trails && !!desk.ffmpeg} disabled={fixed} onChange={e => setEffects({...effects, trails: e.target.checked ? trailsKept.current : null})}/> Trails (experimental){price(shotCost?.trails)}</label>
           {effects.trails && !!desk.ffmpeg && <>

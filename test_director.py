@@ -308,7 +308,7 @@ class DeskTests(unittest.TestCase):
         self.assertFalse(any(c.startswith("seek ") for c in commands) or self.desk.snapshot()["preview"]["fresh"])
         self.assertEqual(self.desk.snapshot()["preview"]["kind"], "image")
         self.run_action({"action": "export_cut", "shot_ids": ["two"], "quality": "4k"})
-        self.assertTrue(commands[-1].endswith(" 3840 2160 60"))
+        self.assertTrue(commands[-1].endswith(" 3840 2160 30"))  # 30 fps unless 60 is asked for
         # A second take of the first stretch cannot share the viewer's one camera: it gets a video of its own,
         # and until it is selected the first take is the one that plays.
         self.desk.save({"expected_revision": 3, "shots": plan + [{**SHOT, "id": "take", "kind": "cockpit"}]})
@@ -331,6 +331,8 @@ class DeskTests(unittest.TestCase):
                          [["1.00000000", "3.00000000"], ["9.00000000", "11.00000000"]])
         self.assertNotIn("skip 3.00000000 9.00000000", commands)
         self.assertEqual([f["shots"] for f in self.desk.snapshot()["preview"]["files"]], [["one"], ["three"]])
+        self.run_action({"action": "export_cut", "shot_ids": ["one"], "quality": "4k", "fps": 60})
+        self.assertTrue(commands[-1].endswith(" 3840 2160 60"))
         del commands[:]
         self.run_action({"action": "seek", "seconds": 2})
         cams = [c for c in commands if c.startswith("cam ")]
@@ -423,11 +425,13 @@ class DeskTests(unittest.TestCase):
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 3, "end": 5, "kind": "cockpit"}]})
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.blend", blend):
-            self.run_action({"action": "export_cut", "quality": "final", "effects": {"blur": True}})
+            self.run_action({"action": "export_cut", "quality": "final", "fps": 60, "effects": {"blur": True}})
             self.run_action({"action": "export_cut", "quality": "4k", "effects": {"blur": True, "look": True}})
         videos = [c.split() for c in commands if c.startswith("video ")]
         self.assertEqual([(v[1], v[2], v[4:]) for v in videos[:4]], [(f"{1 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
-        self.assertEqual(blends, [([True] * 4, 2, 60, ""), ([True] * 4, 2, 60, finishing.style(3840, 2160, True, True))])
+        # At 30 fps, the default, one pass at 120 fps gives four frames a frame.
+        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[4:]], [("1.00000000", "5.00000000", ["3840", "2160", "120"])])
+        self.assertEqual(blends, [([True] * 4, 2, 60, ""), ([True], 2, 30, finishing.style(3840, 2160, True, True))])
 
     def test_the_film_look_goes_on_in_ffmpeg_even_with_no_lead_in_to_cut(self):
         trims = []
@@ -500,6 +504,13 @@ class DeskTests(unittest.TestCase):
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,nb_frames",
                                 "-of", "csv=p=0", str(parts[0])], capture_output=True, text=True).stdout.split()
         self.assertEqual(probe[0], "video,30")
+        # At 30 fps a single pass is blended, four of its frames a frame.
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=120:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
+                        "-c:v", "libx264", "-c:a", "aac", str(parts[1])], check=True)
+        finishing.blend(parts[1:2], target, .5, 30)
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
+                                "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.split()
+        self.assertEqual(probe[0], "video,30/1,30")
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
     def test_haze_lies_along_the_horizon_and_not_on_an_aircraft_in_the_sky(self):
@@ -832,7 +843,7 @@ class DeskTests(unittest.TestCase):
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.assemble", assemble):
             with self.assertRaises(ValueError):  # trimmed down to nothing
                 self.desk.assemble({"assembly": {"clips": [{"shot": "one", "start": 1.9}]}})
-            self.desk.assemble({"assembly": assembly, "quality": "draft"})
+            self.desk.assemble({"assembly": assembly, "quality": "draft", "fps": 60})
             deadline = time.monotonic() + 3
             while self.desk.snapshot()["assembling"]["running"] and time.monotonic() < deadline:
                 time.sleep(.01)
@@ -841,7 +852,7 @@ class DeskTests(unittest.TestCase):
         clips, music, size = made[0]
         self.assertEqual([(c["file"], c["start"], c["seconds"], c["join"], round(c["sound"], 3)) for c in clips],
                          [(found["two"][0]["file"], .5, 2.5, "dissolve", .8), (found["one"][1]["file"], 0, 1.75, "cut", .4)])
-        self.assertEqual((music["file"], music["from"], size), (self.desk.root / "music" / song["file"], 20, (960, 540, 30)))
+        self.assertEqual((music["file"], music["from"], size), (self.desk.root / "music" / song["file"], 20, (960, 540, 60)))
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg")
     def test_clips_are_joined_by_cuts_and_dissolves_with_music_under_them(self):
@@ -1397,8 +1408,8 @@ class DeskTests(unittest.TestCase):
         # The flights are read before the first render, and each video gets a 16:9 and a 9:16 overlay of its shots.
         self.assertLess(max(i for i, c in enumerate(commands) if " keep " in c), min(i for i, c in enumerate(commands) if c.startswith("video ")))
         both = [(1, 3, "Pilot", "Other", 21), (5, 7, "Pilot", None, 21)]
-        self.assertEqual(made, [("16x9", both, "test 00.01-00.07 cut of 2 shots - overlay 16x9.mov", 1080, 60),
-                                ("9x16", both, "test 00.01-00.07 cut of 2 shots - overlay 9x16.mov", 1920, 60)])
+        self.assertEqual(made, [("16x9", both, "test 00.01-00.07 cut of 2 shots - overlay 16x9.mov", 1080, 30),
+                                ("9x16", both, "test 00.01-00.07 cut of 2 shots - overlay 9x16.mov", 1920, 30)])
         self.assertEqual(len(self.desk.snapshot()["preview"]["files"][0]["overlays"]), 2)
         with patch("director_core.shutil.which", return_value=None):
             self.desk.start({"action": "export_cut", "effects": {"overlay": True}, "expected_revision": 2})

@@ -4,10 +4,11 @@ import {formatTime, request} from "./desk.js";
 import {cutAt, grouped, laid, lengthOf, moved, musicGain, placed, stateOf, ticked, trimmed, under, without} from "./assembly.js";
 
 const EMPTY = {clips: [], off: [], music: null, sound: 1};
-const QUALITY = {draft: "Draft", final: "1080p60", "4k": "4K"};
+const QUALITY = {draft: "Draft", final: "1080p", "4k": "4K"};
 const EXTRAS = {blur: "motion blur", look: "film look", haze: "haze", trails: "trails"};
-// A video of a shot, told from its others: how it was rendered, and when.
-const told = v => [QUALITY[v.quality] || "Video", ...v.extras.map(e => EXTRAS[e] || e),
+// A video of a shot, told from its others: how it was rendered, and when. One recorded before videos kept their
+// frame rate was rendered at the rate its size had then.
+const told = v => [QUALITY[v.quality] || "Video", ...(v.quality ? [`${v.fps || (v.quality === "draft" ? 30 : 60)} fps`] : []), ...v.extras.map(e => EXTRAS[e] || e),
   v.made ? new Date(v.made * 1000).toLocaleString([], {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}) : "earlier",
   ...(v.changed ? ["before its camera changed"] : [])].join(" · ");
 
@@ -22,6 +23,7 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
   const [playing, setPlaying] = useState(false);
   const [sought, setSought] = useState(0);  // counts the playhead's jumps: the players follow each
   const [quality, setQuality] = useState("final");
+  const [fps, setFps] = useState(30);
   const [trimming, setTrimming] = useState(null);  // the clips while an end is dragged
   const [widest, setWidest] = useState(0);  // the longest the assembly has been on this page: the timeline's scale
   const film = useRef(null), song = useRef(null), lane = useRef(null), grab = useRef(null), picker = useRef(null);
@@ -138,7 +140,7 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
   }
   async function exportVideo() {
     setPlaying(false);
-    try { await request("/api/assemble", {assembly: {...assembly, clips}, quality}); setMine({...assembly, clips}); }
+    try { await request("/api/assemble", {assembly: {...assembly, clips}, quality, fps}); setMine({...assembly, clips}); }
     catch (e) { onError(e.message); }
   }
 
@@ -261,7 +263,8 @@ export function Assembly({desk, busy, cameraOf, onRender, onOpenShot, onError, o
       <div className="panel">
         <div className="panel-heading"><h2>5 <span>Export</span></h2><span>{formatTime(length)}</span></div>
         <div className="export">
-          <select aria-label="Quality" value={quality} onChange={e => setQuality(e.target.value)}><option value="final">1080p60</option><option value="4k">4K · 2160p60</option><option value="draft">Quick draft</option></select>
+          <div className="pair"><select aria-label="Quality" value={quality} onChange={e => setQuality(e.target.value)}><option value="final">1080p</option><option value="4k">4K · 2160p</option><option value="draft">Quick draft · 540p</option></select>
+            <select aria-label="Frame rate" value={fps} onChange={e => setFps(Number(e.target.value))} title="The assembly's frame rate: the clips' own (30 fps unless rendered at 60) keeps every frame as it was"><option value={30}>30 fps</option><option value={60}>60 fps</option></select></div>
           {stale > 0 && <p className="hint">{stale === 1 ? "One clip was" : `${stale} clips were`} rendered before {stale === 1 ? "its" : "their"} camera changed. Export uses the video {stale === 1 ? "it has" : "each has"}.</p>}
           {making?.running ? <p className="hint working"><span className="spinner"/> {making.message}. The desk goes on meanwhile.</p>
             : making?.error ? <p className="hint problem" role="alert">{making.error}</p>

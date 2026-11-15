@@ -97,14 +97,16 @@ unzipping.
 4. **The cut** — the green arrow beside a moment adds it straight to the cut
    (a kill as four shots); the x beside a shot, or Clear, takes shots out, and
    asks whether their videos go to the Recycle Bin too. Tick the shots you
-   want and Render selected: 1080p60, 4K or a
-   quick draft, as one video with the gaps between shots left out or as a file
-   per shot for cutting in an editor. Tick Data overlay to get, beside each
+   want and Render selected: 1080p, 4K or a
+   quick draft, 30 frames a second or 60, as one video with the gaps between
+   shots left out or as a file per shot for cutting in an editor. The effects
+   below are each shot's own, kept with it: they are set for the selected
+   shot, and a new shot gets the ones set last. Tick Data overlay to get, beside each
    video, a transparent film of your speed, height, climb and G and the range
    to your opponent, to lay over it in DaVinci Resolve or another editor: one
-   for a 16:9 timeline, one for a 9:16 reel. Tick Motion blur for the streak
-   a film camera leaves on fast motion; the render takes about four times as
-   long. Film look and haze (a film camera's colour, glow, vignette and grain,
+   for a 16:9 timeline, one for a 9:16 reel. Motion blur, the streak a film
+   camera leaves on fast motion, is ticked from the start: at 30 fps it adds
+   little time, at 60 the render takes about four times as long. Film look and haze (a film camera's colour, glow, vignette and grain,
    fitted to a DaVinci Resolve grade of this footage, with mist along the
    horizon) and Trails (two smooth lines from the wingtips of the shot's
    aircraft, yours and your opponent's in colours you pick; short ones follow
