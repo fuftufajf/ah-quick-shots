@@ -49,6 +49,21 @@ def write_kept(path, tracks, names):
     path.write_bytes(header + body + table)
 
 
+def fake_ffmpeg(calls, code=0, error=""):
+    """Stands in for ffmpeg's process in finishing: notes its arguments and, unless it fails, writes the video."""
+    class Process:
+        returncode = code
+        def __init__(self, args, **_options):
+            calls.append(args)
+            if not code:
+                Path(args[-1]).write_bytes(b"cut")
+        def communicate(self, timeout=None):
+            return "", error
+        def kill(self):
+            pass
+    return Process
+
+
 class SlowViewer:
     def __init__(self):
         self.entered, self.release = threading.Event(), threading.Event()
@@ -380,13 +395,9 @@ class DeskTests(unittest.TestCase):
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"lead")
             return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
-        def ffmpeg(args, **_options):
-            cuts.append(args)
-            Path(args[-1]).write_bytes(b"cut")
-            return subprocess.CompletedProcess(args, 0, "", "")
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 5, "end": 7, "kind": "cockpit"}]})
-        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("finishing.subprocess.run", ffmpeg):
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("finishing.subprocess.Popen", fake_ffmpeg(cuts)):
             self.run_action({"action": "export_cut", "quality": "draft"})
         video = next(c for c in commands if c.startswith("video "))
         self.assertTrue(video.startswith("video 3.00000000 7.00000000 ") and "-lead.mp4" in video)
@@ -398,7 +409,6 @@ class DeskTests(unittest.TestCase):
         job = self.desk.snapshot()["job"]
         self.assertEqual((job["step"], job["steps"]), (2, 2))
         self.assertEqual(cuts[0][cuts[0].index("-progress") + 1][-9:], ".progress")
-        self.assertIsNone(finishing.watch)
         records = json.loads(next(self.desk.root.glob("*.renders.json")).read_text(encoding="utf-8"))
         self.assertGreaterEqual((records if isinstance(records, list) else records["renders"])[-1]["took"], 0)
         log = Path(self.temp.name) / "x.progress"
@@ -406,11 +416,58 @@ class DeskTests(unittest.TestCase):
         log.write_text("frame=1\nout_time_us=N/A\nprogress=continue\nframe=90\nout_time_us=1500000\nprogress=continue\n")
         self.assertEqual(finishing._made(log), 1.5)
         # ffmpeg failing is said, not hidden behind a video two seconds too long.
-        failed = lambda args, **_options: subprocess.CompletedProcess(args, 1, "", "Unknown encoder 'libx264'")
-        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("finishing.subprocess.run", failed):
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("finishing.subprocess.Popen", fake_ffmpeg([], 1, "Unknown encoder 'libx264'")):
             self.desk.start({"action": "export_cut", "expected_revision": 2})
             self.desk.worker.join(3)
         self.assertIn("Unknown encoder", self.desk.snapshot()["job"]["error"])
+
+    def test_cancel_stops_ffmpeg_at_once_and_the_viewer_after_its_pass(self):
+        videos = []
+        def native(command, progress):
+            if command.startswith("video "):
+                videos.append(command)
+                Path(command.split()[3]).write_bytes(b"lead")
+                if len(videos) == 2:
+                    self.desk.stop()  # Cancel, pressed while the viewer renders the second pass
+            return []
+        started = threading.Event()
+        class Endless:  # ffmpeg that would run on until it is killed
+            returncode = None
+            def __init__(self, args, **_options):
+                Path(args[-1]).write_bytes(b"partial"); started.set()
+            def communicate(self, timeout=None):
+                if self.returncode is None and timeout is not None:
+                    time.sleep(timeout)
+                    raise subprocess.TimeoutExpired("ffmpeg", timeout)
+                return "", ""
+            def kill(self):
+                self.returncode = -9
+        self.desk.viewer.command = native
+        seat = {**SHOT, "kind": "cockpit", "target": None}
+        self.desk.save({"expected_revision": 1, "shots": [{**seat, "start": 5, "end": 7}, {**seat, "id": "two", "start": 9, "end": 10}]})
+        # ffmpeg is stopped at once: the video it was making and the viewer's are gone, and nothing else is rendered.
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("finishing.subprocess.Popen", Endless):
+            self.desk.start({"action": "export_cut", "quality": "draft", "apart": True, "expected_revision": 2})
+            self.assertTrue(started.wait(2))
+            self.assertEqual(self.desk.snapshot()["job"]["videos"], 2)
+            self.desk.stop()
+            self.desk.worker.join(3)
+        job = self.desk.snapshot()["job"]
+        self.assertEqual((job["error"], job["cancelling"], job["video"], len(videos)), ("Render cancelled", True, 1, 1))
+        self.assertEqual(list(self.desk.media_root.glob("*.mp4")), [])
+        self.assertFalse((self.desk.root / "errors.log").exists())  # asked for, not an error
+        # The viewer cannot be stopped from the socket: it finishes its pass, and the next one is not begun. A
+        # video finished before is kept.
+        del videos[:]
+        with patch("director_core.shutil.which", return_value="ffmpeg"), patch("finishing.subprocess.Popen", fake_ffmpeg([])), \
+                patch("director_core.blend", lambda parts, target, *_a: Path(target).write_bytes(b"blurred")):
+            self.desk.start({"action": "export_cut", "quality": "draft", "apart": True, "fps": 60, "effects": {"blur": True}, "expected_revision": 2})
+            self.desk.worker.join(3)
+        self.assertEqual(len(videos), 2)  # of the first shot's four passes
+        self.assertEqual(self.desk.snapshot()["job"]["error"], "Render cancelled")
+        self.assertEqual(list(self.desk.media_root.glob("*.mp4")), [])
+        # A new job begins with no Cancel standing.
+        self.run_action({"action": "export_cut", "quality": "draft", "shot_ids": ["two"]})
 
     def test_motion_blur_renders_four_passes_a_quarter_frame_apart_and_blends_them(self):
         commands, blends = [], []

@@ -132,9 +132,15 @@ def assemble(clips, music, target, width, height, fps):
     return total
 
 
-# Who wants to follow an encode sets this before it: (the seconds of video it will make, a function given the share
-# of them made so far, 0 to 1). ffmpeg says how far it is into a file, read twice a second while it runs.
-watch = None
+# Who wants to follow an encode sets, in the thread that asks for it, `local.watch`: (the seconds of video it will make,
+# a function given the share of them made so far, 0 to 1); ffmpeg says how far it is into a file, read twice a second
+# while it runs. And `local.halt`: an Event that, once set, stops ffmpeg at once (Cancel). Per thread: an assembly
+# made beside a render is neither followed nor stopped with it.
+local = threading.local()
+
+
+class Cancelled(Exception):
+    pass
 
 
 def _made(log):
@@ -149,7 +155,8 @@ def _made(log):
 
 
 def encode(inputs, graph, sources, target, what):
-    follow, log, over = watch, Path(target).with_suffix(".progress"), threading.Event()
+    follow, halt = getattr(local, "watch", None), getattr(local, "halt", None)
+    log, over = Path(target).with_suffix(".progress"), threading.Event()
     def tell():
         while not over.wait(.5):
             made = _made(log)
@@ -158,16 +165,26 @@ def encode(inputs, graph, sources, target, what):
     if follow:
         threading.Thread(target=tell, daemon=True).start()
     try:
-        done = subprocess.run(
+        process = subprocess.Popen(
             ["ffmpeg", "-v", "error", "-y", *(["-progress", str(log), "-nostats"] if follow else []), *inputs, *graph,
              "-c:v", "libx264", "-crf", "16",
              "-preset", "fast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(target)],
-            capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        while True:
+            try:
+                _out, error = process.communicate(timeout=.25)
+                break
+            except subprocess.TimeoutExpired:
+                if halt is not None and halt.is_set():
+                    process.kill()
+                    process.communicate()
+                    target.unlink(missing_ok=True)
+                    raise Cancelled("Cancelled")
     finally:
         over.set()
         log.unlink(missing_ok=True)
         for source in sources:
             source.unlink(missing_ok=True)
-    if done.returncode:
+    if process.returncode:
         target.unlink(missing_ok=True)
-        raise ValueError(f"ffmpeg could not {what}: " + (done.stderr.strip().splitlines() or ["no reason given"])[-1])
+        raise ValueError(f"ffmpeg could not {what}: " + (error.strip().splitlines() or ["no reason given"])[-1])

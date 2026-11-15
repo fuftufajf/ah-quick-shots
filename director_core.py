@@ -16,7 +16,7 @@ import traceback
 import uuid
 
 import finishing
-from finishing import FASTEST, PASSES, assemble, blend, style, trim
+from finishing import FASTEST, PASSES, Cancelled, assemble, blend, style, trim
 from flight_data import derive, pair, read_kept
 import overlay
 import trails
@@ -435,13 +435,26 @@ class Desk:
         self.progress(message)
 
     def _encode(self, message, seconds, work):
-        """A step done by ffmpeg, followed as it goes: `work` makes `seconds` of video."""
+        """A step done by ffmpeg, followed as it goes and stopped at once by Cancel: `work` makes `seconds` of video."""
+        self._go_on()
         self._stage(message)
-        finishing.watch = (max(.1, seconds), lambda share: self.progress(message, share))
+        finishing.local.watch, finishing.local.halt = (max(.1, seconds), lambda share: self.progress(message, share)), self.halt
         try:
             work()
         finally:
-            finishing.watch = None
+            finishing.local.watch = finishing.local.halt = None
+
+    def stop(self):
+        """The page's Pause, Stop or Cancel (POST /api/halt): a stretch playing in the viewer's window stops where it
+        is; a render stops at once in ffmpeg, and after the pass the viewer is rendering, which the socket cannot stop."""
+        self.halt.set()
+        with self.lock:
+            if self.data["job"] and self.data["job"]["running"] and self.data["job"]["action"] in ("export_cut", "clip"):
+                self.data["job"]["cancelling"] = True
+
+    def _go_on(self):
+        if self.halt.is_set():
+            raise Cancelled("Cancelled")
 
     def command(self, command):
         return self.viewer.command(command, self.progress)
@@ -449,15 +462,18 @@ class Desk:
     def _render(self, start, end, path, size, label="", blur=None, filters=""):
         """One video of a stretch, with the film's sound whole (see TAIL) and the aircraft solid from its first frame
         when ffmpeg is there to cut off the lead-in (see LEAD). `blur`: the frame rate to blend the passes of a `size`
-        at FASTEST down to (see PASSES). `filters`: the looks to give it (see style)."""
+        at FASTEST down to (see PASSES). `filters`: the looks to give it (see style). Cancel (see stop) is heard before
+        each pass of the viewer and stops ffmpeg at once; what was rendered of the video is thrown away."""
         early = min(LEAD, start) if shutil.which("ffmpeg") else 0
         early = early if early >= .05 else 0
         with self.lock:  # the wait is part of what this clip takes
             if self.data["job"]["expect"]:
                 self.data["job"]["expect"] = round(self.data["job"]["expect"] + max(0, self.quiet - time.monotonic()), 1)
         while time.monotonic() < self.quiet:
+            self._go_on()
             self.progress(f"Film Viewer is finishing the last clip's sound: {math.ceil(self.quiet - time.monotonic())} s, so this one keeps its own")
             time.sleep(.25)
+        self._go_on()
         self._stage(label or f"Rendering {end - start:.1f} s of film")
         if abs(self.data["now"] - (start - early)) > .5:
             # A render that began far from where the film stood came out with its first second silent, just after
@@ -473,12 +489,18 @@ class Desk:
         try:
             for n, part in enumerate(parts):  # only the first pass's sound is kept: the others need not wait for quiet
                 if n:
+                    self._go_on()
                     self._stage(f"{label}: motion blur pass {n + 1} of {len(parts)}")
                 shift = n / FASTEST / len(parts)
                 self.command(f"video {start - early + shift:.8f} {end + shift:.8f} {part.as_posix()} {size}")
+                self.quiet = time.monotonic() + (end - start + early + TAIL) * self.pace
+            self._go_on()
+        except Cancelled:
+            for part in parts:
+                self._drop(part)
+            raise
         finally:
             self.viewer.patience = Viewer.patience
-        self.quiet = time.monotonic() + (end - start + early + TAIL) * self.pace
         if blur:
             self._encode("Blending the motion blur with ffmpeg" + (", with its effects" if filters else ""), end - start,
                          lambda: blend(parts, path, early, blur, filters))
@@ -498,10 +520,12 @@ class Desk:
                 self._revision(raw)
             elif action == "open" and self.data["project"]:
                 self._revision(raw)
+            self.halt.clear()  # a Pause or Cancel meant for the job before
+            # `video` of `videos`: which video of a render is being made; `cancelling`: Cancel was pressed
             self.data["job"] = {"id": uuid.uuid4().hex, "running": True, "action": action,
                                 "message": "Connecting to Film Viewer" if action == "connect" else "Preparing " + action,
                                 "clock": time.monotonic(), "elapsed": 0, "expect": None, "error": None,
-                                "step": 0, "steps": None, "share": None}
+                                "step": 0, "steps": None, "share": None, "video": None, "videos": None, "cancelling": False}
             job = copy.deepcopy(self.data["job"])
             self.worker = threading.Thread(target=self._work, args=(copy.deepcopy(raw),), daemon=True)
             self.worker.start()
@@ -512,7 +536,8 @@ class Desk:
             self._action(raw)
             self.progress("Ready")
         except Exception as error:
-            self._log()
+            if not isinstance(error, Cancelled):  # asked for: nothing went wrong
+                self._log()
             with self.lock:
                 self.data["job"]["error"] = str(error)
                 self.data["job"]["message"] = str(error)
@@ -839,6 +864,7 @@ class Desk:
         self._stage("Finding the camera for the trails")
         for k in range(round(offset * fps) + 1):
             if k % fps == 0:
+                self._go_on()
                 self.progress(f"Finding the camera for the trails: {k // fps} of {math.ceil(offset)} s", k / fps / max(.1, offset))
             begin, shot, lines = next(span for span in reversed(spans) if span[0] <= k / fps + 1e-9)
             t = min(shot["end"], shot["start"] + k / fps - begin)
@@ -990,7 +1016,6 @@ class Desk:
             self._apply(project, raw)
         # From the playhead when the page says where it is (`from`): a pause is then gone on from, not begun again.
         begin = start if raw.get("from") is None else min(max(start, number(raw["from"], 0, project["length"], "from")), end - .3)
-        self.halt.clear()
         self._seek(begin)
         self.progress(f"Playing {end - begin:.1f} s in Film Viewer's window")
         self.command("play")
@@ -1109,7 +1134,7 @@ class Desk:
         # The steps the page counts through: for each video the viewer's render (each pass of motion blur) and what
         # ffmpeg then does to it, and before them the trails' cameras.
         with self.lock:
-            self.data["job"].update(expect=expect and round(expect, 1), steps=sum(
+            self.data["job"].update(expect=expect and round(expect, 1), video=1, videos=len(rows), steps=sum(
                 (PASSES[blur] if blur else 1) + (ffmpeg and bool(blur or filters or drawn or row[0]["start"] >= .05)) + bool(drawn)
                 for row, (blur, filters, drawn) in zip(rows, made)))
         mark = self.data["job"]["clock"]
@@ -1117,16 +1142,21 @@ class Desk:
         try:
             # Worked out before the first render, as the overlay's numbers are: touching the film between renders
             # can thin the next one's sound (TAIL).
-            for row, (_blur, _filters, asked) in zip(rows, made):
+            for n, (row, (_blur, _filters, asked)) in enumerate(zip(rows, made), 1):
                 if not asked:
                     scripts.append(None)
                     continue
+                with self.lock:
+                    self.data["job"]["video"] = n
                 drawing = trails.style_for(asked["seconds"])
                 if asked["exact"]:  # the flight path as it was flown, to be read: nothing averaged
                     drawing["smooth"] = 0
                 scripts.append(self._trails(project, row, width, height, fps, trails.paint(row, trails.colour(asked["lead"]), trails.colour(asked["opponent"])),
                                             drawing, asked["tail"] and trails.colour(asked["tail"])))
             for n, (row, (blur, filters, _asked), script) in enumerate(zip(rows, made, scripts), 1):
+                self._go_on()
+                with self.lock:
+                    self.data["job"]["video"] = n
                 self._cut(project, row)
                 path = self.media_root / (uuid.uuid4().hex + ".mp4")
                 drawn = trails.filters(script, height) if script else ""
@@ -1148,6 +1178,8 @@ class Desk:
                 if e.get("overlay"):
                     files[-1]["overlays"] = record["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality, fps)
                 self._record_render(project["film"], record)
+        except Cancelled:
+            raise Cancelled(f"Cancelled: {len(files)} of {len(rows)} videos were finished and kept" if files else "Render cancelled") from None
         finally:
             for script in scripts:  # those of videos never reached too: a render that fails leaves none behind
                 if script:

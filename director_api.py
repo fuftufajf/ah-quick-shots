@@ -150,8 +150,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, self.server.desk.forget(raw))
             if self.path == "/api/delete-film":
                 return self.send_json(200, self.server.desk.delete_film(raw))
-            if self.path == "/api/halt":  # Pause or Stop while a stretch plays in Film Viewer's own window
-                self.server.desk.halt.set()
+            if self.path == "/api/halt":  # Pause or Stop while a stretch plays in Film Viewer's own window; Cancel of a render
+                self.server.desk.stop()
                 return self.send_json(200, {"halted": True})
             if self.path == "/api/assembly":
                 return self.send_json(200, self.server.desk.save_assembly(raw))

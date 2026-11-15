@@ -116,6 +116,10 @@ small{font-size:12px}
 .waiting .spinner{width:18px;height:18px}
 .waiting small{font-size:15px;color:var(--muted);font-variant-numeric:tabular-nums}
 .waiting .meter{flex:none;width:100%}
+.waiting .cancel{min-height:44px;min-width:160px;padding:8px 26px;font-size:16px;font-weight:600;color:var(--red);border-color:var(--red)}
+.waiting .cancel:hover:not(:disabled){background:var(--red-wash);border-color:var(--red)}
+.waiting .cancel svg{width:18px;height:18px}
+.waiting .cancel-note{font-size:13px;line-height:1.4}
 .screen:not(.movable) video{cursor:pointer}
 .adjust{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px 10px;padding:0 14px 2px}
 .adjust label{display:grid;gap:2px;color:var(--muted);font-size:12px}

@@ -359,13 +359,16 @@ the desk asks for A file per shot.
 **What a render costs.** The page says it before the render is asked for:
 beside each effect what it would add, above Render selected the whole
 (`renderCost` in `ui/src/desk.js`). While it renders, the wait is said large
-over the picture, as every wait is: what is being done, which step of how many
-(`step`, `steps` in the job: for each video the viewer's render, four with
+over the picture, as every wait is: what is being done, which video of how
+many and which step of how many
+(`step`, `steps` in the job: for each video the viewer's render, each pass of
 motion blur, then ffmpeg's; before them the trails' cameras), the time gone
-and the time expected. ffmpeg's steps say how far they are (`share`, from the
+and the time expected for all of it. ffmpeg's steps say how far they are (`share`, from the
 file ffmpeg writes with `-progress`); the viewer says nothing of its own
 render, so that step's share of the bar pulses. The bar is never full while
-work goes on. Each video's record keeps how long it took (`took`, seconds). Seconds for one second of film, measured on one PC (a 7 s pair
+work goes on. Cancel, large under it, stops ffmpeg at once and the render
+after the pass Film Viewer is rendering, which only the viewer's own window can
+stop at once; the wait says so. Each video's record keeps how long it took (`took`, seconds). Seconds for one second of film, measured on one PC (a 7 s pair
 shot of film13):
 
 | | 1080p60 | 4K |
@@ -656,7 +659,11 @@ most 5 s later). One action runs at a time; a second is refused while
   Recycle Bin. Answers `{project, renders, recycled}`
 - POST `/api/halt` `{}` stops a stretch that is playing in Film Viewer's own window (`live`) where it is: the
   viewer pauses and `state.now` says the moment, which `live` takes back as `from` to go on. The page's Pause and
-  Stop: Pause holds the clip on the page or the viewer's playing, Stop also goes back to the start
+  Stop: Pause holds the clip on the page or the viewer's playing, Stop also goes back to the start. During a
+  render (`export_cut`, `clip`) it is Cancel: `job.cancelling` turns true, ffmpeg is stopped at once (its file
+  deleted), the viewer's render is let finish its pass (the socket cannot stop it) and thrown away, and nothing
+  more is begun; the job ends with the error "Render cancelled", or how many videos were finished and kept.
+  A render's job also says which video it is making: `video` of `videos`
 - POST `/api/assembly` `{assembly}` keeps the open film's assembly (see "The assembly"); answers `{assembly}`
   as kept. POST `/api/assemble` `{assembly, quality, fps?}` (30 when omitted, or 60) keeps it and makes its video in the videos folder:
   202 at once, `state.assembling` (`running`, `message`, `error`, `file`) says how it stands
@@ -751,7 +758,8 @@ each of these; a change in the viewer would make the workaround unnecessary.
   filmed. The desk ends every film 0.05 s sooner.
 - **The `chase` camera** driven through the socket did not keep the aircraft in
   the picture. The desk fastens a camera to the airframe instead.
-- **A render cannot be interrupted** from the socket, only in the viewer.
+- **A render cannot be interrupted** from the socket, only in the viewer: Cancel
+  stops ffmpeg at once and the viewer after the pass it is rendering.
 - **Not in the socket:** a picture stream (the desk renders a preview clip
   instead), the position of the free camera, the trails switch, the aircraft
   type, and the height of the terrain (camera ratings ignore the ground).

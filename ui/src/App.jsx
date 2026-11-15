@@ -584,6 +584,8 @@ export function App() {
   // Waiting is said large, over the picture, except where the picture is what is being watched: a stretch playing
   // in the viewer's window and a camera's still that is back within a second.
   const job = desk.job || {}, quick = running && (live || (["seek", "icons"].includes(job.action) && (job.elapsed || 0) < 1));
+  // A render (one with steps or an estimate) can be cancelled: what Film Viewer renders it finishes, ffmpeg stops at once.
+  const rendering = running && ["export_cut", "clip"].includes(job.action) && Boolean(job.steps || job.expect);
   // How far the job is. A render counts its steps and ffmpeg's say how far they are (share); the viewer says nothing
   // of its own render, so that step only pulses. Without steps the estimate serves, until it is passed: the bar is
   // never full while the work goes on.
@@ -672,8 +674,11 @@ export function App() {
             {working && (quick ? <div className="preview-busy"><span className="spinner"/><span>{job.message || "Working…"}</span></div>
               : <div className="waiting" role="status"><div>
                 <strong><span className="spinner"/>{job.message || "Working…"}</strong>
-                {running && <small>{job.steps ? `Step ${Math.max(1, job.step)} of ${job.steps} · ` : ""}{clock(job.elapsed)}{job.expect ? (job.elapsed > job.expect ? ` · longer than the ${clock(job.expect)} expected` : ` of about ${clock(job.expect)}`) : ""}</small>}
+                {running && <small>{job.videos > 1 ? `Video ${job.video} of ${job.videos} · ` : ""}{job.steps ? `Step ${Math.max(1, job.step)} of ${job.steps} · ` : ""}{clock(job.elapsed)}{job.expect ? (job.elapsed > job.expect ? ` · longer than the ${clock(job.expect)} expected for all of it` : ` of about ${clock(job.expect)} for all of it`) : ""}</small>}
                 {running && <span className="meter"><i style={{width: `${(base + (within ?? 0) * part) * 100}%`}}/>{within == null && <b style={{left: `${base * 100}%`, width: `${part * 100}%`}}/>}</span>}
+                {rendering && <><button className="cancel" disabled={job.cancelling} onClick={() => request("/api/halt", {}).catch(e => setError(e.message))}><X weight="bold"/> {job.cancelling ? "Cancelling…" : "Cancel"}</button>
+                  <small className="cancel-note">{job.cancelling ? "Film Viewer finishes the pass it is rendering, then the render stops. To stop it at once, stop it in Film Viewer's window."
+                    : "ffmpeg stops at once. Film Viewer finishes the pass it is rendering: only its own window can stop that."}</small></>}
               </div></div>)}
             {failure && <div className="preview-busy failed" role="alert"><span>{failure}</span><button onClick={() => setHidden(desk.job.id)} aria-label="Dismiss message">×</button></div>}
           </div>

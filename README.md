@@ -137,8 +137,11 @@ time, shot and camera; Videos folder, under The cut, opens it.
 
 - **Film Viewer does not run beside the game.** If the viewer exits at once,
   close the game and start the viewer again.
-- **A render cannot be interrupted** from the page. Stop it in Film Viewer if
-  you must. Playing can: Pause and Stop hold the clip on the page and what
+- **Cancel stops a render after the pass Film Viewer is rendering.** The
+  socket cannot stop the viewer's own render, so Cancel (on the wait over the
+  picture) stops ffmpeg at once and begins nothing more; to stop the viewer at
+  once, stop it in Film Viewer's window. Videos finished before are kept.
+  Playing can be stopped: Pause and Stop hold the clip on the page and what
   plays in Film Viewer's own window alike.
 - **A render may wait for the sound of the one before.** Started too soon, the
   viewer loses the engine, guns and voices, so the desk waits (the status line
