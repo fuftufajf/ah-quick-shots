@@ -1042,6 +1042,19 @@ class DeskTests(unittest.TestCase):
         # The viewer holds an aircraft in the middle only where the ship watches it alone at both ends of a move.
         held = ["hero" if " at 19 curve" in line else "target" if " at 10 curve" in line else "" for line in compile_shot(turned, tracks)]
         self.assertEqual(held, ["hero"] * 6 + [""] * 18)
+        # A tripod: the ship pinned where it is at 6 s, watching the hero alone, its lens keeping him the size the
+        # framed lens shows from the framed distance. It follows by turning and zooming only.
+        tripod = validate_shot({**ship, "watch": "hero", "orbit": 90, "path": "own", "zoom": "hold", "keys": [{"t": 6, **frame, "orbit": 90}]}, 60)
+        stood = escort_poses(tripod, tracks)
+        self.assertEqual(len({tuple(round(v, 6) for v in pose[:3]) for pose in stood}), 1)
+        sizes = [math.tan(pose[6] / 2) * math.dist(pose[:3], tracks[t][19][:3]) for pose, t in zip(stood, sorted(tracks))
+                 if pose[6] > math.radians(6.01)]
+        self.assertGreater(len(sizes), 8)
+        self.assertAlmostEqual(min(sizes), max(sizes), places=6)
+        self.assertAlmostEqual(sizes[0], math.tan(math.radians(20) / 2) * 300, places=6)
+        # At 6 s he is near; at the start 1,800 ft off, further than its longest lens (6 degrees) holds him that big.
+        self.assertEqual([round(math.degrees(stood[at(t)][6]), 1) for t in (0, 6)], [6, 20])
+        self.assertNotIn("zoom", validate_shot({**SHOT, "zoom": "hold"}, 60))  # the observer's alone
 
     def test_playing_in_the_viewer_is_paused_from_the_page_and_goes_on_from_the_playhead(self):
         commands, clock = [], [0.0]

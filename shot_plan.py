@@ -79,6 +79,8 @@ def validate_shot(raw, length):
             shot["keys"] = [kept[t] for t in sorted(kept)]
             if raw.get("path") == "own":
                 shot["path"] = "own"
+        if raw.get("zoom") == "hold":  # the lens follows the aircraft it watches alone, to keep it the size it was framed
+            shot["zoom"] = "hold"
     if raw.get("effects") is not None:
         shot["effects"] = validate_effects(raw["effects"])
     return shot
@@ -443,6 +445,15 @@ def escort_poses(shot, tracks, step=None, seen=None):
         pins = [(key["t"], places[min(range(len(when)), key=lambda i: abs(when[i] - key["t"]))]) for key in shot["keys"]]
         places = [tuple(_glide([t for t, _place in pins], [place[axis] for _t, place in pins], t) for axis in range(3)) for t in when]
     fovs = [math.radians(frame["fov"]) for frame in frames]
+    if shot.get("zoom") == "hold":
+        # The lens keeps the aircraft it watches alone as big as the framed lens shows one from the framed distance:
+        # from a ship that stands still (a path of its own, one keyframe) the camera follows by turning and zooming
+        # only. Within what a lens may be: further off than a 6 degree lens reaches, the aircraft does grow small.
+        for i, (pos, (both, hero, his)) in enumerate(zip(places, mix)):
+            if both < 1:
+                far = (hero * math.dist(pos, lead[i]) + (his and his * math.dist(pos, other[i]))) / (hero + his)
+                held = 2 * math.atan(math.tan(fovs[i] / 2) * frames[i]["distance"] / max(1, far))
+                fovs[i] = fovs[i] * both + min(math.radians(140), max(math.radians(6), held)) * (1 - both)
     lenses = [(fov,) for fov in fovs]
     if any(both for both, _hero, _target in mix):  # the lens moves as gently as the ship does
         raw = [_lens(pos, lead[i], other[i], fovs[i]) for i, pos in enumerate(places)]

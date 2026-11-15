@@ -180,6 +180,10 @@ export const ANGLES = [
   {key: "closeThem", label: "Close on opponent", hint: "His aircraft big, from any side", pair: true, rate: false,
     make: c => [145, -145, 35, -35, 90, -90].map(orbit =>
       ({kind: "escort", watch: "hero", hero: c.other, target: c.lead, orbit, distance: 110, height: 14, fov: 28}))},
+  // The same ship standing still where it is at the playhead (a path of its own, one keyframe: App.jsx sets it),
+  // following you by turning and by its lens alone, which keeps you the size you were framed (`zoom` "hold").
+  {key: "tripod", label: "Tripod", hint: "Stands still: turns and zooms to follow", rate: false,
+    make: c => [{kind: "escort", watch: "hero", hero: c.lead, target: c.other ?? null, orbit: 90, distance: 400, height: 30, fov: 14, path: "own", zoom: "hold"}]},
   {key: "shoulder", label: "Over your shoulder", hint: "Your canopy close, him beyond", pair: true,
     make: c => SIDES.map(side => ({kind: "shoulder", hero: c.lead, target: c.other, side, fov: 66}))},
   {key: "wing", label: "From your wing", hint: "Wingtip camera locked on him", pair: true,
@@ -208,6 +212,7 @@ export const ANGLES = [
 
 export function angleOf(shot, cast) {
   if (shot.kind === "pair") return shot.hero === cast.lead ? "you" : "them";
+  if (shot.kind === "escort" && shot.zoom === "hold") return "tripod";
   if (shot.kind === "escort" && shot.watch === "hero") return shot.hero === cast.lead ? "closeYou" : "closeThem";
   return {follow: "behind", fixed: "flyby"}[shot.kind] || shot.kind;
 }
@@ -388,7 +393,8 @@ export const keyBeside = (shot, t, step) => step < 0 ? (shot.keys || []).findLas
 // there, or a new one.
 export function reframe(shot, t, next) {
   if (!shot.keys?.length) return next;
-  const at = keyAt(shot, t), key = {t: Math.round(t * 100) / 100, ...framing(next)};
+  // A tripod stands where its one keyframe is: a change moves it, wherever the playhead is, and it stays one place.
+  const at = shot.zoom === "hold" && shot.keys.length === 1 ? 0 : keyAt(shot, t), key = {t: Math.round(t * 100) / 100, ...framing(next)};
   const keys = at >= 0 ? shot.keys.map((k, i) => i === at ? {...key, t: k.t} : k) : [...shot.keys, key].sort((a, b) => a.t - b.t);
   return {...next, ...framing(shot), keys};
 }

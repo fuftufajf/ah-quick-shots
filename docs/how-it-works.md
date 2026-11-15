@@ -222,6 +222,15 @@ the two-aircraft cameras then take whoever comes nearest.
   aircraft's: it can come nearer to them or fall further off than either
   keyframe was. The desk still sends the viewer a move every half second
   (`curve`), as for every moving camera; the keyframes only say where.
+- Tripod — the observer standing still: pinned to the sky where it is at the
+  playhead when you choose it (a path of its own with one keyframe), looking
+  at you alone, or at whom Looks at says. It follows by turning and by its
+  lens only: Lens is what it uses from Distance, and from further or nearer
+  the lens closes or opens to keep the aircraft that size (`zoom` "hold"),
+  down to 6 degrees; further off than that reaches, the aircraft does grow
+  small. A change (a drag, a slider) moves the tripod where it stands,
+  wherever the playhead is; a second keyframe (K) makes it a moving camera
+  again. Checked on made-up tracks only, not yet on a real film.
 - Close on you, Close on opponent — the same ship watching one aircraft alone
   from any side (front quarter first; drag the picture round it). The viewer
   holds that aircraft in the middle of the picture, so it can fill the frame
@@ -648,8 +657,9 @@ A shot: `id`, `name`, `start`/`end` (film seconds), `kind`, `hero`/`target`
 leg), `watch` both|hero|target (whom the observer holds in its picture). The
 observer (`escort`) also takes `loose` (1 to 12 seconds), `keys` (up to 40
 keyframes `{t, orbit, distance, height, fov, watch}`; `watch` may be left out
-and is then the shot's; one outside the shot is dropped) and, with
-keyframes, `path` "own". Shots
+and is then the shot's; one outside the shot is dropped), with keyframes
+`path` "own", and `zoom` "hold" (the lens keeps an aircraft watched alone the
+size `fov` shows it from `distance`). Shots
 may overlap: takes of one stretch through different cameras, each with its own
 id. Use the recording pilot as hero when possible; remote tracks can be coarse.
 
