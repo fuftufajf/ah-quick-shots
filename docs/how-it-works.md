@@ -329,7 +329,19 @@ after it waits at least 12 s, because playing just before a render thins its
 sound (measured with that wait: the same sound as a rested render, 2 of 2). The lead aircraft is chosen beside the
 opponent, above the cameras; a shot is renamed by a double-click in The cut.
 
-**The cut.** Saved shots, each with a tick box. The x beside a shot (where the
+**The cut.** Saved shots, each with a tick box, in film order and takes of one
+stretch in the order they were made, so Update shot leaves a shot where it was.
+Under each, small: when it was made and when a change to it was last saved
+(`created`, `modified`; the desk stamps them when it saves the plan, and a shot
+saved before it kept them shows only a change). A copy still called "(copy)"
+takes its camera's name as it is added ("Kill: Bandit · guns · Tripod"). A long
+name takes two lines; the whole of it is the tooltip. When a ticked shot (or the
+same shots together) already has a video, Render selected first asks, once for
+all of them, whether the new videos go beside the old ones or overwrite them:
+overwritten, the old file and its overlays go to the Recycle Bin once the new one
+is rendered, and the new one keeps the old one's name and its place in the
+Assembly (`replace` on `export_cut`). One Windows will not let go of stays
+beside it, and the caption says so. The x beside a shot (where the
 pointer is) and Clear above the list take shots out of it; when videos of them
 were rendered, the page lists the files and asks whether they go too, to the
 Recycle Bin, or stay. The desk keeps a record of every finished video and the

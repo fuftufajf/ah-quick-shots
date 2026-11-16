@@ -106,7 +106,10 @@ marked, and goes to the Recycle Bin when you open the next.
    and looks like film. Data overlay adds, beside each video, a transparent
    film of your speed, height, climb and G and the range to your opponent, to
    lay over it in an editor (16:9 and 9:16). Add my kills makes four shots for every kill; Take-offs
-   & landings finds yours. Videos folder opens the finished videos.
+   & landings finds yours. Videos folder opens the finished videos. Shots
+   stand in film order, each with when it was made and last changed; a copy
+   added to the cut is named by its camera. A shot rendered before asks whether
+   the new video goes beside the old one or overwrites it.
 
 **Assembly**, the second view: your rendered shots in a row on a timeline.
 Drag a clip to move it, drag its ends to trim, cut it at the playhead (S),

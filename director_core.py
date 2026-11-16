@@ -20,7 +20,7 @@ from finishing import FASTEST, PASSES, Cancelled, assemble, blend, peaks, style,
 from flight_data import derive, pair, read_kept
 import overlay
 import trails
-from shot_plan import (RIDES, compile_shot, filmer_path, ground_moments, nearby, passes, probe_cameras, stamp, track_rows, validate_effects,
+from shot_plan import (RIDES, compile_shot, film_order, filmer_path, ground_moments, nearby, passes, probe_cameras, stamp, track_rows, validate_effects,
                        validate_plan, validate_shot, videos as video_rows)
 from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 
@@ -91,7 +91,7 @@ class Conflict(ValueError):
 
 def camera_key(shot):
     """What a shot films. Its effects are not in it: changing them re-renders no preview and changes no video's camera."""
-    return json.dumps({k: v for k, v in shot.items() if k not in ("id", "name", "effects")}, sort_keys=True)
+    return json.dumps({k: v for k, v in shot.items() if k not in ("id", "name", "effects", "created", "modified")}, sort_keys=True)
 
 
 MUSIC = "mp3|wav|m4a|aac|flac|ogg"  # what the assembly takes as music
@@ -264,9 +264,9 @@ class Desk:
             self._write(path, rows)
         return [row for row in rows if Path(row["file"]).exists() or any(Path(o).exists() for o in row.get("overlays", []))]
 
-    def _record_render(self, film, row):
+    def _record_render(self, film, row, replaces=None):
         with self.lock:
-            renders = self.data["renders"] + [row]
+            renders = [r for r in self.data["renders"] if r["id"] != replaces] + [row]
             self._write(self._file(film, ".renders"), renders)
             self.data["renders"] = renders
 
@@ -519,11 +519,33 @@ class Desk:
         with self.lock:
             self._idle()
             old = self._revision(raw)
-            project = {**old, "shots": validate_plan(raw.get("shots"), old["length"]),
+            project = {**old, "shots": self._stamped(validate_plan(raw.get("shots"), old["length"]), old["shots"]),
                        "revision": old["revision"] + 1}
             self._persist(project)
             self.data["project"] = project
             return copy.deepcopy(project)
+
+    @staticmethod
+    def _stamped(shots, before):
+        """Shots with the times the desk keeps for them, not the page's: `created` when a shot was first saved (a copy
+        is a shot of its own), `modified` when a change to it was last saved. A shot saved before the desk kept them
+        has none until it changes. A new take goes last of those of its stretch (film_order)."""
+        now, was = round(time.time()), {s["id"]: s for s in before}
+        bare = lambda s: {k: v for k, v in s.items() if k not in ("created", "modified")}
+        stamped = []
+        for shot in shots:
+            old, shot = was.get(shot["id"]), bare(shot)
+            if old is None:
+                shot["created"] = now
+            else:
+                # The effects the page gives a shot saved before shots kept them are not a change to it.
+                # shortcut: effects first set by hand on such a shot are not stamped either; compare with the page's FIRST if that matters
+                changed = bare(old) != (shot if "effects" in old else {k: v for k, v in shot.items() if k != "effects"})
+                shot.update({k: old[k] for k in ("created", "modified") if k in old})
+                if changed:
+                    shot["modified"] = now
+            stamped.append(shot)
+        return sorted(stamped, key=film_order)
 
     def progress(self, message, share=None):
         """What the job is doing now, and how much of that step is done (0 to 1) when it is known."""
@@ -1222,7 +1244,10 @@ class Desk:
     def _export(self, raw, project):
         """The chosen saved shots as videos in the videos folder, each with the effects its shot keeps (see
         validate_effects): a data overlay, motion blur, the film look and its haze, trails. A shot saved before shots
-        kept their effects has those the page sends as `effects`. Shots of other effects are videos of their own."""
+        kept their effects has those the page sends as `effects`. Shots of other effects are videos of their own.
+        With `replace`, a video made again takes the place of the last one of the same shots: the old file and its
+        overlays go to the Recycle Bin once the new one is rendered, and the new one keeps the old one's id, so the
+        assembly keeps its clip where it was. One Windows will not let go of (open in an editor) stays beside it."""
         ids = raw.get("shot_ids")
         if ids is not None and not isinstance(ids, list):
             raise ValueError("shot_ids must be a list")
@@ -1286,11 +1311,21 @@ class Desk:
                              f"Rendering {len(row)} shot{'s' * (len(row) > 1)} at {size}" + (" with motion blur" if blur else "")
                              + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""), blur,
                              ",".join(f for f in (drawn, filters) if f))
+                ids, stayed = [s["id"] for s in row], None
+                old = next((r for r in reversed(self.data["renders"]) if sorted(r["shots"]) == sorted(ids)), None) if raw.get("replace") is True else None
+                if old:
+                    try:  # before it is kept: the new one then takes the old one's file name
+                        gone = [Path(f) for f in [old["file"], *old.get("overlays", [])] if Path(f).exists()]
+                        if gone:
+                            to_recycle_bin(gone)
+                    except OSError:
+                        self._log()
+                        stayed, old = old["file"], None
                 saved = self._keep(path, project, row, raw.get("labels"))
-                files.append({"url": "/media/" + path.name, "file": str(saved), "shots": [s["id"] for s in row]})
+                files.append({"url": "/media/" + path.name, "file": str(saved), "shots": ids, **({"stayed": stayed} if stayed else {})})
                 # What the assembly needs to know of a video: which it is, how it was made and what cameras it shows.
                 e = row[0]["effects"]
-                record = {"id": uuid.uuid4().hex, "file": str(saved), "shots": [s["id"] for s in row], "made": round(time.time()),
+                record = {"id": old["id"] if old else uuid.uuid4().hex, "file": str(saved), "shots": [s["id"] for s in row], "made": round(time.time()),
                           "quality": quality, "fps": fps, "extras": [name for name, on in (("blur", e.get("blur")), ("look", e.get("look")),
                                                                                ("haze", e.get("look")), ("trails", e.get("trails"))) if on],
                           "seconds": round(sum(s["end"] - s["start"] for s in row), 3), "takes": {s["id"]: camera_key(s) for s in row},
@@ -1299,7 +1334,7 @@ class Desk:
                 mark = time.monotonic()
                 if e.get("overlay"):
                     files[-1]["overlays"] = record["overlays"] = self._overlays(saved, [segments[s["id"]] for s in row], quality, fps)
-                self._record_render(project["film"], record)
+                self._record_render(project["film"], record, old and old["id"])
         except Cancelled:
             raise Cancelled(f"Cancelled: {len(files)} of {len(rows)} videos were finished and kept" if files else "Render cancelled") from None
         finally:

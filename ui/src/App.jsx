@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Aperture, ArrowArcRight, ArrowBendUpRight, ArrowClockwise, ArrowRight, ArrowsClockwise, ArrowsHorizontal, ArrowsInLineHorizontal, ArrowsOutLineHorizontal, ArrowsVertical, CaretLeft, CaretRight, Copy, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Mouse, Pause, Play, Plus, SkipBack, Sparkle, Stop, Swap, Trash, Wind, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera} from "./desk.js";
+import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, when, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
@@ -60,6 +60,7 @@ export function App() {
   const [rated, setRated] = useState("");
   const [skipped, setSkipped] = useState(() => new Set());
   const [forgetting, setForgetting] = useState(null);  // {ids, label}: shots asked to be removed, waiting for a choice
+  const [replacing, setReplacing] = useState(null);  // {ids, each, again}: a render of shots that have videos, waiting for new or overwrite
   const [trashing, setTrashing] = useState(null);  // a replay asked to go to the Recycle Bin, waiting for a yes
   const [naming, setNaming] = useState(null);  // the open replay's name as it is being typed over, until Rename or Esc
   const [renaming, setRenaming] = useState(null);  // the shot in The cut whose name is being typed over
@@ -524,8 +525,9 @@ export function App() {
   }
 
   async function commit() {
-    const saved = await save([...shots.filter(s => s.id !== draft.id), draft], isSaved && dirty ? baseRevision : project.revision);
-    if (saved) { setDraft(saved.shots.find(s => s.id === draft.id)); setDirty(false); setBaseRevision(saved.revision); }
+    const shot = !isSaved && / \(copy(?: \d+)?\)$/.test(draft.name) ? {...draft, name: takeName(draft.name, camera(draft), shots)} : draft;
+    const saved = await save([...shots.filter(s => s.id !== shot.id), shot], isSaved && dirty ? baseRevision : project.revision);
+    if (saved) { setDraft(saved.shots.find(s => s.id === shot.id)); setDirty(false); setBaseRevision(saved.revision); }
   }
   function discard() {
     const shot = shots.find(s => s.id === draft.id);
@@ -619,9 +621,17 @@ export function App() {
   }
 
   // Shots rendered each with its own effects (a saved shot that has none yet, with FIRST). The assembly asks for a file
-  // per shot.
-  function renderCut(ids, each) {
-    action("export_cut", {shot_ids: ids, quality, fps, apart: each, expect: costOf(ids, each).total, effects: FIRST, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)]))});
+  // per shot. Where a video of the same shots was made before, the page asks once for them all whether the new ones go
+  // beside the old or take their place (`replace`).
+  function renderCut(ids, each, replace) {
+    if (replace === undefined) {
+      const again = videoRows(shots.filter(s => ids.includes(s.id)).map(s => ({...s, effects: effectsOf(s)})), each)
+        .map(row => lastVideo(desk.renders, row.map(s => s.id))).filter(Boolean);
+      if (again.length) return setReplacing({ids, each, again});
+    }
+    setReplacing(null);
+    action("export_cut", {shot_ids: ids, quality, fps, apart: each, expect: costOf(ids, each).total, effects: FIRST, labels: Object.fromEntries(shots.map(s => [s.id, camera(s)])),
+      ...(replace ? {replace: true} : {})});
   }
 
   // A kill reel in one click: a shot for every kill of yours that has none yet. Cameras stay yours to pick.
@@ -808,7 +818,7 @@ export function App() {
               </div></div>)}
             {failure && <div className="preview-busy failed" role="alert"><span>{failure}</span><button onClick={() => setHidden(desk.job.id)} aria-label="Dismiss message">×</button></div>}
           </div>
-          <div className="caption"><span title={video ? (video.files || [video]).map(f => baseName(f.file)).join("\n") : undefined}>{video ? `Rendered by Film Viewer · original sound · ${(video.files || []).length > 1 ? `${video.files.length} videos saved` : `saved as ${baseName(video.file)}`}${(video.files || []).some(f => f.overlays) ? (desk.overlays?.running ? ` · ${desk.overlays.message} (${desk.overlays.left} left), the desk goes on meanwhile ·` : desk.overlays?.error ? ` · data overlay failed: ${desk.overlays.message} ·` : " with data overlays") : ""} in ${desk.videos}`
+          <div className="caption"><span title={video ? (video.files || [video]).map(f => baseName(f.file)).join("\n") : undefined}>{video ? `Rendered by Film Viewer · original sound · ${(video.files || []).length > 1 ? `${video.files.length} videos saved` : `saved as ${baseName(video.file)}`}${(video.files || []).some(f => f.overlays) ? (desk.overlays?.running ? ` · ${desk.overlays.message} (${desk.overlays.left} left), the desk goes on meanwhile ·` : desk.overlays?.error ? ` · data overlay failed: ${desk.overlays.message} ·` : " with data overlays") : ""} in ${desk.videos}${(video.files || []).some(f => f.stayed) ? " · an earlier video was open elsewhere: it stays beside the new one" : ""}`
             : clip ? `Preview ${formatTime(clip.start)} — ${formatTime(clip.end)}${movable ? " · drag the picture to move the camera" : ""}`
             : still && draft ? `Still at ${formatTime(still.time)} through this camera${movable ? ` · drag to ${turnable(draft) ? "turn" : "move"} it, wheel to zoom` : ""} · Play shows it moving`
             : still ? `Still at ${formatTime(still.time)} · Play shows it moving in Film Viewer` : "Play plays in Film Viewer's own window. Render and play makes a clip here, in about the time it plays."}</span>{video && <span><button onClick={openVideos}>Open folder</button><button onClick={() => setClosedVideo(video.url)}>Back to the film</button></span>}</div>
@@ -909,7 +919,8 @@ export function App() {
           {renaming === s.id ? <input className="retitle" autoFocus defaultValue={s.name} maxLength={100} spellCheck={false} aria-label={`New name for ${s.name}`}
             onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") { e.currentTarget.dataset.cancel = "1"; e.currentTarget.blur(); } }}
             onBlur={e => e.target.dataset.cancel ? setRenaming(null) : retitle(s, e.target.value)}/>
-          : <button onClick={e => { if (e.detail < 2) choose(s); }} onDoubleClick={() => setRenaming(s.id)} title="Double-click to rename"><strong>{dirty && draft?.id === s.id && <span className="unsaved-dot" role="img" aria-label="Unsaved changes" title="Changed and not saved: Update shot keeps it"/>}{retitled?.id === s.id ? retitled.name : s.name}</strong><small>{formatTime(s.start)} — {formatTime(s.end)} · {camera(s)}</small>{problems[s.id] && <small className="problem">Cannot be filmed: open it for the reason</small>}</button>}
+          : <button onClick={e => { if (e.detail < 2) choose(s); }} onDoubleClick={() => setRenaming(s.id)} title={`${s.name}\nDouble-click to rename`}><strong>{dirty && draft?.id === s.id && <span className="unsaved-dot" role="img" aria-label="Unsaved changes" title="Changed and not saved: Update shot keeps it"/>}{retitled?.id === s.id ? retitled.name : s.name}</strong><small>{formatTime(s.start)} — {formatTime(s.end)} · {camera(s)}</small>{(s.created || s.modified) && <small className="stamps" title={[s.created && `Made ${new Date(s.created * 1000).toLocaleString()}`, s.modified && `Changed ${new Date(s.modified * 1000).toLocaleString()}`].filter(Boolean).join("\n")}>
+            {[s.created && `made ${when(s.created)}`, s.modified && `changed ${when(s.modified)}`].filter(Boolean).join(" · ")}</small>}{problems[s.id] && <small className="problem">Cannot be filmed: open it for the reason</small>}</button>}
           <button className="duplicate" disabled={working} onClick={() => duplicate(s)} aria-label={`Duplicate ${s.name}`} title="Duplicate this shot: the same stretch, camera and keyframes, to change"><Copy weight="bold"/></button>
           <button className="forget" disabled={working} onClick={() => setForgetting({ids: [s.id], label: s.name})} aria-label={`Remove ${s.name}`} title="Remove this shot from the cut"><X weight="bold"/></button>
         </div>)}
@@ -953,6 +964,21 @@ export function App() {
         </div>
       </div>
     </div>}
+    {replacing && (() => {
+      const many = replacing.again.length > 1, sizes = {final: "1080p", "4k": "4K", draft: "540p draft"};
+      return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="replace-title" onKeyDown={e => e.key === "Escape" && setReplacing(null)}>
+        <div className="modal-box">
+          <h2 id="replace-title">{many ? `${replacing.again.length} of these videos were made before` : "This video was made before"}</h2>
+          <ul>{replacing.again.map(r => <li key={r.id}><b>{baseName(r.file)}</b><br/>{sizes[r.quality] || r.quality}{r.fps ? ` · ${r.fps} fps` : ""} · {(r.extras || []).includes("blur") ? "motion blur" : "no motion blur"}{r.made ? ` · made ${when(r.made)}` : ""}</li>)}</ul>
+          <p>Overwrite: the new {many ? "videos take the old ones'" : "video takes the old one's"} place and name, in the Assembly too, and the old {many ? "files go" : "file goes"} to the Recycle Bin. As new: {many ? "they are" : "it is"} kept beside {many ? "them" : "it"}.</p>
+          <div className="modal-actions">
+            <button onClick={() => setReplacing(null)}>Cancel</button>
+            <button disabled={working} onClick={() => renderCut(replacing.ids, replacing.each, false)}>Render as new</button>
+            <button className="primary" autoFocus disabled={working} onClick={() => renderCut(replacing.ids, replacing.each, true)}>Overwrite</button>
+          </div>
+        </div>
+      </div>;
+    })()}
     {forgetting && (() => {
       const files = filesOf(forgetting.ids), many = forgetting.ids.length > 1;
       return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="forget-title" onKeyDown={e => e.key === "Escape" && setForgetting(null)}>

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, fitShot, killSequence, landingSequence, ownKills, sequenceOf, turnable, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
+import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, fitShot, killSequence, landingSequence, ownKills, sequenceOf, turnable, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
 const event = {time:199, kind:'kill', text:'Hawk Raven 1 19 10', fields:['Hawk','Raven','1','19','10']};
 assert.equal(formatTime(195.3), '03:15.3');
 assert.equal(filterMoments([event], 'Raven 03:19', 'kill').length, 1);
@@ -12,6 +12,13 @@ assert.equal(clipKey(1, 2, Object.fromEntries(Object.entries(shot).reverse()), [
 assert.notEqual(clipKey(1, 2, {...shot, side:'left'}, [false, false]), clipKey(1, 2, shot, [false, false]));
 assert.notEqual(clipKey(1, 2, shot, [true, false]), clipKey(1, 2, shot, [false, false]));
 assert.equal(momentLabel(event), 'Hawk → Raven');
+// A copy goes into the cut named by its camera; one already ending its name gives way, and a name taken gets a number.
+assert.equal(takeName('Kill: Bandit · guns (copy)', 'Tripod', []), 'Kill: Bandit · guns · Tripod');
+assert.equal(takeName('Kill: Bandit · observer (copy 2)', 'Tripod', [{name: 'Kill: Bandit · Tripod'}]), 'Kill: Bandit · Tripod 2');
+assert.equal(takeName("Shot at 00:40.0 · Pilot's view (copy)", 'Cockpit', []), 'Shot at 00:40.0 · Cockpit');
+// The video a render made again takes the place of: the last of exactly those shots.
+const made = [{id: 'a', shots: ['one']}, {id: 'b', shots: ['two', 'one']}, {id: 'c', shots: ['one']}];
+assert.deepEqual([lastVideo(made, ['one'])?.id, lastVideo(made, ['one', 'two'])?.id, lastVideo(made, ['three']), lastVideo(undefined, ['one'])], ['c', 'b', null, null]);
 assert.ok(newShot({length:20}, [{id:19,recorder:true}], null, 19.99).end <= 20);
 // A kill as four shots in a row: closing in, the guns, him going down (ending at the message), flying on.
 // Without your burst in the film, the fatal hits are taken as about 3 s before the message.

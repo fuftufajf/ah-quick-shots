@@ -85,6 +85,10 @@ def validate_shot(raw, length):
             shot["zoom"] = "hold"
     if raw.get("effects") is not None:
         shot["effects"] = validate_effects(raw["effects"])
+    # When the desk first saved it and last saved a change to it, in seconds since 1970 (DirectorDesk.save stamps them).
+    for key in ("created", "modified"):
+        if raw.get(key) is not None:
+            shot[key] = round(number(raw[key], 0, 1e10, key))
     return shot
 
 
@@ -640,10 +644,16 @@ def compile_shot(shot, tracks):
     return lines
 
 
+def film_order(shot):
+    """Shots in film order, and takes of one stretch in the order they were made: a shot changed keeps its place.
+    One saved before the desk kept the times is older than any that has them."""
+    return shot["start"], shot.get("created", 0)
+
+
 def validate_plan(shots, length):
     if not isinstance(shots, list) or len(shots) > 200:
         raise ValueError("A plan can contain up to 200 shots")
-    shots = sorted((validate_shot(s, length) for s in shots), key=lambda s: s["start"])
+    shots = sorted((validate_shot(s, length) for s in shots), key=film_order)
     if len({s["id"] for s in shots}) != len(shots):
         raise ValueError("Shot ids must be unique")
     return shots  # they may overlap: takes of one stretch through different cameras

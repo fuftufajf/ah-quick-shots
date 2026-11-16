@@ -17,7 +17,7 @@ from unittest.mock import patch
 import director_api
 from director_api import listener, make_server, take_port, videos_folder, working_folder
 import director_core
-from director_core import Conflict, Desk, framing, lead
+from director_core import Conflict, Desk, camera_key, framing, lead
 import finishing
 import flight_data
 import overlay
@@ -1413,6 +1413,61 @@ class DeskTests(unittest.TestCase):
             self.desk.forget({"expected_revision": 3, "shot_ids": ["two"]})
         with self.assertRaises(ValueError):
             self.desk.forget({"expected_revision": 4, "shot_ids": []})
+
+    def test_shots_keep_when_they_were_made_and_last_changed_and_their_place(self):
+        with patch("director_core.time.time", return_value=1000):
+            shots = self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "id": "two", "start": 5, "end": 7}, SHOT]})["shots"]
+        self.assertEqual([(s["id"], s["created"], "modified" in s) for s in shots], [("one", 1000, False), ("two", 1000, False)])
+        # A copy brings the first one's times along: it is a shot of its own, made now, last of its stretch.
+        with patch("director_core.time.time", return_value=2000):
+            second = self.desk.save({"expected_revision": 2, "shots": [*shots, {**shots[0], "id": "take", "height": 120}]})["shots"]
+        self.assertEqual([(s["id"], s["created"]) for s in second], [("one", 1000), ("take", 2000), ("two", 1000)])
+        # Changed and sent last (as Update shot does), the first keeps its place and is stamped; the others are not.
+        with patch("director_core.time.time", return_value=3000):
+            third = self.desk.save({"expected_revision": 3, "shots": [second[1], second[2], {**second[0], "height": 90}]})["shots"]
+        self.assertEqual([(s["id"], s["created"], s.get("modified")) for s in third], [("one", 1000, 3000), ("take", 2000, None), ("two", 1000, None)])
+        # The page's times are not taken, and they change no camera.
+        forged = self.desk.save({"expected_revision": 4, "shots": [{**s, "created": 5, "modified": 6} for s in third]})["shots"]
+        self.assertEqual(forged, third)
+        self.assertEqual(camera_key(third[0]), camera_key({k: v for k, v in third[0].items() if k not in ("created", "modified")}))
+        # One saved before the desk kept the times is older than a new take of its stretch.
+        self.desk.data["project"]["shots"] = [{k: v for k, v in s.items() if k != "created"} for s in forged]
+        later = self.desk.save({"expected_revision": 5, "shots": [{**forged[2], "id": "late"}, *self.desk.data["project"]["shots"]]})["shots"]
+        self.assertEqual([s["id"] for s in later], ["one", "take", "two", "late"])
+        # The effects the page gives a shot saved before shots kept them do not make it changed.
+        effects = self.desk.save({"expected_revision": 6, "shots": [{**s, "effects": {"blur": True}} for s in later]})["shots"]
+        self.assertEqual([s.get("modified") for s in effects], [s.get("modified") for s in later])
+
+    def test_a_video_made_again_can_take_the_place_of_the_last(self):
+        def native(command, progress):
+            if command.startswith("tracks "):
+                start, end, step = map(float, command.split()[1:4])
+                return [f"track {start + i * step:.4f} {ident} {x} 200 0 0 0 0" for i in range(round((end - start) / step) + 1)
+                        for ident, x in ((19, 0), (10, 300))]
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"test")
+            return []
+        self.desk.viewer.command = native
+        self.desk.save({"expected_revision": 1, "shots": [SHOT]})
+        self.run_action({"action": "export_cut", "shot_ids": ["one"], "quality": "draft"})
+        self.run_action({"action": "export_cut", "shot_ids": ["one"], "quality": "draft"})  # not asked to: kept beside it
+        beside = self.desk.snapshot()["renders"]
+        self.assertEqual(len({r["file"] for r in beside}), 2)
+        recycled = []
+        with patch("director_core.to_recycle_bin", lambda paths: [recycled.extend(paths), *(p.unlink() for p in paths)]):
+            self.run_action({"action": "export_cut", "shot_ids": ["one"], "quality": "final", "replace": True})
+        after = self.desk.snapshot()["renders"]
+        self.assertEqual([p.name for p in recycled], [Path(beside[1]["file"]).name])  # the last one only
+        self.assertEqual([(r["id"], r["file"]) for r in after], [(r["id"], r["file"]) for r in beside])  # its id and its name
+        self.assertEqual([r["quality"] for r in after], ["draft", "final"])
+        self.assertEqual(self.desk._load_renders("films/test.ahf"), after)
+        # Held by Windows (open in an editor): the old one stays, and the new one is kept beside it.
+        def refuse(paths):
+            raise OSError("in use")
+        with patch("director_core.to_recycle_bin", refuse):
+            self.run_action({"action": "export_cut", "shot_ids": ["one"], "quality": "draft", "replace": True})
+        self.assertEqual(len(self.desk.snapshot()["renders"]), 3)
+        self.assertEqual(self.desk.snapshot()["preview"]["files"][0]["stayed"], beside[1]["file"])
 
     def test_moments_whose_aircraft_are_not_in_the_film_are_left_out(self):
         # Aircraft 19 is in the film throughout, 10 only up to 5 s, 30 and 36 never.
