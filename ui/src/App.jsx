@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {ArrowClockwise, ArrowRight, CaretLeft, CaretRight, Copy, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Pause, Play, Plus, SkipBack, Sparkle, Stop, Trash, X} from "@phosphor-icons/react";
+import {Aperture, ArrowArcRight, ArrowBendUpRight, ArrowClockwise, ArrowRight, ArrowsClockwise, ArrowsHorizontal, ArrowsInLineHorizontal, ArrowsOutLineHorizontal, ArrowsVertical, CaretLeft, CaretRight, Copy, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Mouse, Pause, Play, Plus, SkipBack, Sparkle, Stop, Swap, Trash, Wind, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dragCamera, fights, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera} from "./desk.js";
+import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
@@ -14,6 +14,22 @@ const TUNING = [["orbit", "Around", "°", -180, 180, 1, FREE], ["distance", "Dis
   // Cameras on the airframe that never lock on him: where they look (a drag on the picture does the same).
   ["turn", "Turn (left +)", "°", -180, 180, 1, ["cockpit", "nose", "belly", "gear"]], ["tilt", "Tilt (up +)", "°", -89, 89, 1, ["cockpit", "nose", "belly", "gear"]]];
 const AS_FLOWN = ["recorded", "weapon"];  // the pilot's own view and the bomb's ride: nothing to adjust
+// The camera's controls over the picture, in its corners by what they do: where it stands and looks (top left), its
+// lens (top right), how it moves through the shot (bottom left). One shows only where it changes this camera, and
+// its tooltip names the gesture that does the same, so a drag or a wheel is seen moving its numbers.
+const HUD = {
+  orbit: ["place", ArrowsClockwise, "Around", "Where the camera stands round the aircraft. Dragging the picture sideways does the same."],
+  distance: ["place", ArrowsOutLineHorizontal, "Distance", "How far from the aircraft the camera stands: nearer, the aircraft grows and the perspective deepens. Shift and the wheel over the picture do the same."],
+  height: ["place", ArrowsVertical, "Height", "How far above (+) or below (−) the aircraft the camera stands. Dragging the picture up and down does the same."],
+  turn: ["place", ArrowsHorizontal, "Turn", "Where the camera looks: to the left (+) or to the right. Dragging the picture sideways does the same."],
+  tilt: ["place", ArrowsVertical, "Tilt", "Where the camera looks: up (+) or down. Dragging the picture up and down does the same."],
+  fov: ["lens", Aperture, "Lens", "The lens's angle: narrower, the aircraft grows without the camera moving. The wheel over the picture does the same."],
+  roll: ["lens", ArrowArcRight, "Roll", "Tilts the picture's horizon."],
+  loose: ["motion", Wind, "Looseness", "The seconds of your path the observer flies the average of: more, and it follows you less closely and moves more calmly."],
+  sweep: ["motion", ArrowBendUpRight, "Swing round", "How far the camera swings round you over the shot."],
+  closer: ["motion", ArrowsInLineHorizontal, "Ends at", "How far from you the camera is when the shot ends: it closes in over the shot."],
+};
+const CORNERS = [["place", "Where the camera stands and looks"], ["lens", "The lens"], ["motion", "How the camera moves through the shot"]];
 // Trails when first ticked: your colour, the opponent's, how long they stay, a third from the fin's tip (its colour,
 // or null for none), and `exact`: the path as flown, nothing averaged, for reading a flight.
 const TRAILS = {lead: "#e8f4ff", opponent: "#ff9e6b", seconds: 2.5, tail: null, exact: false};
@@ -46,6 +62,11 @@ export function App() {
   const [forgetting, setForgetting] = useState(null);  // {ids, label}: shots asked to be removed, waiting for a choice
   const [trashing, setTrashing] = useState(null);  // a replay asked to go to the Recycle Bin, waiting for a yes
   const [naming, setNaming] = useState(null);  // the open replay's name as it is being typed over, until Rename or Esc
+  const [renaming, setRenaming] = useState(null);  // the shot in The cut whose name is being typed over
+  const [retitled, setRetitled] = useState(null);  // {id, name}: a name typed there, waiting for the desk to be free
+  const [opened, setOpened] = useState(null);  // the control on the picture whose slider is out
+  const [stirred, setStirred] = useState([]);  // the controls a drag or the wheel is moving now: they light up
+  const stirring = useRef(null);
   const [quality, setQuality] = useState("final");
   const [apart, setApart] = useState(false);
   const [fps, setFps] = useState(30);  // the operator's choice: more like film; 60 stays an option
@@ -237,11 +258,11 @@ export function App() {
     const element = screen.current;
     let turned = 0;
     function wheel(e) {
-      if (!onWheel.current) return;
+      if (!onWheel.current || e.target.closest?.(".hud-pop")) return;
       e.preventDefault();
-      turned += e.deltaY;
+      turned += e.deltaY || e.deltaX;  // with Shift held, Windows turns the wheel sideways
       if (Math.abs(turned) < 50) return;  // a touchpad sends many small moves for one notch
-      onWheel.current(turned < 0);
+      onWheel.current(turned < 0, e.shiftKey);
       turned = 0;
     }
     element.addEventListener("wheel", wheel, {passive: false});
@@ -443,6 +464,8 @@ export function App() {
 
   // A drag on the picture moves a free camera round the aircraft; a plain click still plays and pauses.
   function down(e) {
+    if (e.target.closest(".hud")) return;
+    setOpened(null);
     if (movable && e.button === 0 && !e.target.closest("button")) grab.current = {x: e.clientX, y: e.clientY, shot: draft, at: inShot(draft), moved: false};
   }
   function move(e) {
@@ -450,12 +473,17 @@ export function App() {
     if (!held) return;
     const dx = e.clientX - held.x, dy = e.clientY - held.y;
     if (!held.moved && Math.hypot(dx, dy) < 5) return;
-    if (!held.moved) { held.moved = true; e.currentTarget.setPointerCapture(e.pointerId); film.current?.pause(); }
+    if (!held.moved) { held.moved = true; e.currentTarget.setPointerCapture(e.pointerId); film.current?.pause(); setStirred(FREE.includes(held.shot.kind) ? ["orbit", "height"] : ["turn", "tilt"]); }
     tune(reframe(held.shot, held.at, dragCamera(frameOf(held.shot, held.at), dx, dy, e.currentTarget.clientWidth)));
   }
   function up() {
-    if (grab.current?.moved) { dragged.current = true; setTimeout(() => { dragged.current = false; }, 0); }
+    if (grab.current?.moved) { dragged.current = true; setTimeout(() => { dragged.current = false; }, 0); setStirred([]); }
     grab.current = null;
+  }
+  // A wheel notch lights its control up for a moment.
+  function stir(keys) {
+    setStirred(keys); clearTimeout(stirring.current);
+    stirring.current = setTimeout(() => setStirred([]), 800);
   }
 
   function trim(edge, seconds) {
@@ -499,7 +527,24 @@ export function App() {
     const saved = await save([...shots.filter(s => s.id !== draft.id), draft], isSaved && dirty ? baseRevision : project.revision);
     if (saved) { setDraft(saved.shots.find(s => s.id === draft.id)); setDirty(false); setBaseRevision(saved.revision); }
   }
-  function remove() { setForgetting({ids: [draft.id], label: draft.name}); }
+  function discard() {
+    const shot = shots.find(s => s.id === draft.id);
+    if (shot) open({...shot}, false); else { setDraft(null); setDirty(false); }
+  }
+  // A name typed over in The cut is saved as soon as the desk takes it (not while Film Viewer is busy: the click that
+  // began the double-click asked it for a picture); the shot being changed keeps it with its other changes until Update shot.
+  function retitle(shot, typed) {
+    const name = typed.trim();
+    setRenaming(null);
+    if (!name || name === shot.name) return;
+    if (draft?.id === shot.id && dirty) return change({...draft, name});
+    setRetitled({id: shot.id, name});
+  }
+  useEffect(() => {
+    if (!retitled || running || sending) return;
+    setRetitled(null);
+    save(shots.map(s => s.id === retitled.id ? {...s, name: retitled.name} : s));
+  }, [retitled, running, sending]);
   async function deleteFilm(film = trashing) {
     setSending(true); setError("");
     try {
@@ -655,9 +700,16 @@ export function App() {
   const scores = rated === rateKey ? Object.fromEntries(desk.proposals.map(p => [p.id, p])) : {};
   const movable = Boolean(draft) && (FREE.includes(draft.kind) || turnable(draft)) && !video && !conflict;
   const adjustable = Boolean(draft) && !AS_FLOWN.includes(draft.kind) && !video && !conflict;
-  const tuning = adjustable ? TUNING.filter(row => (row[6] ? row[6].includes(draft.kind) : true) && (!row[7] || draft[row[0]] != null)) : [];
+  // The pilot's seat keeps the horizon level: the viewer is told no roll for it (shot_plan._mount).
+  const tuning = adjustable ? TUNING.filter(row => (row[6] ? row[6].includes(draft.kind) : true) && (!row[7] || draft[row[0]] != null)
+    && !(row[0] === "roll" && draft.kind === "cockpit")) : [];
   const dropInShot = draft && events.some(e => e.kind === "drop" && e.time >= draft.start - 1 && e.time <= draft.end);
-  onWheel.current = adjustable ? closer => { film.current?.pause(); const at = inShot(latest.current); tune(reframe(latest.current, at, zoomCamera(frameOf(latest.current, at), closer))); } : null;
+  onWheel.current = adjustable ? (closer, shift) => {
+    film.current?.pause();
+    const shot = latest.current, at = inShot(shot), frame = frameOf(shot, at), dolly = shift && FREE.includes(shot.kind);
+    stir([dolly ? "distance" : "fov"]);
+    tune(reframe(shot, at, dolly ? dollyCamera(frame, closer) : zoomCamera(frame, closer)));
+  } : null;
   // The camera as it is at the playhead: the shot's own, or what its keyframes make of it there. A change made
   // there is the whole shot's until there are keyframes, then a keyframe at the playhead (reframe in desk.js).
   const at = draft ? inShot(draft) : 0, cam = draft ? frameOf(draft, at) : null;
@@ -715,11 +767,36 @@ export function App() {
             <div className="chips"><span className="note">Trails: tick them in Film Viewer</span><button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Names</button></div>
           </div>
           <div ref={screen} className={`screen ${movable ? "movable" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
-            onClick={e => { if (!dragged.current && clip && !video && !e.target.closest("button")) renderPlay(); }}>
+            onClick={e => { if (!dragged.current && clip && !video && !e.target.closest("button, .hud")) renderPlay(); }}>
             {video ? <video key={video.url} ref={made} src={video.url} controls onLoadedData={() => { asking.current = null; }} onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} playsInline/>
             : clip ? <video key={clip.url} ref={player} src={clip.url} playsInline onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} onTimeUpdate={e => { if (!scrubbing.current && !trimGrab.current) setCursor(clip.start + e.target.currentTime); }}/>
             : still ? <img src={still.url} draggable={false} alt={`Film Viewer frame at ${formatTime(still.time)}`}/>
             : <div className="empty-preview"><FilmStrip size={44} weight="thin"/><h2>See the film here.</h2><p>Open a replay and click a moment.<br/>The desk renders that shot as a short clip and plays it.</p></div>}
+            {adjustable && <div className={`hud ${rolling || live ? "dim" : ""}`}>
+              {CORNERS.map(([corner, label]) => {
+                const rows = tuning.filter(row => HUD[row[0]][0] === corner), sided = corner === "place" && ["wing", "shoulder", "gear"].includes(draft.kind);
+                return (rows.length > 0 || sided) && <div key={corner} className={`corner ${corner}`} role="group" aria-label={label}>
+                  {rows.map(([key, , unit, min, max, step]) => {
+                    const [, Icon, name, tip] = HUD[key], value = cam[key] ?? (key === "loose" ? looseness(draft) : 0);
+                    const set = typed => { const v = Math.max(min, Math.min(max, typed)); if (v !== value) tune(reframe(draft, at, {...cam, [key]: v})); };
+                    const lensNote = key === "fov" && watching === "both" ? " Filming you both, this is its longest lens: it opens by itself to hold you both." : "";
+                    return <div key={key} className="control">
+                      <button className={stirred.includes(key) ? "stirred" : ""} aria-expanded={opened === key} onClick={() => setOpened(opened === key ? null : key)}
+                        title={`${tip}${lensNote} Click for a slider and a box to type it in.`}><Icon weight="bold"/><span>{name}</span><b>{Math.round(value)}{unit.trim()}</b></button>
+                      {opened === key && <div className="hud-pop">
+                        <input type="range" aria-label={name} min={min} max={max} step={step} value={value} onChange={e => set(Number(e.target.value))}/>
+                        <input type="number" key={Math.round(value)} aria-label={`${name}, typed`} min={min} max={max} step={step} defaultValue={Math.round(value)}
+                          onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} onBlur={e => e.target.value !== "" && set(Number(e.target.value))}/>
+                      </div>}
+                    </div>;
+                  })}
+                  {sided && <div className="control"><button onClick={() => tune({...draft, side: draft.side === "left" ? "right" : "left"})}
+                    title="Which side the camera is on: the right or the left wing, shoulder or gear leg. Click to change sides."><Swap weight="bold"/><span>Side</span><b>{draft.side}</b></button></div>}
+                </div>;
+              })}
+              <div className="corner help"><span className="control" tabIndex={0} aria-label="How to move the camera"
+                title={`${movable && turnable(draft) ? "Drag the picture: the camera turns where it looks." : movable ? "Drag the picture: sideways the camera walks round the aircraft, up and down it climbs or sinks." : ""} The wheel over the picture: the lens.${FREE.includes(draft.kind) ? " Shift and the wheel: the camera nearer or further." : ""} The controls in the corners light up as they change; click one for a slider.`}><Mouse weight="bold"/></span></div>
+            </div>}
             {working && (quick ? <div className="preview-busy"><span className="spinner"/><span>{job.message || "Working…"}</span></div>
               : <div className="waiting" role="status"><div>
                 <strong><span className="spinner"/>{job.message || "Working…"}</strong>
@@ -784,12 +861,16 @@ export function App() {
 
         <div className="angles panel">
           <div className="panel-heading"><h2>3 <span>Cameras</span></h2>
-            <div className="chips"><button disabled={working || !draft || cast.lead == null || draft.end - draft.start < .5} onClick={() => { setRated(rateKey); action("suggest", {shots: candidates(draft, stage)}); }} title="Measure every camera over the whole shot: each then opens on the framing that reads best"><Sparkle/> Rate cameras</button><button className={`primary ${unsaved ? "unsaved" : ""}`} disabled={working || conflict || !draft || (isSaved && !dirty)} onClick={commit}
+            <div className="chips"><button disabled={working || !draft || cast.lead == null || draft.end - draft.start < .5} onClick={() => { setRated(rateKey); action("suggest", {shots: candidates(draft, stage)}); }} title="Measure every camera over the whole shot: each then opens on the framing that reads best"><Sparkle/> Rate cameras</button>{draft && (dirty || !isSaved) && <button onClick={discard}
+              title={isSaved ? "Back to this shot as it is in the cut" : "Drop this shot: it is not in the cut"}>Discard changes</button>}<button className={`primary ${unsaved ? "unsaved" : ""}`} disabled={working || conflict || !draft || (isSaved && !dirty)} onClick={commit}
               title={unsaved ? "Not saved yet: a refresh, a desk restart or another replay loses what is not in the cut" : undefined}><Plus/> {isSaved ? "Update shot" : "Add to cut"}</button></div>
           </div>
           {draft ? <>
             {problems[draft.id] && <p className="problem" role="alert">{problems[draft.id]}</p>}
-            <div className="around" aria-label="The other aircraft in this shot"><span>Opponent · closest approach</span>
+            <div className="around" aria-label="The aircraft in this shot"><span>Lead</span>
+              <select aria-label="Lead aircraft" title="The aircraft this shot is about: its cameras fly with it" value={cast.lead ?? ""} disabled={conflict} onChange={e => e.target.value !== "" && recast({...cast, lead: Number(e.target.value)})}>
+                {cast.lead == null && <option value="">Choose</option>}{planes.filter(p => p.id !== cast.other).map(p => <option key={p.id} value={p.id}>{p.name}{p.recorder ? " · recorder" : ""}</option>)}</select>
+              <span>Opponent · closest approach</span>
               {near.map(a => <button key={a.id} aria-pressed={cast.other === a.id} disabled={conflict} onClick={() => recast({...cast, other: a.id})} title={`Closest ${a.closest.toLocaleString()} ft, mostly ${a.typical.toLocaleString()} ft away in this shot`}>{a.name || called(a.id)} · {a.closest.toLocaleString()} ft</button>)}
               {cast.other != null && !near.some(a => a.id === cast.other) && <button aria-pressed="true">{called(cast.other)}</button>}
               {cast.other != null && <button disabled={conflict} onClick={() => recast({...cast, other: null})}>Nobody</button>}
@@ -815,20 +896,8 @@ export function App() {
               {watching === "you" && draft.path !== "own" && <button aria-pressed={!!draft.ride} disabled={conflict} onClick={() => tune({...draft, ride: draft.ride ? undefined : true})}
                 title="The camera keeps its place beside you but is fastened to your aircraft as Film Viewer draws it. Use it when your aircraft hops in the picture: Film Viewer draws it a frame off now and then, most of all after you are shot down. In hard turns this camera trembles a little">Rides your aircraft</button>}
             </div>}
-            {adjustable ? <div className="adjust">
-              {tuning.map(([key, label, unit, min, max, step]) => { const value = cam[key] ?? (key === "loose" ? looseness(draft) : 0);
-                return <label key={key}>{label} · {Math.round(value)}{unit}<input type="range" min={min} max={max} step={step} value={value} onChange={e => tune(reframe(draft, at, {...cam, [key]: Number(e.target.value)}))}/></label>; })}
-              {["wing", "shoulder", "gear"].includes(draft.kind) && <label>Side<select value={draft.side} onChange={e => tune({...draft, side: e.target.value})}><option value="right">right</option><option value="left">left</option></select></label>}
-            </div> : !conflict && !video && <p className="hint">This camera shows the flight as it was: there is nothing to adjust.</p>}
-            {adjustable && <p className="hint">{movable && turnable(draft) ? "Or drag the picture to turn this camera where it looks; the wheel over the picture zooms the lens." : movable ? "Or drag the picture: sideways walks the camera round the aircraft, up and down changes its height; the wheel over the picture zooms the lens." : "The wheel over the picture zooms the lens."}{keyed && (draft.zoom === "hold" && draft.keys?.length === 1 ? " The tripod stands where it was at its keyframe: a change moves it there, and its lens keeps the aircraft this size." : draft.keys?.length ? " With keyframes, every change you make, whom it looks at too, is a keyframe at the playhead." : " Keyframe (K) keeps this framing at the playhead: set another further on, and the observer glides between them.")}{watching === "both" && " The observer opens its lens to hold you both; further off, it flies more of a line of its own."}</p>}
-            <details className="tune"><summary>Shot details{dirty ? " · not in the cut yet" : ""}</summary>
-              <div className="fields">
-                <label>In · seconds<input type="number" step="0.1" min="0" value={draft.start} onChange={e => change({...draft, start: Number(e.target.value)})}/></label>
-                <label>Out · seconds<input type="number" step="0.1" min="0" value={draft.end} onChange={e => change({...draft, end: Number(e.target.value)})}/></label>
-                <label>Lead aircraft<select value={cast.lead ?? ""} onChange={e => e.target.value !== "" && recast({...cast, lead: Number(e.target.value)})}>{cast.lead == null && <option value="">Choose</option>}{planes.filter(p => p.id !== cast.other).map(p => <option key={p.id} value={p.id}>{p.name}{p.recorder ? " · recorder" : ""}</option>)}</select></label>
-                <label className="wide">Shot name<input value={draft.name} onChange={e => change({...draft, name: e.target.value})}/></label>              </div>
-            </details>
-            <div className="tune-actions"><button onClick={() => { const shot = shots.find(s => s.id === draft.id); if (shot) open({...shot}, false); else { setDraft(null); setDirty(false); } }}>Discard changes</button>{isSaved && <button className="danger" disabled={working} onClick={remove}><Trash/> Remove shot</button>}</div>
+            {!adjustable && !conflict && !video && <p className="hint">This camera shows the flight as it was: there is nothing to adjust.</p>}
+            {adjustable && <p className="hint">{movable && turnable(draft) ? "Drag the picture to turn this camera where it looks; the wheel over it zooms the lens." : movable ? "Drag the picture: sideways walks the camera round the aircraft, up and down changes its height; the wheel over it zooms the lens, with Shift it moves the camera nearer." : "The wheel over the picture zooms the lens."} The controls in its corners show each value: click one to set it exactly.{keyed && (draft.zoom === "hold" && draft.keys?.length === 1 ? " The tripod stands where it was at its keyframe: a change moves it there, and its lens keeps the aircraft this size." : draft.keys?.length ? " With keyframes, every change you make, whom it looks at too, is a keyframe at the playhead." : " Keyframe (K) keeps this framing at the playhead: set another further on, and the observer glides between them.")}{watching === "both" && " The observer opens its lens to hold you both; further off, it flies more of a line of its own."}</p>}
           </> : <p className="empty-small">Click a moment, or press New shot at the playhead. The cameras for that shot appear here.</p>}
         </div>
       </section>
@@ -837,7 +906,10 @@ export function App() {
         <div className="panel-heading"><h2>4 <span>The cut</span></h2><span className="heading-actions">{shots.length} shots<button className="danger small" disabled={working || !shots.length} onClick={() => setForgetting({ids: shots.map(s => s.id), label: "all"})} title="Remove every shot from the cut, and choose whether their videos go too"><Trash/> Clear</button></span></div>
         <div className="cut-list">{shots.map(s => <div key={s.id} className={`cut-row ${draft?.id === s.id ? "selected" : ""}`}>
           <input type="checkbox" aria-label={`Render ${s.name}`} checked={!skipped.has(s.id)} onChange={() => setSkipped(old => { const next = new Set(old); if (!next.delete(s.id)) next.add(s.id); return next; })}/>
-          <button onClick={() => choose(s)}><strong>{dirty && draft?.id === s.id && <span className="unsaved-dot" role="img" aria-label="Unsaved changes" title="Changed and not saved: Update shot keeps it"/>}{s.name}</strong><small>{formatTime(s.start)} — {formatTime(s.end)} · {camera(s)}</small>{problems[s.id] && <small className="problem">Cannot be filmed: open it for the reason</small>}</button>
+          {renaming === s.id ? <input className="retitle" autoFocus defaultValue={s.name} maxLength={100} spellCheck={false} aria-label={`New name for ${s.name}`}
+            onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") { e.currentTarget.dataset.cancel = "1"; e.currentTarget.blur(); } }}
+            onBlur={e => e.target.dataset.cancel ? setRenaming(null) : retitle(s, e.target.value)}/>
+          : <button onClick={e => { if (e.detail < 2) choose(s); }} onDoubleClick={() => setRenaming(s.id)} title="Double-click to rename"><strong>{dirty && draft?.id === s.id && <span className="unsaved-dot" role="img" aria-label="Unsaved changes" title="Changed and not saved: Update shot keeps it"/>}{retitled?.id === s.id ? retitled.name : s.name}</strong><small>{formatTime(s.start)} — {formatTime(s.end)} · {camera(s)}</small>{problems[s.id] && <small className="problem">Cannot be filmed: open it for the reason</small>}</button>}
           <button className="duplicate" disabled={working} onClick={() => duplicate(s)} aria-label={`Duplicate ${s.name}`} title="Duplicate this shot: the same stretch, camera and keyframes, to change"><Copy weight="bold"/></button>
           <button className="forget" disabled={working} onClick={() => setForgetting({ids: [s.id], label: s.name})} aria-label={`Remove ${s.name}`} title="Remove this shot from the cut"><X weight="bold"/></button>
         </div>)}

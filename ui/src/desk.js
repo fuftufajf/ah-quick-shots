@@ -240,6 +240,11 @@ export function zoomCamera(shot, closer) {
   const fov = shot.fov * (closer ? .9 : 1.1);
   return {...shot, fov: clamp(Math[closer ? "floor" : "ceil"](fov), 6, 140)};  // a whole degree at least, also on a long lens
 }
+// With Shift the wheel moves the camera itself nearer or further: the aircraft grows and the perspective deepens.
+export function dollyCamera(shot, closer) {
+  const distance = shot.distance * (closer ? .9 : 1.1);
+  return {...shot, distance: clamp(Math[closer ? "floor" : "ceil"](distance), 20, 10000)};
+}
 
 export function candidates(shot, cast) {
   return ANGLES.filter(a => a.rate !== false && (!a.pair || cast.other != null))

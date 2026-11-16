@@ -307,22 +307,27 @@ without a jerk. If the far one left, the camera flies on with the nearer one
 as it was. One absent for the whole shot is reported on that shot, which is
 then skipped; the rest of the plan keeps working.
 
-The sliders under the cameras (Around, Distance, Height, Lens, Roll) adjust the
-one selected. For the cameras that stand free of the airframe — the two
+The controls in the picture's corners (Around, Distance, Height, Turn, Tilt, Side
+top left; Lens and Roll top right; Looseness, Swing round, Ends at bottom left)
+adjust the one selected: each shows only on a camera it changes (Roll not in the
+cockpit, which the viewer keeps level), lights up while a drag or the wheel moves
+it, and opens a slider and a box to type in when clicked. They fade while the shot
+plays. For the cameras that stand free of the airframe — the two
 in-front ones, the observer and its close views, Behind you and the fly-bys —
 a drag on the picture does the same: sideways walks the camera round the
 aircraft, up and down changes its height; on a camera fastened to the airframe
 (cockpit, nose, belly, gear, and wing or shoulder when not locked on him) it
 turns where the camera looks (`turn` left, `tilt` up, in degrees). The wheel zooms the lens on any
 camera: the aircraft grows without the camera going nearer, which would distort
-it; with nothing to zoom, the wheel scrolls the page. A shot opened or changed shows as a still (the
+it; with Shift it moves a free-standing camera nearer or further instead; with
+nothing to zoom, the wheel scrolls the page. A shot opened or changed shows as a still (the
 clip action asked `bare`: its cameras and a still, no render). Play plays the
 shot (or its sequence) at once in the viewer's own window, with its sound and
 nothing rendered (the viewer's window must be on screen to be seen); Render
 and play renders it as a small clip and plays that on the page; a render
 after it waits at least 12 s, because playing just before a render thins its
-sound (measured with that wait: the same sound as a rested render, 2 of 2). Shot details holds exact times, the lead
-aircraft and the name.
+sound (measured with that wait: the same sound as a rested render, 2 of 2). The lead aircraft is chosen beside the
+opponent, above the cameras; a shot is renamed by a double-click in The cut.
 
 **The cut.** Saved shots, each with a tick box. The x beside a shot (where the
 pointer is) and Clear above the list take shots out of it; when videos of them
