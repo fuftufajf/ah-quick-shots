@@ -11,6 +11,10 @@ A fight filmed with it, on YouTube:
 
 [![109K-4 against La-7: two aircraft turning under the sun](https://img.youtube.com/vi/v4BFbKYKXig/maxresdefault.jpg)](https://www.youtube.com/watch?v=v4BFbKYKXig)
 
+How the cameras follow a fight, drawn from a real one, in 100 seconds:
+[how-it-works.mp4](https://ideanima.pl/ah-quick-shots/how-it-works.mp4). The
+tool's page: [ideanima.pl/ah-quick-shots](https://ideanima.pl/ah-quick-shots/).
+
 **Unofficial.** This tool is not made by, endorsed by or affiliated with
 HiTech Creations. It uses only the Film Viewer's documented local socket (the
 commands the viewer lists under `help`). It does not touch the game, and it
