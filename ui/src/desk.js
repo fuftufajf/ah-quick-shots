@@ -108,9 +108,31 @@ export function copyName(name, shots) {
   return next;
 }
 
+// A copy is named by its camera as it goes into the cut ("Kill: Bandit · guns · Tripod", not "(copy)"): a camera
+// already ending the name gives way to it, and a name taken gets a number.
+export function takeName(name, camera, shots) {
+  let base = name.replace(/ \(copy(?: \d+)?\)$/, "");
+  const end = [...ANGLES.map(a => a.label), "Pilot's view"].find(c => base.toLowerCase().endsWith(` · ${c.toLowerCase()}`));
+  if (end) base = base.slice(0, -(end.length + 3));
+  const taken = new Set(shots.map(s => s.name));
+  let next = `${base} · ${camera}`;
+  for (let n = 2; taken.has(next); n++) next = `${base} · ${camera} ${n}`;
+  return next;
+}
+// When a shot was made or changed (seconds since 1970): the time alone today, with the day before that.
+export function when(seconds, now = Date.now()) {
+  const at = new Date(seconds * 1000), time = at.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+  return at.toDateString() === new Date(now).toDateString() ? time : `${at.toLocaleDateString([], {day: "numeric", month: "short"})} ${time}`;
+}
+// The last video made of exactly these shots, which a render made again may take the place of.
+export function lastVideo(renders, ids) {
+  const want = [...ids].sort().join();
+  return (renders || []).filter(r => [...r.shots].sort().join() === want).at(-1) || null;
+}
+
 // What a preview clip shows: the stretch, the shot's camera (not its name) and the picture switches.
 export function clipKey(start, end, shot, flags) {
-  const {id, name, effects, ...camera} = shot || {};  // a preview clip has no effects: changing them renders none again
+  const {id, name, effects, created, modified, ...camera} = shot || {};  // a preview clip has no effects: changing them renders none again
   // Sorted: a shot read back from the plan lists the same fields in another order.
   return JSON.stringify([start, end, shot ? Object.keys(camera).sort().map(key => [key, camera[key]]) : null, flags]);
 }
@@ -239,6 +261,11 @@ export function dragCamera(shot, dx, dy, width) {
 export function zoomCamera(shot, closer) {
   const fov = shot.fov * (closer ? .9 : 1.1);
   return {...shot, fov: clamp(Math[closer ? "floor" : "ceil"](fov), 6, 140)};  // a whole degree at least, also on a long lens
+}
+// With Shift the wheel moves the camera itself nearer or further: the aircraft grows and the perspective deepens.
+export function dollyCamera(shot, closer) {
+  const distance = shot.distance * (closer ? .9 : 1.1);
+  return {...shot, distance: clamp(Math[closer ? "floor" : "ceil"](distance), 20, 10000)};
 }
 
 export function candidates(shot, cast) {

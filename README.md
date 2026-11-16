@@ -87,10 +87,12 @@ marked, and goes to the Recycle Bin when you open the next.
 2. **Picture** — Play (Space) plays the shot in Film Viewer's own window,
    nothing rendered. Render and play makes a clip on the page. Set in and Set
    out (I, O) mark the shot at the playhead; drag its ends to trim. Drag the
-   picture to move the camera, turn the wheel to zoom. Names shows the pilots'
-   names, in renders too.
-3. **Cameras** — one click shows the shot through that camera; sliders adjust
-   it; Rate cameras measures them all. Add to cut keeps the shot.
+   picture to move the camera, turn the wheel to zoom, Shift and the wheel to
+   bring the camera nearer. The camera's values sit in the picture's corners:
+   click one to set it exactly. Names shows the pilots' names, in renders too.
+3. **Cameras** — Lead and Opponent say whom the shot films; one click shows the
+   shot through that camera; Rate cameras measures them all. Add to cut keeps
+   the shot. Double-click a shot in The cut to rename it.
    - **Observer** flies along like a third aircraft. To direct it, set the
      picture, press Keyframe (K), move the playhead and set it again: it
      glides between the keyframes. Looks at (Both, You, Opponent) is kept in
@@ -108,7 +110,10 @@ marked, and goes to the Recycle Bin when you open the next.
    and looks like film. Data overlay adds, beside each video, a transparent
    film of your speed, height, climb and G and the range to your opponent, to
    lay over it in an editor (16:9 and 9:16). Add my kills makes four shots for every kill; Take-offs
-   & landings finds yours. Videos folder opens the finished videos.
+   & landings finds yours. Videos folder opens the finished videos. Shots
+   stand in film order, each with when it was made and last changed; a copy
+   added to the cut is named by its camera. A shot rendered before asks whether
+   the new video goes beside the old one or overwrites it.
 
 **Assembly**, the second view: your rendered shots in a row on a timeline.
 Drag a clip to move it, drag its ends to trim, cut it at the playhead (S),
