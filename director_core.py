@@ -995,7 +995,11 @@ class Desk:
             # From the first time to the last, so inside the kept tracks (beyond them the viewer would read the film).
             # The step is rounded down: the last step must not fall past the end and be left out.
             first, last = round(part[0], 8), round(part[-1], 8)
-            step = math.floor((last - first) / (len(part) - 1) * 1e10) / 1e10 if len(part) > 1 else .15
+            step = math.floor((last - first) / (len(part) - 1) * 1e10) / 1e10 if len(part) > 1 else .1
+            # The viewer projects a tenth of a second at least ("the project must end at least 0.1 s after it starts"):
+            # a few last frames are begun whole steps earlier, though not before the film's start.
+            # shortcut: frames within a tenth of a second of the film's start, asked alone, are refused; begin them later if a shot ever is that short there
+            first -= min(max(0, math.ceil((.1 - (last - first)) / step - 1e-9)), int(first / step)) * step
             self.command(f"project {first:.8f} {last:.8f} {step:.10f} {camfile.as_posix()} {found.as_posix()} ids {shot['hero']}")
             told = {}  # camera number: [(time, eye)] in time order
             for row in (line.split() for line in found.read_text().splitlines()):

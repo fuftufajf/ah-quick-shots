@@ -791,6 +791,10 @@ class DeskTests(unittest.TestCase):
         times = [5 + n / 100 for n in range(70)] + [5.999]
         eyes = self.desk._eyes(self.desk._camera(moving), times, moving)
         self.assertEqual([len(row[3]) for row in projects], [60, 10, 1])
+        # The viewer projects a tenth of a second at least: the few last frames are begun whole steps earlier.
+        self.assertTrue(all(end - begin >= .1 - 1e-9 for begin, end, *_rest in projects))
+        self.assertEqual([round(v, 4) for v in projects[1][:3]], [5.59, 5.69, .01])
+        self.assertEqual([round(v, 4) for v in projects[2][:3]], [5.899, 5.999, .1])
         self.assertTrue(len(eyes) == 71 and all(eye == [0, 500, -400, 0, 0, 0, 1.2] for eye in eyes))
         self.assertTrue(all("Dialogue:" in script for script in scripts) and len(scripts) == 2)
         self.assertEqual(list(self.desk.media_root.glob("*.ass")), [])
