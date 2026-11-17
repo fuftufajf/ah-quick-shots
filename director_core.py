@@ -76,6 +76,11 @@ def to_recycle_bin(paths):
         raise OSError("Windows did not move the files to the Recycle Bin")
 
 
+def held(lines):
+    """The aircraft a shot's `cam` lines name (`mount <id>`, `at <id>`)."""
+    return {int(ident) for line in lines for ident in re.findall(r"\b(?:mount|at) (\d+)", line)}
+
+
 class Conflict(ValueError):
     pass
 
@@ -900,13 +905,23 @@ class Desk:
                 del self.compiled[next(iter(self.compiled))]
         return self.compiled[key]
 
+    def _present(self, shot, ids):
+        """A moment of a shot's stretch at which all these aircraft are in the film, from its tracks: a tenth of a
+        second after the first such snapshot (or the stretch's end), so that one who joins just then is there."""
+        tracks = self._tracks(shot["start"], shot["end"])
+        found = next((t for t in sorted(tracks) if ids <= set(tracks[t])), None)
+        if found is None:
+            raise ValueError(f"{shot['name']}: aircraft {', '.join(map(str, sorted(ids)))} are not in the film together during "
+                             "this shot. Move the shot or choose another aircraft.")
+        return min(found + .1, shot["end"])
+
     def _apply(self, project, raw=None, only=None):
         """Send the viewer its cameras: the plan (see _plan), or `only` these shots for one video of a cut."""
         shots, token, draft = self._plan(project, raw or {})
         if only is not None:
             shots, token = only, ("cut", project["revision"], *(s["id"] for s in only))
         if self.applied != token:
-            commands, problems = [], {}
+            commands, problems, sent = [], {}, []
             for shot in shots:
                 try:
                     lines = self._camera(shot)
@@ -915,9 +930,23 @@ class Desk:
                     problems[shot["id"]] = str(error)
                     continue
                 commands.extend(lines)
+                sent.append((shot, lines))
             self.progress("Applying camera plan")
             self.applied = None
-            self.commands(["cams clear", *commands, "cams on", "cams save " + (self.root / "current.ahs").as_posix()])
+            save = "cams save " + (self.root / "current.ahs").as_posix()
+            if only is not None and any(held(lines) - {plane["id"] for plane in self.data["planes"]} for _, lines in sent):
+                # Film Viewer takes `mount <id>` and `at <id>` only for an aircraft in the film where it stands: just
+                # opened, at 1 s, it refused a shot's opponent who joined later, and the render failed (17 Nov 2026).
+                # So a video's shots go one by one, each after a rough seek to the first moment of its stretch with all
+                # of its aircraft in the film. Where they are all there already, nothing changes and nothing is sought.
+                self.command("cams clear")
+                for shot, lines in sent:
+                    if held(lines) - {plane["id"] for plane in self.data["planes"]}:
+                        self._seek(self._present(shot, held(lines)), rough=True)
+                    self.commands(lines)
+                self.commands(["cams on", save])
+            else:
+                self.commands(["cams clear", *commands, "cams on", save])
             self.applied, self.built = token, problems
         if only is not None:
             return

@@ -93,7 +93,9 @@ class DeskTests(unittest.TestCase):
         no_ffmpeg = patch("director_core.shutil.which", return_value=None)  # the fakes write no real video
         no_ffmpeg.start()
         self.addCleanup(no_ffmpeg.stop)
-        self.desk.data.update(project=copy.deepcopy(PROJECT), connected=True, now=10)
+        # The viewer stands where both of the test film's aircraft are (as `planes long` told the last seek).
+        self.desk.data.update(project=copy.deepcopy(PROJECT), connected=True, now=10,
+                              planes=[{"id": 19, "name": "Pilot"}, {"id": 10, "name": "Other"}])
 
     def tearDown(self):
         self.viewer.release.set()
@@ -821,6 +823,45 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(list(self.desk.media_root.glob("*.ass")), [])  # the second video's script went too
         with self.assertRaises(ValueError):  # the script grows with the video: a long one is asked for shot by shot
             self.desk._trails(PROJECT, [{**SHOT, "start": 0, "end": 121}], 960, 540, 30, {}, trails.STYLE)
+
+    def test_a_render_sends_each_camera_where_its_aircraft_are_in_the_film(self):
+        # Film Viewer refuses `mount <id>` and `at <id>` for an aircraft not in the film where it stands: just opened,
+        # at 1 s, the opponent who joined later was refused and the render failed (17 Nov 2026). Here he joins at 4 s.
+        commands, viewer = [], {"now": 1.0}
+        def native(command, progress):
+            commands.append(command)
+            here = {19} | ({10} if viewer["now"] >= 4 else set())
+            if command.startswith("seek "):
+                viewer["now"] = float(command.split()[1])
+                return [f"at {viewer['now']} in 0.1 s"]
+            if command.startswith("planes"):
+                return [f'plane {ident} "P{ident}" 0 0 0 0 0 0' for ident in sorted(here)]
+            if command.startswith("tracks "):
+                start, end, step = map(float, command.split()[1:4])
+                times = [start + i * step for i in range(round((end - start) / step) + 1)]
+                return [f"track {t:.4f} {ident} 0 500 {300 * t:.1f} 0 0 0" for t in times for ident in (19, 10) if ident == 19 or t >= 4]
+            named = {int(ident) for ident in command.split()[4:] if ident.isdigit()} & {19, 10}  # mount 19 ... at 10
+            if command.startswith("cam ") and named - here:
+                raise ValueError(f"at {min(named - here)}: no aircraft with that id in this film")
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"film")
+            return []
+        self.desk.viewer.command = native
+        self.desk.data.update(now=1, planes=[{"id": 19, "name": "Pilot"}])
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "kind": "shoulder", "start": 3, "end": 6}]})
+        self.run_action({"action": "export_cut", "quality": "draft"})
+        # A rough seek to the first moment with both of them in the film (and a tenth more), then its camera.
+        first = next(i for i, c in enumerate(commands) if c.startswith("cam "))
+        seek = commands[first - 2].split()
+        self.assertEqual((seek[0], seek[2], commands[first - 1]), ("seek", "rough", "planes long"))
+        self.assertTrue(4 < float(seek[1]) <= 4.6)
+        self.assertEqual(len([c for c in commands if c.startswith("video ")]), 1)
+        # Standing where they both are, nothing is sought.
+        del commands[:]
+        self.desk.save({"expected_revision": 2, "shots": [{**SHOT, "kind": "shoulder", "start": 3, "end": 6, "fov": 40}]})
+        self.run_action({"action": "export_cut", "quality": "draft"})
+        self.assertFalse(any(c.startswith("seek ") for c in commands))
+        self.assertEqual(len([c for c in commands if c.startswith("video ")]), 1)
 
     def test_a_full_disk_is_not_a_lost_viewer_and_the_error_is_written_down(self):
         def native(command, progress):

@@ -944,6 +944,17 @@ works round what is still there; Patch 3 made two workarounds unnecessary.
   from 96 s before it, 3 of 3 alternating), with the same first frame (the
   opponent solid; to the pixel from near, 45 dB PSNR from far) and the same
   first second of sound. Not tried: 4K, a film by day, the `weapon` camera.
+- **Cameras name aircraft that are there now.** The viewer takes `mount <id>`
+  and `at <id>` only for an aircraft in the film where it stands (`planes`
+  lists them). A render sends its cameras where the viewer stands, and that was
+  so before the seek before a render was dropped too: just opened, at 1 s, an
+  over-the-shoulder shot of 714.5 to 722.5 s on `152stall` was refused ("at 72:
+  no aircraft with that id in this film"), and after a seek to 716 s it
+  rendered (17 Nov 2026). So when an aircraft a video's cameras name is not in
+  the last `planes`, the desk sends that video's shots one by one, each after a
+  rough seek to a tenth of a second past the first moment of its stretch with
+  all of its aircraft in the film (from the shot's tracks). With them all
+  there, nothing is sought.
 - **Where a seek lands.** Up to 0.08 s past the time asked for, while `time`
   answers in tenths of a second.
 - **The end of a film.** `open` tells the length rounded to 0.1 s, and `tracks`
