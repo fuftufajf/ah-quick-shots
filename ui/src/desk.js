@@ -468,7 +468,8 @@ export function cutCost(rows, quality, fps, ffmpeg, pace = 1) {
 }
 
 // What a second of film costs, in seconds, on the PC these were measured on (docs/how-it-works.md, "What a render
-// costs"): `viewer` Film Viewer's own render, `fast` one of the four passes of motion blur (at 120 frames a second),
+// costs"): `viewer` Film Viewer's own render, `fast` one of the `passes` of motion blur (four at 120 frames a second;
+// at 4K eight at 60, since the viewer crashed asked for 4K at 120),
 // `plain` ffmpeg re-encoding a video, then what each effect adds to ffmpeg's work; `lasting` is what a
 // half-minute trail adds over a short one. Timed on 17 Nov 2026 (Film Viewer 3.07 Patch 3): the viewer at all three
 // sizes, at 60 frames a second (it renders a 30 fps video at 60 too) and at 120, from renders of two lengths, so
@@ -477,25 +478,25 @@ export function cutCost(rows, quality, fps, ffmpeg, pace = 1) {
 // times 1080p's ffmpeg). The desk's own pace (below) corrects the sum after the first render at each size.
 // `rate` is the frame rate they were timed at.
 const COSTS = {
-  draft: {rate: 30, viewer: .8, fast: 1.6, plain: .07, blend: .1, look: .07, haze: .05, trails: .16, lasting: .29},
-  final: {rate: 60, viewer: .87, fast: 1.64, plain: .22, blend: .4, look: .47, haze: .34, trails: .75, lasting: .8},
-  "4k": {rate: 60, viewer: 1.5, fast: 2.9, plain: .85, blend: 1.6, look: 1.7, haze: 1.3, trails: 2.2, lasting: 1.7},
+  draft: {rate: 30, viewer: .8, fast: 1.6, passes: 4, plain: .07, blend: .1, look: .07, haze: .05, trails: .16, lasting: .29},
+  final: {rate: 60, viewer: .87, fast: 1.64, passes: 4, plain: .22, blend: .4, look: .47, haze: .34, trails: .75, lasting: .8},
+  "4k": {rate: 60, viewer: 1.5, fast: 1.5, passes: 8, plain: .85, blend: 1.6, look: 1.7, haze: 1.3, trails: 2.2, lasting: 1.7},
 };
 // What Film Viewer takes for each video before its first frame, whatever the video's size, length and frame rate: it
-// plays the five seconds before the start. Motion blur's other three passes take it too.
+// plays the five seconds before the start. Motion blur's other passes take it too.
 const PAUSE = 5.5;
 
 // What a render takes, in seconds, before it is asked for: `render` the plain render, then what each effect would
 // add (whether it is ticked or not: the page shows the price of each), and `total` for those that are ticked.
 // `pace` is this PC against the measured one, as the desk has learned it from its own renders (state.pace).
 // At another frame rate than timed, ffmpeg's work and the trails' (a camera asked for every frame) are taken to
-// follow the frames, and the viewer's own render and motion blur's four passes (and their blending) to stay as they were.
+// follow the frames, and the viewer's own render and motion blur's passes (and their blending) to stay as they were.
 // shortcut: worked out, not timed; time renders at 30 fps and set their numbers apart if the estimates stay off
 export function renderCost({film, videos, quality, fps = 30, blur, look, haze, trails, trailSeconds = 2.5}, pace = 1) {
   const cost = COSTS[quality] || COSTS.final, rendered = film, frames = fps / cost.rate;
   const parts = {
     render: (rendered * (cost.viewer + cost.plain * frames) + PAUSE * videos) * pace,
-    blur: (rendered * (4 * cost.fast - cost.viewer + cost.blend) + 3 * PAUSE * videos) * pace,
+    blur: (rendered * (cost.passes * cost.fast - cost.viewer + cost.blend) + (cost.passes - 1) * PAUSE * videos) * pace,
     look: film * cost.look * frames * pace,
     haze: film * cost.haze * frames * pace,
     trails: film * (cost.trails + cost.lasting * Math.min(2, Math.max(0, (trailSeconds - 2.5) / 27.5))) * frames * pace,

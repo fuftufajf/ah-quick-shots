@@ -15,6 +15,19 @@ import threading
 # slow and beautiful. ffmpeg's motion interpolation took 130 times the film's length.
 FASTEST = 120
 PASSES = 4
+# Not at 4K: 4K at 120 frames a second is more than the H.264 encoder the viewer writes with takes (NVIDIA's, through
+# Media Foundation, was loaded for 1080p at 60 and 120 and 4K at 60, and wrote levels 4.2, 5.1 and 5.2). The viewer
+# then turned to the PC's other one, Intel Quick Sync's (mfx_mft_h264ve_32.dll of Oct 2024), and crashed in it at the
+# video's first frame: twice on 17 Nov 2026 with an 826 s film open, the second time on a viewer just started (the
+# film filled the viewer's lower 2 GB of addresses, and the fault read a stack address with its top bit gone); the
+# crash of 16 Nov was the same fault. With a film of 446 s open the same video was written. So a picture past LEVEL
+# is rendered at half the rate in twice the passes: the same frames at the same instants.
+LEVEL = 3840 * 2160 * 60  # pixels a second: what was seen written
+
+
+def fastest(width, height):
+    """The frame rate the viewer renders the passes of a blurred video of this size at (see LEVEL)."""
+    return FASTEST if width * height * FASTEST <= LEVEL else FASTEST // 2
 # The film look: the colour of a DaVinci Resolve grade (Film Look Creator), fitted as a LUT to stills of the same
 # footage before and after it, then bloom, a red halation round highlights, a vignette and grain. As faint as the grade
 # (its colour mixed in at half, corners 10% darker, grain about 1/255) it could not be seen, so all are stronger: the
@@ -95,7 +108,7 @@ def trim(source, target, filters="", fps=None):
 
 def blend(sources, target, fps, filters=""):
     """The passes of a blurred video (see PASSES), as `target` at `fps` with the first pass's sound: as `trim`."""
-    rate = FASTEST * len(sources)
+    rate = FASTEST * PASSES  # the instants the passes hold between them, however many passes they came in (see LEVEL)
     each = rate // fps  # woven frames in one frame's time: all of them make it
     weave = "".join(f"[{n}:v]setpts=PTS+{n}/{rate}/TB[w{n}];" for n in range(len(sources)))
     graph = (weave + "".join(f"[w{n}]" for n in range(len(sources))) + f"interleave=nb_inputs={len(sources)},"

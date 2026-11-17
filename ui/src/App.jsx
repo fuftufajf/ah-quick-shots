@@ -35,7 +35,7 @@ const CORNERS = [["place", "Where the camera stands and looks"], ["lens", "The l
 const TRAILS = {lead: "#e8f4ff", opponent: "#ff9e6b", seconds: 2.5, tail: null, exact: false};
 const TAIL = "#b9ff9e";
 // The effects a shot has until others are set: motion blur, since 30 frames a second without it look jerky (and at
-// 30 it is slower, the viewer rendering four passes). A shot saved before shots kept their effects has these too, whatever is set since.
+// 30 it is slower, the viewer rendering four passes, eight at 4K). A shot saved before shots kept their effects has these too, whatever is set since.
 const FIRST = {blur: true};
 const CHUNK = 10;  // seconds of film per preview when no shot is selected
 const NEAR = 3000;  // feet: an aircraft that never comes this close is a dot, not someone to film

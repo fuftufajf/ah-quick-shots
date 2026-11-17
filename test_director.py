@@ -517,9 +517,10 @@ class DeskTests(unittest.TestCase):
             self.run_action({"action": "export_cut", "quality": "4k", "effects": {"blur": True, "look": True}})
         videos = [c.split() for c in commands if c.startswith("video ")]
         self.assertEqual([(v[1], v[2], v[4:]) for v in videos[:4]], [(f"{3 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
-        # At 30 fps, the default, the same four passes: sixteen frames a frame.
-        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[4:]], [(f"{3 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["3840", "2160", "120"]) for n in range(4)])
-        self.assertEqual(blends, [([True] * 4, 60, ""), ([True] * 4, 30, finishing.style(3840, 2160, True, True))])
+        # At 30 fps, the default, sixteen frames a frame. At 4K they come as eight passes at 60: asked for 4K at
+        # 120, the viewer crashed in its encoder.
+        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[4:]], [(f"{3 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["3840", "2160", "60"]) for n in range(8)])
+        self.assertEqual(blends, [([True] * 4, 60, ""), ([True] * 8, 30, finishing.style(3840, 2160, True, True))])
 
     def test_the_film_look_goes_on_in_ffmpeg(self):
         trims = []
@@ -605,6 +606,15 @@ class DeskTests(unittest.TestCase):
         # At 30 fps the four passes are blended sixteen frames a frame.
         for part in parts:
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=120:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
+                            "-c:v", "libx264", "-c:a", "aac", str(part)], check=True)
+        finishing.blend(parts, target, 30)
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
+                                "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.split()
+        self.assertEqual(probe[0], "video,30/1,45")
+        # And so are eight passes at 60, as 4K is rendered.
+        parts = [Path(self.temp.name) / f"slow{n}.mp4" for n in range(8)]
+        for part in parts:
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=60:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
                             "-c:v", "libx264", "-c:a", "aac", str(part)], check=True)
         finishing.blend(parts, target, 30)
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",

@@ -388,6 +388,18 @@ beautiful. ffmpeg's motion interpolation took 130 times the film's length. The s
 the first pass's. Measured on a 7 s shot at 1080p60: 67 s with blur, 17 s
 without.
 
+At 4K the same frames come as eight passes at 60 fps. Asked for 4K at 120,
+Film Viewer crashed at the video's first frame (17 Nov 2026, twice with an
+826 s film open, the second time on a viewer just started; the crash of the
+day before was the same fault). It writes its videos with the PC's H.264
+encoder through Media Foundation: NVIDIA's was loaded for 1080p at 60 and 120
+and for 4K at 60 (levels 4.2, 5.1 and 5.2), and for 4K at 120 the viewer turned
+to the other one on that PC, Intel Quick Sync's (driver of Oct 2024), and
+crashed inside it reading a stack address with its top bit gone: the long film
+had filled the viewer's lower 2 GB of addresses (it is a 32-bit program), so
+the new thread's stack lay above them. With a 446 s film open the same video
+was written.
+
 Film look (experimental) is applied by ffmpeg in the same step (`look()` in director_core.py).
 Its colour is `looks/film.cube`, a 17-point LUT fitted to three stills of this
 footage before and after a DaVinci Resolve grade (Film Look Creator, Cinematic):
@@ -483,16 +495,16 @@ so without what a video takes before its first frame):
 | --- | --- | --- | --- |
 | Film Viewer before a video's first frame, in seconds a video (and a pass of motion blur), whatever its length and frame rate | 5.1 | 5.6 | 5.0 to 6.1 |
 | Film Viewer's own render (at 60 frames a second, a 30 fps video too) | 0.80 | 0.87 | 1.49 |
-| one of motion blur's four passes (120 fps) | 1.61 | 1.64 | 2.90 |
+| one of motion blur's passes (four at 120 fps; at 4K eight at 60) | 1.61 | 1.64 | 1.49 |
 | ffmpeg re-encoding (a 30 fps video keeps every second frame) | 0.07 | 0.22 | 0.85 |
-| ffmpeg blending the four passes | not timed | 0.4 | not timed: 1.6 assumed |
+| ffmpeg blending the passes | not timed | 0.4 | not timed: 1.6 assumed |
 | film look (1.0 and 4.8 until its soft parts were made small) | not timed | + 0.47 | + 1.7 |
 | haze (1.1 and 4.0 until its masks were one plane) | not timed | + 0.34 | + 1.3 |
 | trails, short: ffmpeg 0.5 (0.9 until the glow was blurred small), the script 0.2 | not timed | + 0.75 | not timed |
 | trails, half a minute long: ffmpeg 0.8, the script 0.7 | not timed | + 0.8 more | not timed |
 
 At 30 fps the page takes ffmpeg's share and the trails' as half of these, and
-the viewer's own render and motion blur (the same four passes) as at 60: worked
+the viewer's own render and motion blur (the same passes) as at 60: worked
 out, not timed. Timed on 15 s of film at 1080p30 with motion blur: with one pass
 46 s in all (about 5 s of it waiting for the last clip's sound), a third more
 than said; with two passes 74 s, 6% more, each pass of the viewer about 1.9 s
@@ -506,7 +518,7 @@ The effects add up nearly as a sum (look, haze and lasting trails together:
 picture: with its far-off points drawn, two aircraft circling with 30 s trails
 took 34 s of ffmpeg a second of film instead of 1.2 (a 58 s shot with every
 effect on: 45 minutes against the 19 the page had said). Motion blur is the dearest because the viewer renders the
-film four times, and each pass starts as a video does; the trails' share is
+film four times (eight at 4K), and each pass starts as a video does; the trails' share is
 ffmpeg's glow more than libass drawing, and the viewer tells where its camera
 is at every frame in well under a second for a whole shot. Where the page has
 no timing (the draft's ffmpeg, the trails at 4K) it works one out from the

@@ -16,7 +16,7 @@ import traceback
 import uuid
 
 import finishing
-from finishing import FASTEST, PASSES, Cancelled, assemble, blend, peaks, style, trim
+from finishing import FASTEST, PASSES, Cancelled, assemble, blend, fastest, peaks, style, trim
 from flight_data import derive, pair, read_kept
 import overlay
 import trails
@@ -565,7 +565,7 @@ class Desk:
 
     def _render(self, start, end, path, size, label="", blur=None, filters=""):
         """One video of a stretch, with the film's sound. `blur`: the frame rate to blend the passes of a `size`
-        at FASTEST down to (see PASSES). `filters`: the looks to give it (see style). Cancel (see stop) is heard before
+        at their own rate down to (see PASSES, fastest). `filters`: the looks to give it (see style). Cancel (see stop) is heard before
         each pass of the viewer and stops ffmpeg at once; what was rendered of the video is thrown away."""
         self._go_on()
         # No seek first: `video` plays the 5 s before its start itself, and leaves the film where it was. A seek before
@@ -582,7 +582,8 @@ class Desk:
         if int(fps) < 50 and not blur:
             size = f"{width} {height} {2 * int(fps)}"
         whole = path.with_name(path.stem + "-raw" + path.suffix) if blur or filters or halve else path
-        parts = [whole.with_name(f"{whole.stem}{n}{whole.suffix}") for n in range(PASSES)] if blur else [whole]
+        # A blurred one's `size` holds its passes' rate: FASTEST, or half of it in twice the passes (see fastest).
+        parts = [whole.with_name(f"{whole.stem}{n}{whole.suffix}") for n in range(PASSES * FASTEST // int(fps))] if blur else [whole]
         # The viewer answers a render only when it is done (measured: 1.1 to 1.7 times the stretch at 1080p, 4K not
         # timed), so it may take twenty times the stretch before the desk gives it up.
         self.viewer.patience = max(Viewer.patience, 20 * (end - start))
@@ -591,7 +592,7 @@ class Desk:
                 if n:
                     self._go_on()
                     self._stage(f"{label}: motion blur pass {n + 1} of {len(parts)}")
-                shift = n / FASTEST / len(parts)
+                shift = n / FASTEST / PASSES
                 self.command(f"video {start + shift:.8f} {end + shift:.8f} {part.as_posix()} {size}")
             self._go_on()
         except Cancelled:
@@ -1245,7 +1246,7 @@ class Desk:
         # ffmpeg then does to it, and before them the trails' cameras.
         with self.lock:
             self.data["job"].update(expect=expect and round(expect, 1), video=1, videos=len(rows), steps=sum(
-                (PASSES if blur else 1) + (ffmpeg and bool(blur or filters or drawn or fps < 50)) + bool(drawn)
+                (PASSES * FASTEST // fastest(width, height) if blur else 1) + (ffmpeg and bool(blur or filters or drawn or fps < 50)) + bool(drawn)
                 for row, (blur, filters, drawn) in zip(rows, made)))
         mark = self.data["job"]["clock"]
         scripts = []
@@ -1268,7 +1269,7 @@ class Desk:
                 self._cut(project, row)
                 path = self.media_root / (uuid.uuid4().hex + ".mp4")
                 drawn = trails.filters(script, height) if script else ""
-                self._render(row[0]["start"], row[-1]["end"], path, f"{width} {height} {FASTEST if blur else fps}",
+                self._render(row[0]["start"], row[-1]["end"], path, f"{width} {height} {fastest(width, height) if blur else fps}",
                              f"Rendering {len(row)} shot{'s' * (len(row) > 1)} at {size}" + (" with motion blur" if blur else "")
                              + (f", video {n} of {len(rows)}" if len(rows) > 1 else ""), blur,
                              ",".join(f for f in (drawn, filters) if f))
