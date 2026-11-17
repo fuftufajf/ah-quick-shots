@@ -396,7 +396,12 @@ from 7.5-8.4 to 4.2-5.8 (of 255); the rest is the grade's haze on the horizon,
 which follows depth, not colour. That grade mixes its colour in at half and
 could hardly be seen, so the LUT holds the whole of it, and the bloom, the red
 halation round highlights, the vignette (corners about 20% darker) and the grain
-are stronger than the grade's; all are sized to the picture's height. The same
+are stronger than the grade's; all are sized to the picture's height. The
+bloom and the halation are blurred at a quarter of the picture's size and the
+vignette is made on a white picture an eighth of it and multiplied in: all
+three are soft, and blurred and drawn at full size they were most of the
+look's time (at 1080p60 1.19 s a second of film, now 0.47; the two ways'
+pictures are 49 dB apart, PSNR without the grain: measured 17 Nov 2026). The same
 7 s shot: 82 s with the look and motion blur, a mean change of 6.6 of 255 from
 the plain render.
 
@@ -410,8 +415,12 @@ are present the picture goes towards a grey-blue that the film look turns into
 the grade's mist. Dark things, such as a canopy frame, keep clear. On the
 grade's stills the far ground and the sky just above it misted much as in
 Resolve; an aircraft against the sky and clouds stayed as they were. An aircraft
-in front of the horizon is misted with it. Haze and film look on 5 s of 4K:
-53 s.
+in front of the horizon is misted with it. Sky and ground are worked out once
+a pixel, as two colours of one small picture, and the masks stay one plane
+until they are laid on (worked out for all three colours, with the haze's
+colour drawn as a box over a whole picture, it took 1.12 s a second of film at
+1080p60, now 0.34, the picture the same: 84 dB). Haze and film look on 5 s of
+4K took 53 s before that.
 
 Trails (experimental, `trails.py`) draws two soft lines of vapour from the
 wingtips of each shot's aircraft: the lead aircraft in one colour, his opponent
@@ -466,19 +475,21 @@ file ffmpeg writes with `-progress`); the viewer says nothing of its own
 render, so that step's share of the bar pulses. The bar is never full while
 work goes on. Cancel, large under it, stops ffmpeg at once and the render
 after the pass Film Viewer is rendering, which only the viewer's own window can
-stop at once; the wait says so. Each video's record keeps how long it took (`took`, seconds). Seconds for one second of film, measured on one PC (a 7 s pair
-shot of film13):
+stop at once; the wait says so. Each video's record keeps how long it took (`took`, seconds). Seconds for one second of film, measured on one PC
+(17 Nov 2026, Film Viewer 3.07 Patch 3; the viewer from renders of two lengths,
+so without what a video takes before its first frame):
 
-| | 1080p60 | 4K |
-| --- | --- | --- |
-| Film Viewer's own render | 1.4 | not timed: 2.9 assumed |
-| one of motion blur's four passes (120 fps) | 1.7 | not timed: 3.4 assumed |
-| ffmpeg re-encoding (a 30 fps video keeps every second frame; timed as the lead-in cut before Patch 3) | 0.22 | 0.85 |
-| ffmpeg blending the four passes | 0.4 | not timed: 1.6 assumed |
-| film look | + 1.0 | + 4.8 |
-| haze | + 1.1 | + 4.0 |
-| trails, short (ffmpeg 3.1, the script 0.1) | + 3.2 | + 13.2 |
-| trails, half a minute long | + 1.0 more | + 6.0 more |
+| | 960×540 | 1080p60 | 4K |
+| --- | --- | --- | --- |
+| Film Viewer before a video's first frame, in seconds a video (and a pass of motion blur), whatever its length and frame rate | 5.1 | 5.6 | 5.0 to 6.1 |
+| Film Viewer's own render (at 60 frames a second, a 30 fps video too) | 0.80 | 0.87 | 1.49 |
+| one of motion blur's four passes (120 fps) | 1.61 | 1.64 | 2.90 |
+| ffmpeg re-encoding (a 30 fps video keeps every second frame) | 0.07 | 0.22 | 0.85 |
+| ffmpeg blending the four passes | not timed | 0.4 | not timed: 1.6 assumed |
+| film look (1.0 and 4.8 until its soft parts were made small) | not timed | + 0.47 | + 1.7 |
+| haze (1.1 and 4.0 until its masks were one plane) | not timed | + 0.34 | + 1.3 |
+| trails, short: ffmpeg 0.5 (0.9 until the glow was blurred small), the script 0.2 | not timed | + 0.75 | not timed |
+| trails, half a minute long: ffmpeg 0.8, the script 0.7 | not timed | + 0.8 more | not timed |
 
 At 30 fps the page takes ffmpeg's share and the trails' as half of these, and
 the viewer's own render and motion blur (the same four passes) as at 60: worked
@@ -495,15 +506,15 @@ The effects add up nearly as a sum (look, haze and lasting trails together:
 picture: with its far-off points drawn, two aircraft circling with 30 s trails
 took 34 s of ffmpeg a second of film instead of 1.2 (a 58 s shot with every
 effect on: 45 minutes against the 19 the page had said). Motion blur is the dearest because the viewer renders the
-film four times; the trails' share is libass drawing and ffmpeg's glow, and
-what the viewer takes to tell where its camera is at every frame has not been
-timed apart (1.5 is assumed). A draft is taken as a sixth of 1080p's ffmpeg
-work, the viewer at about real time. Each video is taken to add about two
-seconds before its first frame; measured since (17 Nov 2026, 1080p, 2 s and
-12 s of film): Film Viewer takes about 5.6 s a `video` whatever its length and
-frame rate, then 0.87 s a second of film at 60 fps and 1.64 at 120, so the
-table above, timed on 7 s of film, holds some of that start. Another PC is faster or slower, so the desk
-keeps a pace for each size (`.quickshots/pace.json`, `state.pace`): a render
+film four times, and each pass starts as a video does; the trails' share is
+ffmpeg's glow more than libass drawing, and the viewer tells where its camera
+is at every frame in well under a second for a whole shot. Where the page has
+no timing (the draft's ffmpeg, the trails at 4K) it works one out from the
+picture's size. The viewer draws a frame of 960×540 as fast as one of 1080p,
+and at 30 frames a second it took 0.43 s a second of film at 1080p, half of
+60's: but then the recording pilot's aircraft hops (see below), so nothing is
+rendered under 50. Another PC is faster or slower, so the desk
+keeps a pace for each size (`.quickshots/pace-2.json`, `state.pace`): a render
 that took `r` times its estimate moves the pace halfway there, and the page
 multiplies its next estimates by it. Until a size has been rendered once, the
 page says the estimate was measured on another PC.

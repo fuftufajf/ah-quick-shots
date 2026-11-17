@@ -49,6 +49,7 @@ FINE = .02  # the step aircraft paths are read at (see Desk._tracks)
 # with the aircraft in steps. Ten a second make the steps a fifth as large and three frames apart. Telling the viewer
 # 46 camera lines took under 0.2 s.
 POINTS = 10
+PACE = "pace-2.json"  # where this PC's pace is kept (Desk._paced). The 2: the page's estimates were timed anew on 17 Nov 2026, and a pace learned against the old ones would bend them
 CAMERAS = 13  # raise when a camera's maths or the way a clip is rendered change: a kept clip made the old way must not pass for a new one
 
 
@@ -154,7 +155,7 @@ class Desk:
                      "now": 0, "icons": True, "problems": {}, "nearby": None, "airfield": None, "flight": None,
                      "preview": None, "proposals": [], "job": None, "videos": str(self.videos), "renders": [],
                      "ffmpeg": bool(shutil.which("ffmpeg")), "overlays": None, "assembly": None, "assembling": None,
-                     "pace": json.loads((self.root / "pace.json").read_text(encoding="utf-8")) if (self.root / "pace.json").exists() else {}}
+                     "pace": json.loads((self.root / PACE).read_text(encoding="utf-8")) if (self.root / PACE).exists() else {}}
 
     @staticmethod
     def _drop(path):
@@ -253,7 +254,7 @@ class Desk:
         shortcut: one number a quality, not one an effect or a frame rate; time them apart if the estimates stay off"""
         with self.lock:
             pace = {**self.data["pace"], quality: round(self.data["pace"].get(quality, 1) * (1 + (min(4, max(.25, ratio)) - 1) / 2), 3)}
-            self._write(self.root / "pace.json", pace)
+            self._write(self.root / PACE, pace)
             self.data["pace"] = pace
 
     def _log(self):
