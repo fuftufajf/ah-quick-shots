@@ -493,8 +493,11 @@ effect on: 45 minutes against the 19 the page had said). Motion blur is the dear
 film four times; the trails' share is libass drawing and ffmpeg's glow, and
 what the viewer takes to tell where its camera is at every frame has not been
 timed apart (1.5 is assumed). A draft is taken as a sixth of 1080p's ffmpeg
-work, the viewer at about real time. Each video adds about two seconds for
-the seek before it. Another PC is faster or slower, so the desk
+work, the viewer at about real time. Each video is taken to add about two
+seconds before its first frame; measured since (17 Nov 2026, 1080p, 2 s and
+12 s of film): Film Viewer takes about 5.6 s a `video` whatever its length and
+frame rate, then 0.87 s a second of film at 60 fps and 1.64 at 120, so the
+table above, timed on 7 s of film, holds some of that start. Another PC is faster or slower, so the desk
 keeps a pace for each size (`.quickshots/pace.json`, `state.pace`): a render
 that took `r` times its estimate moves the pace halfway there, and the page
 multiplies its next estimates by it. Until a size has been rendered once, the
@@ -898,8 +901,13 @@ works round what is still there; Patch 3 made two workarounds unnecessary.
   every seek plays the five seconds before the moment, and a still straight
   after a seek showed the opponent solid from 90 ft (2 of 2), as did a video's
   first frame, with the same sound as the old way (-24.2 against -24.5 dB, 2 of
-  2 alternating). So the desk seeks and takes the still or starts the render
-  there.
+  2 alternating). So the desk seeks and takes the still. A `video` plays those
+  five seconds itself and leaves the film where it was, so a render is not
+  sought first: a seek before it took 2.1 to 2.4 s more for a 6 s stretch at
+  960×540 (12.4 against 10.0 s from 3 s into the stretch, 11.8 against 9.4 s
+  from 96 s before it, 3 of 3 alternating), with the same first frame (the
+  opponent solid; to the pixel from near, 45 dB PSNR from far) and the same
+  first second of sound. Not tried: 4K, a film by day, the `weapon` camera.
 - **Where a seek lands.** Up to 0.08 s past the time asked for, while `time`
   answers in tenths of a second.
 - **The end of a film.** `open` tells the length rounded to 0.1 s, and `tracks`

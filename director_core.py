@@ -560,9 +560,9 @@ class Desk:
         at FASTEST down to (see PASSES). `filters`: the looks to give it (see style). Cancel (see stop) is heard before
         each pass of the viewer and stops ffmpeg at once; what was rendered of the video is thrown away."""
         self._go_on()
-        if abs(self.data["now"] - start) > .5:
-            self._seek(start)  # it plays the 5 s before the start: the aircraft are drawn solid from the first frame
-        self._stage(label or f"Rendering {end - start:.1f} s of film")  # after the seek, whose message it replaces
+        # No seek first: `video` plays the 5 s before its start itself, and leaves the film where it was. A seek before
+        # it took 2.1 to 2.4 s more a render for the same first frame and sound (measured 17 Nov 2026, 3 of 3).
+        self._stage(label or f"Rendering {end - start:.1f} s of film")
         # Asked for 25 or 30 frames a second, Film Viewer draws the recording pilot's aircraft a frame of flight off in
         # single frames: seen from a camera in the world it hops (measured on one shot: 2.7 ft at 432.00 s and 10 ft
         # at 444.60 s of the film, in every render at 30, moved by 1/300 s or not; at 25, three feet every 0.32 s).

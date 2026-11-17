@@ -308,7 +308,7 @@ class DeskTests(unittest.TestCase):
         self.assertIn("skip 3.00000000 9.00000000", commands)
         self.assertTrue(commands[-1].startswith("video 1.00000000 11.00000000 ") and commands[-1].endswith(" 960 540 60"))  # twice the clip's 30: see Desk._render
         self.assertNotIn("play", commands)  # playing just before a render takes the engine and guns out of its sound
-        self.assertEqual(commands[-3:-1], ["seek 1.00000000", "planes long"])  # from far off: a seek first, which draws the aircraft
+        self.assertFalse(any(c.startswith("seek ") for c in commands))  # no seek first: `video` plays the 5 s before its start itself
         self.run_action({"action": "icons", "on": True})
         self.assertIn("icons on", commands)
         self.assertTrue(self.desk.snapshot()["icons"])

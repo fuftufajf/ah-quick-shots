@@ -480,7 +480,9 @@ const COSTS = {
   final: {rate: 60, viewer: 1.4, fast: 1.7, plain: .22, blend: .4, look: 1.0, haze: 1.1, trails: 4.7, lasting: 1.0},
   "4k": {rate: 60, viewer: 2.9, fast: 3.4, plain: .85, blend: 1.6, look: 4.8, haze: 4.0, trails: 14.7, lasting: 6.0},
 };
-const PAUSE = 2;  // a seek comes before each video: it plays the five seconds before the start
+// What each video takes before its first frame: Film Viewer plays the five seconds before the start.
+// shortcut: measured since at about 5.6 s a video whatever its length, part of it inside `viewer` and `fast` above; time them apart if the estimates stay off
+const PAUSE = 2;
 
 // What a render takes, in seconds, before it is asked for: `render` the plain render, then what each effect would
 // add (whether it is ticked or not: the page shows the price of each), and `total` for those that are ticked.
