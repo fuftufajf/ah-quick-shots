@@ -216,6 +216,13 @@ npm --prefix ui run build
 None of the checks needs Film Viewer. `python dev/build_package.py` builds
 the Windows package into `build/`, as GitHub does for a release.
 
+## Thanks
+
+Thanks to Steely: Quick Shots frames its shots by the director guide he
+trained, which HiTech ships in the Film Viewer's help, and it also uses his fix
+for see-through aircraft and his kill-sequence recipe. See his
+[Aces High film companion](https://github.com/steelington/aces-high-film-companion).
+
 ## Licence
 
 [MIT](LICENSE). The page's build includes React and Phosphor Icons, and is
