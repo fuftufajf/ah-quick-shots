@@ -17,7 +17,7 @@ from unittest.mock import patch
 import director_api
 from director_api import listener, make_server, take_port, videos_folder, working_folder
 import director_core
-from director_core import Conflict, Desk, camera_key, framing, lead
+from director_core import Conflict, Desk, camera_key, framing
 import finishing
 import flight_data
 import overlay
@@ -74,7 +74,7 @@ class SlowViewer:
             progress("waiting for viewer")
             self.release.wait(3)
             return ["at 1.0 in 2.0 s"]
-        if command == "planes":
+        if command.startswith("planes"):
             return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder']
         if command.startswith("shot "):
             Path(command[5:]).write_bytes(b"test")
@@ -87,7 +87,6 @@ class DeskTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(dir=Path(__file__).parent)
         self.viewer = SlowViewer()
         self.desk = Desk(self.temp.name, self.viewer)
-        self.desk.pace = 0  # no waiting for a viewer that is not there
         no_ffmpeg = patch("director_core.shutil.which", return_value=None)  # the fakes write no real video
         no_ffmpeg.start()
         self.addCleanup(no_ffmpeg.stop)
@@ -251,12 +250,16 @@ class DeskTests(unittest.TestCase):
                         if cam == 6 and step < 2:
                             continue  # the wing camera loses the opponent after the first second
                         rows.extend(f"on {t} {cam} {ident} {x} 0 .05" for ident, x in ((19, -.3), (10, .3)))
+                # `check`: the pair's last camera is under a hill, the opponent is behind one from the wing at 2.5 s,
+                # and the wing camera 0.1 ft over a runway is still a picture.
+                rows += ["ground 3.00 5 -12.0", "blocked 2.50 6 10 terrain", "ground 2.00 6 0.1"]
                 Path(parts[5]).write_text("\n".join(rows))
             return []
         self.desk.viewer.command = native
         self.run_action({"action": "suggest", "shots": [SHOT, {**SHOT, "id": "wing", "kind": "wing", "height": 3}]})
-        self.assertEqual(self.desk.snapshot()["proposals"], [{"id": "one", "score": 1.0, "size": .05, "quality": .875},
-                                                             {"id": "wing", "score": .6, "size": .05, "quality": .525}])
+        self.assertEqual(self.desk.snapshot()["proposals"], [{"id": "one", "score": .8, "size": .05, "quality": .7},
+                                                             {"id": "wing", "score": .4, "size": .05, "quality": .35}])
+        self.assertTrue(next(c for c in commands if c.startswith("project ")).endswith(" aspect 16/9 check"))
         # A dot, an aircraft at the edge and one hiding the other all read worse than two clear silhouettes,
         # and the smaller of the two reads better bigger, up to a tenth of the picture's width.
         clear = framing([(-.3, 0, .2), (.3, 0, .05)])
@@ -278,7 +281,7 @@ class DeskTests(unittest.TestCase):
                         for i in range(round((end - start) / step) + 1) for ident, x in ((19, 0), (10, 300))]
             if command.startswith("time"):
                 return ["time 4.0 length 20.0 paused 0"]
-            if command == "planes":
+            if command.startswith("planes"):
                 return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder']
             if command.startswith("shot "):
                 Path(command[5:]).write_bytes(b"test")
@@ -289,11 +292,10 @@ class DeskTests(unittest.TestCase):
         plan = [SHOT, {**SHOT, "id": "two", "start": 5, "end": 7}, {**SHOT, "id": "three", "start": 9, "end": 11}]
         self.desk.save({"expected_revision": 1, "shots": plan})
         self.run_action({"action": "seek", "seconds": 2, "rough": True})
-        # The two seconds before the still play through its camera, so the aircraft in it are drawn solid.
-        at = commands.index("seek 0.00000000 rough")
-        self.assertEqual(commands[at:at + 6], ["seek 0.00000000 rough", "planes", "play", "wait 5", "pause", "seek 2.00000000"])
-        self.assertFalse(self.desk.snapshot()["preview"]["fresh"])
-        self.assertIn("cam 0 1.00000000 fixed -253.76618037 260.00000000 118.33311329 -1.89422331 -0.15832816 0.00000000 1.04719755", commands)
+        # One seek: since Patch 3 it plays the 5 s before the moment, so the aircraft in the still are solid.
+        at = commands.index("seek 2.00000000 rough")
+        self.assertEqual(commands[at:at + 2], ["seek 2.00000000 rough", "planes long"])
+        self.assertTrue(commands[at + 2].startswith("shot ") and "play" not in commands)
         self.assertEqual(len([c for c in commands if c.startswith("tracks ")]), 3)
         # Paths are read every 0.02 s from a tenth of a second early: read every 0.5 s, the recording pilot was off his path.
         self.assertIn("tracks 0.90000000 3.00000000 0.0200000000", commands)
@@ -306,21 +308,18 @@ class DeskTests(unittest.TestCase):
         self.assertIn("skip 3.00000000 9.00000000", commands)
         self.assertTrue(commands[-1].startswith("video 1.00000000 11.00000000 ") and commands[-1].endswith(" 960 540 60"))  # twice the clip's 30: see Desk._render
         self.assertNotIn("play", commands)  # playing just before a render takes the engine and guns out of its sound
-        self.assertEqual(commands[-3:-1], ["seek 1.00000000", "planes"])  # from far off: a seek first, or its first second is silent
+        self.assertEqual(commands[-3:-1], ["seek 1.00000000", "planes long"])  # from far off: a seek first, which draws the aircraft
         self.run_action({"action": "icons", "on": True})
         self.assertIn("icons on", commands)
         self.assertTrue(self.desk.snapshot()["icons"])
         # Asked with a time, a switch answers with a still of that moment: seen at once, no render.
         self.run_action({"action": "icons", "on": False, "seconds": 6, "rough": True})
-        self.assertEqual(commands[-9:-6], ["icons off", "seek 4.00000000 rough", "planes"])
-        # A still too near the start to play up to it is taken while the aircraft are still fading in: the still
-        # says so, and asked for again where the film already is, it is taken again without another jump.
+        self.assertEqual(commands[-4:-1], ["icons off", "seek 6.00000000 rough", "planes long"])
+        # Asked for again where the film already is, a still is taken without another jump.
         self.run_action({"action": "seek", "seconds": .2, "rough": True})
-        self.assertTrue(self.desk.snapshot()["preview"]["fresh"])
         del commands[:]
-        self.desk.jumped -= 5
         self.run_action({"action": "seek", "seconds": .2, "rough": True})
-        self.assertFalse(any(c.startswith("seek ") for c in commands) or self.desk.snapshot()["preview"]["fresh"])
+        self.assertFalse(any(c.startswith("seek ") for c in commands))
         self.assertEqual(self.desk.snapshot()["preview"]["kind"], "image")
         self.run_action({"action": "export_cut", "shot_ids": ["two"], "quality": "4k"})
         self.assertTrue(commands[-1].endswith(" 3840 2160 60"))  # a 30 fps video (unless 60 is asked for) is rendered at twice that
@@ -375,11 +374,11 @@ class DeskTests(unittest.TestCase):
                 return ["time 4.0 length 20.0 paused 0"]
             if command.startswith("shot "):
                 Path(command[5:]).write_bytes(b"test")
-            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command.startswith("planes") else []
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [SHOT]})
         self.run_action({"action": "seek", "seconds": 2, "rough": True})
-        self.assertIn("seek 2.00000000", commands)
+        self.assertIn("seek 2.00000000 rough", commands)
         self.assertIn("Aircraft 10 is not in the film", self.desk.snapshot()["problems"]["one"])
         self.desk.start({"action": "export_cut", "expected_revision": 2})
         deadline = time.monotonic()+2
@@ -388,23 +387,23 @@ class DeskTests(unittest.TestCase):
         self.assertIn("Aircraft 10", self.desk.snapshot()["job"]["error"])
         self.assertFalse(any(c.startswith("video ") for c in commands))
 
-    def test_with_ffmpeg_a_video_starts_two_seconds_early_and_they_are_cut_off(self):
+    def test_with_ffmpeg_a_30_fps_video_is_rendered_at_60_and_every_second_frame_kept(self):
         commands, cuts = [], []
         def native(command, progress):
             commands.append(command)
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"lead")
-            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command.startswith("planes") else []
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 5, "end": 7, "kind": "cockpit"}]})
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("finishing.subprocess.Popen", fake_ffmpeg(cuts)):
             self.run_action({"action": "export_cut", "quality": "draft"})
         video = next(c for c in commands if c.startswith("video "))
-        self.assertTrue(video.startswith("video 3.00000000 7.00000000 ") and "-lead.mp4" in video)
-        self.assertEqual(cuts[0][cuts[0].index("-ss") + 1], "2.000000")
-        self.assertFalse(Path(video.split()[3]).exists())  # the uncut video is gone
+        self.assertTrue(video.startswith("video 5.00000000 7.00000000 ") and "-raw.mp4" in video and video.endswith(" 960 540 60"))
+        self.assertEqual(cuts[0][cuts[0].index("-vf") + 1], "fps=30")
+        self.assertFalse(Path(video.split()[3]).exists())  # the 60 fps video is gone
         self.assertEqual(Path(self.desk.snapshot()["preview"]["file"]).read_bytes(), b"cut")
-        # The render counted its steps (the viewer's render, then ffmpeg's cut), followed ffmpeg through its
+        # The render counted its steps (the viewer's render, then ffmpeg's), followed ffmpeg through its
         # progress file, and its record says how long it took.
         job = self.desk.snapshot()["job"]
         self.assertEqual((job["step"], job["steps"]), (2, 2))
@@ -415,7 +414,7 @@ class DeskTests(unittest.TestCase):
         self.assertIsNone(finishing._made(log))
         log.write_text("frame=1\nout_time_us=N/A\nprogress=continue\nframe=90\nout_time_us=1500000\nprogress=continue\n")
         self.assertEqual(finishing._made(log), 1.5)
-        # ffmpeg failing is said, not hidden behind a video two seconds too long.
+        # ffmpeg failing is said, not hidden behind a video at twice its frame rate.
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("finishing.subprocess.Popen", fake_ffmpeg([], 1, "Unknown encoder 'libx264'")):
             self.desk.start({"action": "export_cut", "expected_revision": 2})
             self.desk.worker.join(3)
@@ -475,9 +474,9 @@ class DeskTests(unittest.TestCase):
             commands.append(command)
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"fast")
-            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
-        def blend(parts, target, seconds, fps, filters=""):
-            blends.append(([p.exists() for p in parts], seconds, fps, filters))
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command.startswith("planes") else []
+        def blend(parts, target, fps, filters=""):
+            blends.append(([p.exists() for p in parts], fps, filters))
             Path(target).write_bytes(b"cut")
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 3, "end": 5, "kind": "cockpit"}]})
@@ -485,19 +484,19 @@ class DeskTests(unittest.TestCase):
             self.run_action({"action": "export_cut", "quality": "final", "fps": 60, "effects": {"blur": True}})
             self.run_action({"action": "export_cut", "quality": "4k", "effects": {"blur": True, "look": True}})
         videos = [c.split() for c in commands if c.startswith("video ")]
-        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[:4]], [(f"{1 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
+        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[:4]], [(f"{3 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
         # At 30 fps, the default, the same four passes: sixteen frames a frame.
-        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[4:]], [(f"{1 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["3840", "2160", "120"]) for n in range(4)])
-        self.assertEqual(blends, [([True] * 4, 2, 60, ""), ([True] * 4, 2, 30, finishing.style(3840, 2160, True, True))])
+        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[4:]], [(f"{3 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["3840", "2160", "120"]) for n in range(4)])
+        self.assertEqual(blends, [([True] * 4, 60, ""), ([True] * 4, 30, finishing.style(3840, 2160, True, True))])
 
-    def test_the_film_look_goes_on_in_ffmpeg_even_with_no_lead_in_to_cut(self):
+    def test_the_film_look_goes_on_in_ffmpeg(self):
         trims = []
         def native(command, progress):
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"film")
-            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
-        def trim(source, target, seconds, filters="", fps=None):
-            trims.append((seconds, filters, fps))
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command.startswith("planes") else []
+        def trim(source, target, filters="", fps=None):
+            trims.append((filters, fps))
             Path(target).write_bytes(b"cut")
         self.desk.viewer.command = native
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 0, "end": 2, "kind": "cockpit"}]})
@@ -507,10 +506,10 @@ class DeskTests(unittest.TestCase):
             self.run_action({"action": "export_cut", "quality": "draft", "effects": {"look": True}})
             self.run_action({"action": "export_cut", "quality": "draft"})
             self.run_action({"action": "export_cut", "quality": "draft", "fps": 60})
-        # At the film's start there is no lead-in: the looks need ffmpeg (the film look brings its haze, laid first,
+        # The looks need ffmpeg (the film look brings its haze, laid first,
         # as in the grade). A video of 30 frames a second is rendered at 60, where Film Viewer does not draw the
         # recording pilot's aircraft a frame off, and ffmpeg keeps every second frame; one of 60 goes as it is.
-        self.assertEqual(trims, [(0, finishing.haze(960, 540) + "," + finishing.look(540), 30), (0, "", 30)])
+        self.assertEqual(trims, [(finishing.haze(960, 540) + "," + finishing.look(540), 30), ("", 30)])
         self.assertEqual([c.split()[4:] for c in commands if c.startswith("video ")], [["960", "540", "60"]] * 3)
         # Without ffmpeg nothing can halve it: the video keeps the 60 it was rendered at.
         del commands[:]
@@ -525,7 +524,7 @@ class DeskTests(unittest.TestCase):
                 renders.append(tuple(map(float, command.split()[1:3])))
                 Path(command.split()[3]).write_bytes(b"film")
             return []
-        def trim(source, target, seconds, filters="", fps=None):
+        def trim(source, target, filters="", fps=None):
             trims.append(filters)
             Path(target).write_bytes(b"cut")
         self.desk.viewer.command = native
@@ -539,7 +538,7 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(self.desk.snapshot()["project"]["shots"][1]["effects"], look)  # kept as the page sent it, falses left out
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", trim):
             self.run_action({"action": "export_cut", "quality": "draft", "effects": look})
-        self.assertEqual(renders, [(0, 6), (4, 8), (6, 9)])  # each from two seconds early
+        self.assertEqual(renders, [(2, 6), (6, 8), (8, 9)])
         styled = finishing.style(960, 540, True, True)
         self.assertEqual(trims, [styled, "", styled])
         self.assertEqual([(r["shots"], r["extras"]) for r in self.desk.snapshot()["renders"]],
@@ -561,24 +560,24 @@ class DeskTests(unittest.TestCase):
         for part in parts:
             subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=120:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
                             "-c:v", "libx264", "-c:a", "aac", str(part)], check=True)
-        finishing.blend(parts, target, .5, 60, finishing.style(160, 90, True, True))  # the looks fit in its graph
+        finishing.blend(parts, target, 60, finishing.style(160, 90, True, True))  # the looks fit in its graph
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
                                 "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.split()
-        self.assertEqual(probe[0], "video,60/1,60")
+        self.assertEqual(probe[0], "video,60/1,90")
         self.assertTrue(probe[1].startswith("audio,"))
         self.assertFalse(any(p.exists() for p in parts))
-        finishing.trim(target, parts[0], .5, finishing.style(160, 90, True, True))  # and as the lead-in is cut
+        finishing.trim(target, parts[0], finishing.style(160, 90, True, True), 30)  # and with every second frame kept
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,nb_frames",
                                 "-of", "csv=p=0", str(parts[0])], capture_output=True, text=True).stdout.split()
-        self.assertEqual(probe[0], "video,30")
+        self.assertEqual(probe[0], "video,45")
         # At 30 fps the four passes are blended sixteen frames a frame.
         for part in parts:
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=120:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
                             "-c:v", "libx264", "-c:a", "aac", str(part)], check=True)
-        finishing.blend(parts, target, .5, 30)
+        finishing.blend(parts, target, 30)
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
                                 "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.split()
-        self.assertEqual(probe[0], "video,30/1,30")
+        self.assertEqual(probe[0], "video,30/1,45")
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
     def test_haze_lies_along_the_horizon_and_not_on_an_aircraft_in_the_sky(self):
@@ -729,7 +728,7 @@ class DeskTests(unittest.TestCase):
 
     def test_trails_ask_the_viewer_where_the_camera_is_at_every_frame_and_leave_no_script_behind(self):
         projects, scripts = [], []
-        def trim(source, target, seconds, filters="", fps=None):
+        def trim(source, target, filters="", fps=None):
             name = filters.split("subtitles=filename='")[1].split("'")[0].replace("\\:", ":")
             scripts.append(Path(name).read_text(encoding="utf-8"))
             Path(target).write_bytes(b"cut")
@@ -754,7 +753,7 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(list(self.desk.media_root.glob("*.ass")), [])
 
     def test_a_render_that_fails_leaves_no_trail_script_and_long_trails_are_refused(self):
-        def trim(source, target, seconds, filters="", fps=None):
+        def trim(source, target, filters="", fps=None):
             raise ValueError("ffmpeg could not cut the lead-in off the video: no room")
         self.desk.viewer.command = self.trail_viewer([])
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 5, "end": 6}, {**SHOT, "id": "two", "start": 8, "end": 9}]})
@@ -821,8 +820,18 @@ class DeskTests(unittest.TestCase):
         self.assertIn("no Recycle Bin", str(refused.exception))
         self.assertTrue(video.exists())
 
+    def test_a_viewer_older_than_patch_3_is_refused(self):
+        self.desk.viewer.connect = lambda progress: "ahfilmclaude 5 port 48221"
+        self.desk.start({"action": "connect"})
+        self.desk.worker.join(3)
+        self.assertIn("3.07 Patch 3", self.desk.snapshot()["job"]["error"])
+        self.assertFalse(self.desk.snapshot()["connected"])
+
     def test_a_line_the_viewer_quoted_badly_is_left_out(self):
         self.assertEqual([p["id"] for p in plane_rows(['plane 19 "Pil\\" 0 0 0 0 0 0', 'plane 10 "Other" 1 2 3 0 0 0', "plane"])], [10])
+        # `planes long` says what each one flies; a pilot may be called "model".
+        rows = plane_rows(['plane 86 "fufu2" 1 2 3 0 0 0 recorder model "Me 163B" country Rooks', 'plane 7 "model" 1 2 3 0 0 0 model "La-7" country Knights'])
+        self.assertEqual([(p["name"], p["recorder"], p["model"]) for p in rows], [("fufu2", True, "Me 163B"), ("model", False, "La-7")])
         def native(command, progress):
             if command.startswith("open "):
                 return ["opened films/test.ahf length 20.0 s in 0.1 s"]
@@ -830,7 +839,7 @@ class DeskTests(unittest.TestCase):
                 return ['event 3.5 land "Pil\\" "ditched"', 'event 4.5 kill "you" "Other" 1 19 10', "2 events"]
             if command.startswith("shot "):
                 Path(command[5:]).write_bytes(b"test")
-            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command.startswith("planes") else []
         self.desk.viewer.command = native
         self.desk.data["films"] = [{"path": "films/test.ahf", "name": "test.ahf", "mb": 1, "modified": 0}]
         self.run_action({"action": "open", "film": "films/test.ahf"})
@@ -1133,7 +1142,7 @@ class DeskTests(unittest.TestCase):
             commands.append(command)
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"clip")
-            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command.startswith("planes") else []
         self.desk.viewer.command = native
         row = [{**SHOT, "id": "a", "start": 2, "end": 4, "kind": "cockpit"}, {**SHOT, "id": "b", "start": 9, "end": 11, "kind": "gear"}]
         self.desk.save({"expected_revision": 1, "shots": row + [{**SHOT, "id": "c", "start": 2, "end": 4, "kind": "nose"}]})
@@ -1154,28 +1163,19 @@ class DeskTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_shot({**SHOT, "kind": "cockpit", "tilt": 95}, 20)
 
-    def test_live_plays_in_the_viewer_window_and_the_next_render_waits(self):
+    def test_live_plays_in_the_viewer_window(self):
         commands, clock = [], iter([3.0, 5.0, 7.0])
         def native(command, progress):
             commands.append(command)
             if command.startswith("wait "):
                 return [f"waited, time {next(clock)}"]
-            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command.startswith("planes") else []
         self.desk.viewer.command = native
-        self.desk.pace = 1
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 2, "end": 6, "kind": "cockpit"}]})
-        before = time.monotonic()
         self.run_action({"action": "live", "start": 2, "end": 6})
         self.assertEqual([c for c in commands if c.split()[0] in ("seek", "play", "pause")], ["seek 2.00000000", "play", "pause"])
         self.assertEqual(len([c for c in commands if c.startswith("wait ")]), 3)  # until the film reached the end
-        self.assertGreaterEqual(self.desk.quiet - before, 12)
         self.assertEqual(self.desk.snapshot()["now"], 7.0)
-
-    def test_a_shot_s_first_camera_stands_in_the_seconds_before_it(self):
-        self.assertEqual(lead("cam 5 2 fixed 1 2 3 4 5 6 7 to 8 9 10 11 12 13 14 curve", 3), ["cam 3 2.00000000 fixed 1 2 3 4 5 6 7"])
-        self.assertEqual(lead("cam 5 2 mount 19 0 0 0 0 0 0 1 outside", 4.5), ["cam 4.5 0.50000000 mount 19 0 0 0 0 0 0 1 outside"])
-        self.assertEqual(lead("cam 5 2 recorded", 3), [])
-        self.assertEqual(lead("cam 5 2 mount 19 0 0 0 0 0 0 1", 4.98), [])
 
     def test_a_film_ends_inside_the_length_the_viewer_tells(self):
         # The viewer rounds a film's length to 0.1 s and has no aircraft paths past the real end: the desk's film
@@ -1185,7 +1185,7 @@ class DeskTests(unittest.TestCase):
                 return ["opened films/test.ahf length 20.0 s in 0.1 s"]
             if command.startswith("shot "):
                 Path(command[5:]).write_bytes(b"test")
-            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command.startswith("planes") else []
         self.desk.viewer.command = native
         self.desk.data["films"] = [{"path": "films/test.ahf", "name": "test.ahf", "mb": 1, "modified": 0}]
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "start": 15, "end": 20}]})
@@ -1202,7 +1202,7 @@ class DeskTests(unittest.TestCase):
                         for t in (1, 1.5, 2, 2.5, 3) for ident, x in ((19, 0), (10, 300))]
             if command.startswith(("shot ", "video ")):
                 Path(command.split()[-4 if command.startswith("video ") else -1]).write_bytes(b"test")
-            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command.startswith("planes") else []
         self.desk.viewer.command = native
         saved = {**SHOT, "id": "kept", "start": 5, "end": 7, "kind": "cockpit"}
         self.desk.save({"expected_revision": 1, "shots": [saved, {**SHOT, "id": "old", "start": 2, "end": 4, "kind": "cockpit"}]})
@@ -1210,7 +1210,7 @@ class DeskTests(unittest.TestCase):
         self.run_action(ask)
         # The unsaved draft replaces the saved shot it overlaps; the rest of the plan stays.
         cams = [c for c in commands if c.startswith("cam ")]
-        self.assertEqual(len(cams), 7)  # with each shot's camera standing in the two seconds before it
+        self.assertEqual(len(cams), 5)
         self.assertFalse(any(c.startswith("cam 2 2 mount") for c in cams))
         self.assertLess(commands.index("seek 2.50000000 rough"), commands.index(next(c for c in commands if c.startswith("video "))))
         first = self.desk.snapshot()["preview"]
@@ -1230,14 +1230,6 @@ class DeskTests(unittest.TestCase):
         self.assertFalse(any(c.startswith("video ") for c in commands))
         self.assertEqual(self.desk.snapshot()["preview"]["kind"], "image")
         self.assertFalse(any(c.startswith("tracks ") for c in commands))  # another angle on the same stretch
-        # The viewer is still finishing a rendered stretch's sound for about as long as the stretch lasts: the next
-        # render waits that out, or it would lose the engine, the guns and the pilots' voices.
-        self.desk.pace = .1
-        self.run_action({**ask, "shot": {**SHOT, "orbit": 35}})
-        waiting = time.monotonic()
-        self.run_action({**ask, "shot": {**SHOT, "orbit": 40}})
-        self.assertGreater(time.monotonic() - waiting, .3)  # the 2 s stretch and a second and a half, at this pace
-        self.desk.pace = 0
         self.desk.start({**ask, "shot": {**SHOT, "target": 77}, "expected_revision": 2})
         deadline = time.monotonic()+2
         while self.desk.snapshot()["job"]["running"] and time.monotonic()<deadline:
@@ -1271,7 +1263,7 @@ class DeskTests(unittest.TestCase):
                 return [f"track {9 + i / 2} {ident} {x} 200 0 0 0 0" for i in range(7) for ident, x in ((19, 0), (10, 300))]
             if command.startswith("shot "):
                 Path(command[5:]).write_bytes(b"test")
-            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command == "planes" else []
+            return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder'] if command.startswith("planes") else []
         self.desk.viewer.command = native
         draft = {**SHOT, "start": 9, "end": 12}
         self.run_action({"action": "seek", "seconds": 10, "rough": True, "shot": draft})  # the desk is at 10 s
@@ -1283,9 +1275,8 @@ class DeskTests(unittest.TestCase):
         self.assertEqual([c.split()[0] for c in commands], ["cams", "cam", "cam", "cams", "shot"])
         # Anywhere else the film is moved, with the whole plan in the viewer again.
         self.run_action({"action": "seek", "seconds": 11, "rough": True, "shot": draft})
-        self.assertIn("seek 9.00000000 rough", commands)
-        self.assertIn("seek 11.00000000", commands)
-        self.assertEqual(len([c for c in commands if c.startswith("cam ")]), 2 + 1 + 6)  # the whole plan: a camera before the shot and its six pieces
+        self.assertIn("seek 11.00000000 rough", commands)
+        self.assertEqual(len([c for c in commands if c.startswith("cam ")]), 2 + 6)  # the whole plan: the shot's six pieces
         # Asked to wait, the desk answers with the finished state: one round trip per look.
         server = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)
         server.desk = self.desk
@@ -1315,7 +1306,7 @@ class DeskTests(unittest.TestCase):
         self.run_action({"action": "around", "start": 1, "end": 3, "hero": 19})
         self.assertEqual(len(commands), 1)  # the stretch is read once, also for the cameras that follow
         found = self.desk.snapshot()["nearby"]
-        self.assertEqual((found["hero"], found["aircraft"][0]), (19, {"id": 10, "closest": 120, "typical": 310, "name": "YORK"}))
+        self.assertEqual((found["hero"], found["aircraft"][0]), (19, {"id": 10, "closest": 120, "typical": 310, "name": "YORK", "model": None}))
         self.assertIsNone(found["aircraft"][1]["name"])
 
     def test_flight_data_of_a_level_turn_and_of_two_aircraft(self):
@@ -1621,8 +1612,6 @@ class DeskTests(unittest.TestCase):
         self.assertEqual([round(v, 6) for v in _seat([100 * v for v in nose], (0, 0, 0, yaw, pitch, 1.2))], [0, 0, 100])
         self.assertEqual([round(v, 6) for v in _seat((0, 100, 0), (0, 0, 0, 0, 0, 0))], [0, 100, 0])
         self.assertEqual([round(v, 6) for v in _seat((100, 0, 0), (0, 0, 0, 0, 0, 0))], [100, 0, 0])  # looking toward +z, +x is to the right
-        # Before the shot the camera stands at its first seat, still on the airframe and aimed at it.
-        self.assertEqual(lead("cam 5 2 mount 19 1 2 3 0 0 0 .5 to 4 5 6 0 0 0 .5 at 19 outside curve", 3), ["cam 3 2.00000000 mount 19 1 2 3 0 0 0 .5 at 19 outside"])
         # A ship pinned to the sky stays a camera in the world, and so does one after its aircraft has left the film.
         pinned = validate_shot({**ship, "ride": True, "path": "own", "keys": [{"t": 3, "orbit": 90, "distance": 200, "height": 20, "fov": 30}]}, 60)
         self.assertTrue(all(" fixed " in line for line in compile_shot(pinned, tracks)))

@@ -23,15 +23,13 @@ does not read the viewer's memory or its film files.
 ## What you need
 
 - Windows
-- Aces High III **Film Viewer 3.07 Patch 2 or newer**
+- Aces High III **Film Viewer 3.07 Patch 3 or newer** (the game updates itself when you start it)
 - a current browser
 
 That is all with the Windows package. Run from the source code instead, it
 also needs **Python 3.11 or newer** on the PATH (no extra packages) and,
-optionally, **ffmpeg** on the PATH: with it a video is rendered from two
-seconds early and those seconds are cut off, so the other aircraft are solid
-from the first frame (without it they can fade in during the first second),
-and it makes the motion blur, the data overlay and the Assembly's video. The package brings both.
+optionally, **ffmpeg** on the PATH: it makes the motion blur, the data
+overlay and the Assembly's video. The package brings both.
 
 ## Start
 
@@ -181,7 +179,7 @@ by the Windows package: they are experimental.
   The package's own Python cannot be replaced while it runs: end `pythonw.exe`
   in Task Manager first, then unzip the new package over the old folder. Your
   saved shots stay either way.
-- Camera ratings know nothing of terrain: watch the shot before you render it.
+- Camera ratings see the ground and buildings as Film Viewer models them (a building as a box), not trees: watch the shot before you render it.
 
 ## How it is built
 
@@ -219,8 +217,9 @@ the Windows package into `build/`, as GitHub does for a release.
 ## Thanks
 
 Thanks to Steely: Quick Shots frames its shots by the director guide he
-trained, which HiTech ships in the Film Viewer's help, and it also uses his fix
-for see-through aircraft and his kill-sequence recipe. See his
+trained, which HiTech ships in the Film Viewer's help; it uses his kill-sequence
+recipe, and used his fix for see-through aircraft until Film Viewer 3.07 Patch 3
+did it itself. See his
 [Aces High film companion](https://github.com/steelington/aces-high-film-companion).
 
 ## Licence
