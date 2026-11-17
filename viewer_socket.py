@@ -54,7 +54,7 @@ class Viewer:
             except Exception:
                 self.close()
                 raise
-        raise ConnectionError("Start Film Viewer 3.07 Patch 2 or newer, then Connect")
+        raise ConnectionError("Start Film Viewer 3.07 Patch 3 or newer, then Connect")
 
     def command(self, command, progress=lambda message: None):
         if "\n" in command or "\r" in command or len(command.encode("utf-8")) > 8191:
@@ -96,8 +96,10 @@ def plane_rows(lines):
         if line.startswith("plane "):
             try:
                 row = shlex.split(line)
+                tail = row[9:]  # `planes long`: [recorder] model "<aircraft>" country <country>
                 planes.append({"id": int(row[1]), "name": row[2], "position": list(map(float, row[3:6])),
-                               "recorder": row[-1] == "recorder"})
+                               "recorder": tail[:1] == ["recorder"],
+                               "model": tail[tail.index("model") + 1] if "model" in tail[:-1] else None})
             except (ValueError, IndexError):
                 pass  # a line that cannot be read is one aircraft less in the list, not a seek that fails
     return planes

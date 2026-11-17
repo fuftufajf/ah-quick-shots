@@ -169,13 +169,6 @@ export function App() {
     const timer = setTimeout(() => { scrubbing.current = false; goTo(cursor); }, 250);
     return () => clearTimeout(timer);
   }, [cursor]);
-  // After a jump in the film the viewer fades the aircraft in over a couple of seconds, so the first still shows
-  // them see-through. Once things rest it is taken again, without moving the film.
-  useEffect(() => {
-    if (!desk.preview?.fresh || busy || wanted || scrubbing.current || trimGrab.current) return;
-    const timer = setTimeout(() => setWanted({action: "seek", body: {seconds: desk.now, rough: true, wait: true, ...(draft ? {shot: draft} : {})}}), 2000);
-    return () => clearTimeout(timer);
-  }, [desk.preview?.url, desk.preview?.fresh, busy, wanted]);
   // Who is near is measured over the shot's own stretch (Opponent, Rate cameras): when its ends have moved, it is
   // measured again once they rest. A shot made longer kept the aircraft of the stretch it began with, and one that
   // came near later was never offered. Its camera reads the same tracks, so this costs little.
@@ -879,9 +872,9 @@ export function App() {
             {problems[draft.id] && <p className="problem" role="alert">{problems[draft.id]}</p>}
             <div className="around" aria-label="The aircraft in this shot"><span>Lead</span>
               <select aria-label="Lead aircraft" title="The aircraft this shot is about: its cameras fly with it" value={cast.lead ?? ""} disabled={conflict} onChange={e => e.target.value !== "" && recast({...cast, lead: Number(e.target.value)})}>
-                {cast.lead == null && <option value="">Choose</option>}{planes.filter(p => p.id !== cast.other).map(p => <option key={p.id} value={p.id}>{p.name}{p.recorder ? " · recorder" : ""}</option>)}</select>
+                {cast.lead == null && <option value="">Choose</option>}{planes.filter(p => p.id !== cast.other).map(p => <option key={p.id} value={p.id}>{p.name}{p.model ? ` · ${p.model}` : ""}{p.recorder ? " · recorder" : ""}</option>)}</select>
               <span>Opponent · closest approach</span>
-              {near.map(a => <button key={a.id} aria-pressed={cast.other === a.id} disabled={conflict} onClick={() => recast({...cast, other: a.id})} title={`Closest ${a.closest.toLocaleString()} ft, mostly ${a.typical.toLocaleString()} ft away in this shot`}>{a.name || called(a.id)} · {a.closest.toLocaleString()} ft</button>)}
+              {near.map(a => <button key={a.id} aria-pressed={cast.other === a.id} disabled={conflict} onClick={() => recast({...cast, other: a.id})} title={`Closest ${a.closest.toLocaleString()} ft, mostly ${a.typical.toLocaleString()} ft away in this shot`}>{a.name || called(a.id)}{a.model ? ` (${a.model})` : ""} · {a.closest.toLocaleString()} ft</button>)}
               {cast.other != null && !near.some(a => a.id === cast.other) && <button aria-pressed="true">{called(cast.other)}</button>}
               {cast.other != null && <button disabled={conflict} onClick={() => recast({...cast, other: null})}>Nobody</button>}
               {cast.other == null && !near.length && <span className="note">{desk.nearby?.hero === cast.lead ? `Nobody comes within ${NEAR.toLocaleString()} ft of you in this shot` : "Play the shot to see who is near"}</span>}

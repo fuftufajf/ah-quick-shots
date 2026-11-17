@@ -469,7 +469,7 @@ export function cutCost(rows, quality, fps, ffmpeg, pace = 1) {
 
 // What a second of film costs, in seconds, on the PC these were measured on (docs/how-it-works.md, "What a render
 // costs"): `viewer` Film Viewer's own render, `fast` one of the four passes of motion blur (at 120 frames a second),
-// `plain` ffmpeg cutting the lead-in off, then what each effect adds to ffmpeg's work; `lasting` is what a
+// `plain` ffmpeg re-encoding a video, then what each effect adds to ffmpeg's work; `lasting` is what a
 // half-minute trail adds over a short one. ffmpeg's share was timed at 1080p60 and 4K; the viewer's at 1080p60 (7 s
 // of film in 17 s plain, 67 s with motion blur). Not timed: the viewer at 4K (twice its 1080p speed is assumed), the
 // draft's ffmpeg (a sixth of 1080p's, by its pixels and frames) and the viewer telling the trails where its camera
@@ -480,7 +480,7 @@ const COSTS = {
   final: {rate: 60, viewer: 1.4, fast: 1.7, plain: .22, blend: .4, look: 1.0, haze: 1.1, trails: 4.7, lasting: 1.0},
   "4k": {rate: 60, viewer: 2.9, fast: 3.4, plain: .85, blend: 1.6, look: 4.8, haze: 4.0, trails: 14.7, lasting: 6.0},
 };
-const LEAD = 2, PAUSE = 4;  // each video starts two seconds early; a seek, a pause and the last clip's sound come before it
+const PAUSE = 2;  // a seek comes before each video: it plays the five seconds before the start
 
 // What a render takes, in seconds, before it is asked for: `render` the plain render, then what each effect would
 // add (whether it is ticked or not: the page shows the price of each), and `total` for those that are ticked.
@@ -489,7 +489,7 @@ const LEAD = 2, PAUSE = 4;  // each video starts two seconds early; a seek, a pa
 // follow the frames, and the viewer's own render and motion blur's four passes (and their blending) to stay as they were.
 // shortcut: worked out, not timed; time renders at 30 fps and set their numbers apart if the estimates stay off
 export function renderCost({film, videos, quality, fps = 30, blur, look, haze, trails, trailSeconds = 2.5}, pace = 1) {
-  const cost = COSTS[quality] || COSTS.final, rendered = film + LEAD * videos, frames = fps / cost.rate;
+  const cost = COSTS[quality] || COSTS.final, rendered = film, frames = fps / cost.rate;
   const parts = {
     render: (rendered * (cost.viewer + cost.plain * frames) + PAUSE * videos) * pace,
     blur: rendered * (4 * cost.fast - cost.viewer + cost.blend) * pace,

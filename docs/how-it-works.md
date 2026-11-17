@@ -1,6 +1,6 @@
 # How AH Quick Shots works
 
-Requires Film Viewer 3.07 Patch 2 (socket protocol 5) or newer. Start the viewer,
+Requires Film Viewer 3.07 Patch 3 (socket protocol 9) or newer. Start the viewer,
 then `AH Quick Shots.bat`; the desk connects by itself. The batch file starts
 `director_api.py --page`, which opens the page once the server listens. If the
 port is held by a desk of this folder, or by one busy rendering, that page opens
@@ -101,25 +101,15 @@ shape and the video's width of view; drawn at full width it sits where it will
 in the 16:9 video, which shows more above and below when the window is wider.
 A seek can leave the film up to 0.08 s past the moment asked for (measured; the
 viewer tells its time in tenths), so the first still may be a frame or two later
-than the clip frame it replaces. After any jump the aircraft would also come
-out see-through (see "Aircraft fading in" below), so the desk does not jump
-straight to a moment: it goes two seconds before it, plays up to it through the
-shot's camera and takes the still there, about two seconds later than a bare
-jump. Only a moment in the first two seconds of a film is still taken at once,
-and taken again once things have rested.
+than the clip frame it replaces. A seek plays the five seconds before the
+moment, so the aircraft in the still are solid at once (see "Aircraft fading
+in" below).
 
 The pilot's view and the cameras on the airframe are heard as the cockpit was
 recorded: engine, guns and the pilots' voices. A camera standing in the world
 hears the aircraft from where it stands, quieter with distance (whether the
-voices reach it was not checked). For about as long as a rendered stretch lasts after its
-render, the viewer is still finishing that stretch's sound, and a render started
-in that time can come out heard from a point standing still in the sky instead:
-quiet, with no engine, guns or voices (measured on an 11.5 s stretch: thin when
-the film was touched 2, 5 or 8 s after a render, full every time 12 s or more
-had passed, whatever happened in between). So each render, preview or cut, waits
-until the stretch rendered before it has had its length and a second and a half
-more; the status says so. Watching a clip to its end costs nothing; asking for
-the next camera at once costs the rest of that time.
+voices reach it was not checked). Renders follow one another at once and keep
+their whole sound (see "Sound after a render" below).
 
 **Cameras.** One click shows the playhead moment through that camera, as a
 still to set the view on (drag, wheel, sliders); Play then renders the shot
@@ -295,7 +285,11 @@ better bigger, up to a tenth of it), both are clear of the edges and one is not
 over the other. Each camera opens on the variant that reads best (the bigger
 foreground on a tie), and its card shows the share of the shot with both
 aircraft in frame. Rate cameras measures again after the shot or the opponent
-changes. It knows nothing of terrain: watch the shot.
+changes. The projection also says when a camera is under the ground, or when
+the terrain or a building stands between it and an aircraft (`project ... check`):
+those moments count as not framed. A camera at the wheels on a runway, a tenth
+of a foot up, still counts. Trees are not seen, and a building is judged as its
+box: watch the shot.
 Remote aircraft move as coarsely as the film recorded them. An aircraft that
 leaves the film mid-shot (shot down, landed) keeps its last known place, so the
 camera holds on where it went down. For the cameras for two, the line through
@@ -324,9 +318,7 @@ nothing to zoom, the wheel scrolls the page. A shot opened or changed shows as a
 clip action asked `bare`: its cameras and a still, no render). Play plays the
 shot (or its sequence) at once in the viewer's own window, with its sound and
 nothing rendered (the viewer's window must be on screen to be seen); Render
-and play renders it as a small clip and plays that on the page; a render
-after it waits at least 12 s, because playing just before a render thins its
-sound (measured with that wait: the same sound as a rested render, 2 of 2). The lead aircraft is chosen beside the
+and play renders it as a small clip and plays that on the page. The lead aircraft is chosen beside the
 opponent, above the cameras; a shot is renamed by a double-click in The cut.
 
 **The cut.** Saved shots, each with a tick box, in film order and takes of one
@@ -476,7 +468,7 @@ shot of film13):
 | --- | --- | --- |
 | Film Viewer's own render | 1.4 | not timed: 2.9 assumed |
 | one of motion blur's four passes (120 fps) | 1.7 | not timed: 3.4 assumed |
-| ffmpeg cutting the lead-in off | 0.22 | 0.85 |
+| ffmpeg re-encoding (a 30 fps video keeps every second frame; timed as the lead-in cut before Patch 3) | 0.22 | 0.85 |
 | ffmpeg blending the four passes | 0.4 | not timed: 1.6 assumed |
 | film look | + 1.0 | + 4.8 |
 | haze | + 1.1 | + 4.0 |
@@ -501,8 +493,8 @@ effect on: 45 minutes against the 19 the page had said). Motion blur is the dear
 film four times; the trails' share is libass drawing and ffmpeg's glow, and
 what the viewer takes to tell where its camera is at every frame has not been
 timed apart (1.5 is assumed). A draft is taken as a sixth of 1080p's ffmpeg
-work, the viewer at about real time. Each video adds its two seconds of
-lead-in and about four of waiting. Another PC is faster or slower, so the desk
+work, the viewer at about real time. Each video adds about two seconds for
+the seek before it. Another PC is faster or slower, so the desk
 keeps a pace for each size (`.quickshots/pace.json`, `state.pace`): a render
 that took `r` times its estimate moves the pace halfway there, and the page
 multiplies its next estimates by it. Until a size has been rendered once, the
@@ -522,8 +514,7 @@ BT.709, drawn by ffmpeg with libass in Source Sans Pro from the app's `fonts`
 folder (Adobe's release 2.045: the card's sizes are measured on its metrics);
 without ffmpeg the option is off. The numbers change ten times a second; while
 the opponent is out of the film his are a dash. The flights are read before the
-first render (see "Flight data" below), because touching the film between
-renders can thin the next one's sound. The overlays are drawn after each render
+first render (see "Flight data" below). The overlays are drawn after each render
 by ffmpeg alone, at below-normal priority, while the desk goes on with the next
 camera or render (drawn in the render's own job, they held the viewer for 80 s
 after a 37 s render at 4K); the line under the picture says how many are left,
@@ -767,7 +758,8 @@ most 5 s later). One action runs at a time; a second is refused while
 - `suggest` `{shots}` — 1 to 64 candidates sharing one start and end;
   `state.proposals` gets `{id, score, size, quality}` each: `score` the share of
   the shot with both aircraft in frame, `size` the lead's mean width in the
-  picture, `quality` (0 to 1) how well it reads. It ignores terrain
+  picture, `quality` (0 to 1) how well it reads. A moment with the camera under
+  the ground or an aircraft hidden by terrain or a building counts as not framed
 - `export_cut` `{shot_ids?, quality, fps?, apart?, effects?}` — draft|final|4k, `fps` 30 (when omitted) or 60: the chosen saved shots
   (all when omitted) as one 16:9 MP4 with sound, the gaps left out; with
   `apart: true` an MP4 of each shot, in time order. Overlapping
@@ -809,9 +801,7 @@ most 5 s later). One action runs at a time; a second is refused while
 `seek`, `clip` and `icons` also take `shot`, an unsaved shot object: it stands
 in for the saved shots it overlaps, so a camera can be looked at before it is
 saved. A `seek` with `shot` to the moment already on screen (`state.now`) does
-not move the film: the still is back in about a tenth of a second. A still
-taken within two seconds of a jump has `preview.fresh` true (the aircraft are
-still fading in): ask for the same moment again to get them solid.
+not move the film: the still is back in about a tenth of a second.
 `state.problems` maps a shot id to why it could not be filmed (an aircraft
 absent for the whole shot); such a shot is skipped in playback and refuses to
 render.
@@ -883,42 +873,33 @@ What the film tells, measured:
 
 ## What was measured in the viewer, and what would help
 
-Measured on Film Viewer 3.07 Patch 2 through the socket. The desk works round
-each of these; a change in the viewer would make the workaround unnecessary.
+Measured on Film Viewer 3.07 Patch 2 and Patch 3 through the socket. The desk
+works round what is still there; Patch 3 made two workarounds unnecessary.
 
-- **Sound after a render.** For about as long as a rendered stretch lasts after
-  its render, the next `video` can come out without the engine, guns and voices,
-  with an identical picture (about 60 renders of one 11.5 s stretch: thin when
-  the film was touched 2, 5 or 8 s after a render, full every time 12 s or more
-  had passed; after a 4 s stretch 3 s were enough). `open`, a new connection,
-  `cams off` or a seek to the start did not help. The desk waits the stretch's
-  length and 1.5 s before each render. A render that begins far from where the
-  film stands, just after `open`, started with a silent second (-49 dB, 5 of
-  5); the desk now seeks to its start and waits 2 s paused first (whole, 2 of 2;
-  a seek alone or with a still drawn was not enough).
+- **Sound after a render.** On Patch 2, for about as long as a rendered stretch
+  lasted after its render, the next `video` could come out without the engine,
+  guns and voices (about 60 renders of one 11.5 s stretch), and a render just
+  after `open` started with a silent second; the desk waited and paused before
+  each render. On Patch 3 (17 Nov 2026, an 8 s stretch with a seek between
+  renders) renders started at once after one another had the same sound as
+  rested ones (-21.0 to -21.1 dB, 3 of 3 against 2 of 2), and a render right
+  after `open` and a seek had a whole first second (3 of 3). Nothing waits now.
   Judging the sound: renders back to back keep the viewer from resting, and the
   same shot's level moved by 9 dB from one series to the next (-21 to -30 dB in
   the first second). Compare two ways of rendering only inside one series,
   alternating them, with 30 s of rest before each render.
 - **Aircraft fading in after a seek.** Each aircraft fades in the first time
-  it is drawn, each level of detail on its own, and after a seek every other
-  aircraft is new to the viewer: `shot` catches them see-through, and so did
-  the first second of a `video` started after one (the opponent invisible in
-  the first frame, half there at 0.5 s, solid at about 1 s). Steely's fix
-  (Aces High forum, 14 Nov 2026): play the two seconds before the moment
-  through the shot's camera, then a short seek forward, which keeps them drawn.
-  The desk does this before every still, with each shot's first camera
-  standing in the two seconds before it. Not before a video: on a rested
-  viewer, a render that followed that playing lost its engine and guns every
-  time (3 of 3; 0 of 2 without). A video instead starts two seconds early,
-  through the same camera, and with ffmpeg on the PATH those seconds are cut off
-  again (re-encoded, so the cut is frame-exact: H.264 CRF 16, AAC 192 kbit/s,
-  close to the viewer's own 21 Mbit/s at 1080p60). Measured: the opponent solid
-  from frame 0, the same frame count and picture from then on as a plain render,
-  and no thinner sound (3 of 3 each way). Without ffmpeg the video starts at the
-  shot, and its first second can show a ghost. A skip inside a cut does not
-  bring the fade back. Waiting while paused would fix it too, but a burning
-  aircraft's smoke piles up while film time stands still.
+  it is drawn, and on Patch 2 a seek made every other aircraft new to the
+  viewer: `shot` caught them see-through, and so did the first second of a
+  `video` (the opponent invisible in the first frame, solid at about 1 s). Until
+  Patch 3 the desk used Steely's fix (Aces High forum, 14 Nov 2026): stills
+  played the two seconds before the moment through the shot's camera, and
+  videos started two seconds early and had them cut off with ffmpeg. On Patch 3
+  every seek plays the five seconds before the moment, and a still straight
+  after a seek showed the opponent solid from 90 ft (2 of 2), as did a video's
+  first frame, with the same sound as the old way (-24.2 against -24.5 dB, 2 of
+  2 alternating). So the desk seeks and takes the still or starts the render
+  there.
 - **Where a seek lands.** Up to 0.08 s past the time asked for, while `time`
   answers in tenths of a second.
 - **The end of a film.** `open` tells the length rounded to 0.1 s, and `tracks`
@@ -930,5 +911,6 @@ each of these; a change in the viewer would make the workaround unnecessary.
 - **A render cannot be interrupted** from the socket, only in the viewer: Cancel
   stops ffmpeg at once and the viewer after the pass it is rendering.
 - **Not in the socket:** a picture stream (the desk renders a preview clip
-  instead), the position of the free camera, the trails switch, the aircraft
-  type, and the height of the terrain (camera ratings ignore the ground).
+  instead), the position of the free camera and the trails switch. The aircraft
+  type (`planes long`, shown beside each pilot) and the ground (`project ...
+  check`) came with Patch 3.

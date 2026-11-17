@@ -1,5 +1,5 @@
-"""What ffmpeg does to a video once the viewer has rendered it: the lead-in cut off, the passes of a blurred one
-blended, the film look and the haze laid on. One encode does all of it."""
+"""What ffmpeg does to a video once the viewer has rendered it: every second frame of a 30 fps one kept, the passes
+of a blurred one blended, the film look and the haze laid on. One encode does all of it."""
 import array
 from pathlib import Path
 import subprocess
@@ -73,17 +73,16 @@ def style(width, height, film=False, hazy=False):
     return ",".join(([haze(width, height)] if hazy else []) + ([look(height)] if film else []))
 
 
-def trim(source, target, seconds, filters="", fps=None):
-    """`source` without its first `seconds`, as `target`, through `filters` (see style). Re-encoded so the cut is
-    frame-exact (a stream copy cuts at keyframes), close to the viewer's own quality (about 21 Mbit/s at 1080p60,
-    AAC 192 kbit/s). `fps`: the frames a second to keep of a source rendered at twice as many, every second one
-    (see Desk._render)."""
+def trim(source, target, filters="", fps=None):
+    """`source` as `target`, through `filters` (see style), re-encoded close to the viewer's own quality (about
+    21 Mbit/s at 1080p60, AAC 192 kbit/s). `fps`: the frames a second to keep of a source rendered at twice as many,
+    every second one (see Desk._render)."""
     chain = ",".join(part for part in (f"fps={fps}" if fps else "", filters) if part)
-    encode(["-ss", f"{seconds:.6f}", "-i", str(source)], (["-vf", chain] if chain else []) + (["-r", str(fps)] if fps else []), [source], target,
-           "cut the lead-in off the video")
+    encode(["-i", str(source)], (["-vf", chain] if chain else []) + (["-r", str(fps)] if fps else []), [source], target,
+           "re-encode the video")
 
 
-def blend(sources, target, seconds, fps, filters=""):
+def blend(sources, target, fps, filters=""):
     """The passes of a blurred video (see PASSES), as `target` at `fps` with the first pass's sound: as `trim`."""
     rate = FASTEST * len(sources)
     each = rate // fps  # woven frames in one frame's time: all of them make it
@@ -91,7 +90,7 @@ def blend(sources, target, seconds, fps, filters=""):
     graph = (weave + "".join(f"[w{n}]" for n in range(len(sources))) + f"interleave=nb_inputs={len(sources)},"
              f"tmix=frames={each},select='eq(mod(n,{each}),{each - 1})',setpts=N/{fps}/TB"
              + (f",{filters}" if filters else "") + "[v]")
-    encode([a for s in sources for a in ("-ss", f"{seconds:.6f}", "-i", str(s))],
+    encode([a for s in sources for a in ("-i", str(s))],
            ["-filter_complex", graph, "-map", "[v]", "-map", "0:a?", "-r", str(fps)], sources, target, "blend the motion blur")
 
 

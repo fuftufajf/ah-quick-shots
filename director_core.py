@@ -35,23 +35,11 @@ def rate(raw):
     return 60 if raw.get("fps") == 60 else 30
 # The viewer renders in about real time whatever the size (measured: 5 s of film in 5 s at 480x270 and at 960x540).
 CLIP = "960 540 30"
-# After a jump in the film the viewer fades the aircraft in over about two seconds of real time, however many frames
-# it draws (measured: nearly invisible at once, solid after 1.7 s). A still taken sooner shows them see-through.
-FADE = 2.0
-SETTLE = 1.0  # what a picture that stays on screen for a while waits of that: mostly solid, without doubling the wait
-# Each aircraft fades in the first time it is drawn, each level of detail on its own, and after a seek every other
-# aircraft is new to the viewer. Playing the seconds before a moment through the shot's camera draws them, and a
-# short seek forward keeps them drawn: a still starts solid (Steely, Aces High forum, 14 Nov 2026). Not before a
-# video: a render that follows that playing came out without the engine and guns in 10 renders of 10 (4 of 10 without).
-# A video starts LEAD seconds early instead, and with ffmpeg on the PATH those seconds are cut off again.
-LEAD = 2.0
-# For about as long as a rendered stretch lasts after its render ends, the viewer is still finishing that stretch's
-# sound. A render started in that time can be heard from a point standing still in the sky instead of from the
-# aircraft: no engine, guns or pilots' voices. Measured on an 11.5 s stretch: with a seek, a still or a read of
-# the tracks 2, 5 or 8 s after a render, the next render is thin, and so is one started at once after a render
-# that followed a seek; thin renders keep coming until the viewer has rested. Every render started 12 s or more
-# after the one before was full, whatever happened in between (6 of 6). After a 4 s stretch, 3 s were enough.
-TAIL = 1.5  # seconds added to the last rendered stretch's length before the next render may start
+# Since 3.07 Patch 3 a seek plays the 5 s before the moment: the aircraft are solid in a still taken straight after
+# it and in a video's first frame, and renders keep their whole sound back to back, after a seek or just after open
+# (measured 17 Nov 2026; see "What was measured in the viewer" in docs/how-it-works.md). So nothing waits for them.
+# That viewer's socket is protocol 9; it also tells when a camera is under the ground or something hides an aircraft.
+PROTOCOL = 9
 FINE = .02  # the step aircraft paths are read at (see Desk._tracks)
 # The points a second a moving camera is given. The viewer carries the camera's turn straight from one point to the
 # next: with a point every half second the picture's pace was the same for half a second and changed at once at each
@@ -114,19 +102,6 @@ def versions(project, renders):
     return found
 
 
-def lead(command, start):
-    """The shot's first camera, standing from `start` to the shot's start, for drawing the aircraft before it
-    (see LEAD): a moving camera holds its first place. The pilot's view and the weapon ride need none."""
-    _cam, at, _duration, rest = command.split(" ", 3)
-    if float(at) - start < .05 or rest.startswith(("recorded", "weapon")):
-        return []
-    if rest.startswith(("fixed ", "mount ")) and " to " in rest:
-        first, then = rest.split(" to ", 1)
-        # A camera on an airframe keeps what follows its second seat: whom it is aimed at, and `outside`.
-        rest = first + ("".join(" " + word for word in then.split()[7:] if word != "curve") if rest.startswith("mount ") else "")
-    return [f"cam {stamp(start)} {float(at) - float(stamp(start)):.8f} {rest}"]
-
-
 def framing(found):
     """How well one moment reads, 0 to 1, from where `project` puts each aircraft: [(x, y, size)], x and y from
     -1 to 1, size a share of the picture's width. The smallest aircraft should be at least 3% of the width
@@ -162,9 +137,6 @@ class Desk:
         self.paths = {}  # (start, end, step) -> aircraft tracks: every angle tried on one stretch reads them once
         self.flight = None  # the last stretch's flight data in full; state["flight"] only says what it holds
         self.applied, self.built = None, {}  # which plan the viewer holds, and what could not be built in it
-        self.jumped = 0.0  # when the film last jumped, for the aircraft fading in after it
-        self.quiet = 0.0  # when the viewer has finished the last render's sound and the next render may start
-        self.pace = 1  # how long this desk waits for the viewer's own timing, as a share; tests have no viewer to wait for
         self.stills = deque()
         self.drawing = deque()  # data overlays still to draw: ffmpeg's work, the viewer is not needed for it
         self.drawer = None
@@ -584,26 +556,12 @@ class Desk:
         return self.viewer.command(command, self.progress)
 
     def _render(self, start, end, path, size, label="", blur=None, filters=""):
-        """One video of a stretch, with the film's sound whole (see TAIL) and the aircraft solid from its first frame
-        when ffmpeg is there to cut off the lead-in (see LEAD). `blur`: the frame rate to blend the passes of a `size`
+        """One video of a stretch, with the film's sound. `blur`: the frame rate to blend the passes of a `size`
         at FASTEST down to (see PASSES). `filters`: the looks to give it (see style). Cancel (see stop) is heard before
         each pass of the viewer and stops ffmpeg at once; what was rendered of the video is thrown away."""
-        early = min(LEAD, start) if shutil.which("ffmpeg") else 0
-        early = early if early >= .05 else 0
-        with self.lock:  # the wait is part of what this clip takes
-            if self.data["job"]["expect"]:
-                self.data["job"]["expect"] = round(self.data["job"]["expect"] + max(0, self.quiet - time.monotonic()), 1)
-        while time.monotonic() < self.quiet:
-            self._go_on()
-            self.progress(f"Film Viewer is finishing the last clip's sound: {math.ceil(self.quiet - time.monotonic())} s, so this one keeps its own")
-            time.sleep(.25)
         self._go_on()
-        if abs(self.data["now"] - (start - early)) > .5:
-            # A render that began far from where the film stood came out with its first second silent, just after
-            # opening a film (-49 dB, 5 of 5). A seek there and 2 s paused kept it whole (2 of 2); a seek alone, or
-            # with a still drawn, did not. Paused, not playing: playing before a render thins its sound (see LEAD).
-            self._seek(start - early)
-            time.sleep(2 * self.pace)
+        if abs(self.data["now"] - start) > .5:
+            self._seek(start)  # it plays the 5 s before the start: the aircraft are drawn solid from the first frame
         self._stage(label or f"Rendering {end - start:.1f} s of film")  # after the seek, whose message it replaces
         # Asked for 25 or 30 frames a second, Film Viewer draws the recording pilot's aircraft a frame of flight off in
         # single frames: seen from a camera in the world it hops (measured on one shot: 2.7 ft at 432.00 s and 10 ft
@@ -615,19 +573,18 @@ class Desk:
         halve = int(fps) if int(fps) < 50 and not blur and shutil.which("ffmpeg") else None
         if int(fps) < 50 and not blur:
             size = f"{width} {height} {2 * int(fps)}"
-        whole = path.with_name(path.stem + "-lead" + path.suffix) if early or blur or filters or halve else path
+        whole = path.with_name(path.stem + "-raw" + path.suffix) if blur or filters or halve else path
         parts = [whole.with_name(f"{whole.stem}{n}{whole.suffix}") for n in range(PASSES)] if blur else [whole]
         # The viewer answers a render only when it is done (measured: 1.1 to 1.7 times the stretch at 1080p, 4K not
         # timed), so it may take twenty times the stretch before the desk gives it up.
-        self.viewer.patience = max(Viewer.patience, 20 * (end - start + early))
+        self.viewer.patience = max(Viewer.patience, 20 * (end - start))
         try:
-            for n, part in enumerate(parts):  # only the first pass's sound is kept: the others need not wait for quiet
+            for n, part in enumerate(parts):  # only the first pass's sound is kept
                 if n:
                     self._go_on()
                     self._stage(f"{label}: motion blur pass {n + 1} of {len(parts)}")
                 shift = n / FASTEST / len(parts)
-                self.command(f"video {start - early + shift:.8f} {end + shift:.8f} {part.as_posix()} {size}")
-                self.quiet = time.monotonic() + (end - start + early + TAIL) * self.pace
+                self.command(f"video {start + shift:.8f} {end + shift:.8f} {part.as_posix()} {size}")
             self._go_on()
         except Cancelled:
             for part in parts:
@@ -637,10 +594,10 @@ class Desk:
             self.viewer.patience = Viewer.patience
         if blur:
             self._encode("Blending the motion blur with ffmpeg" + (", with its effects" if filters else ""), end - start,
-                         lambda: blend(parts, path, early, blur, filters))
-        elif early or filters or halve:
-            self._encode("Laying the effects on with ffmpeg" if filters else "Cutting off the lead-in with ffmpeg", end - start,
-                         lambda: trim(whole, path, early, filters, halve))
+                         lambda: blend(parts, path, blur, filters))
+        elif filters or halve:
+            self._encode("Laying the effects on with ffmpeg" if filters else "Keeping every second frame with ffmpeg", end - start,
+                         lambda: trim(whole, path, filters, halve))
 
     def start(self, raw):
         action = raw.get("action")
@@ -685,37 +642,9 @@ class Desk:
         backwards = seconds < self.data["now"]
         self.progress(("Rewinding" if backwards else "Seeking") + f" to {seconds:.2f}s — Film Viewer is rebuilding the scene")
         self.command(f"seek {seconds:.8f}" + (" rough" if rough else ""))
-        self.jumped = time.monotonic()
-        planes = plane_rows(self.command("planes"))
+        planes = plane_rows(self.command("planes long"))
         with self.lock:
             self.data.update(now=seconds, planes=planes)
-
-    def _preroll(self, seconds, rough=False):
-        """Stand at `seconds` with the aircraft drawn solid (see LEAD)."""
-        start = max(0.0, seconds - LEAD)
-        if seconds - start < .3:  # nothing before it to play: the aircraft fade in as after any jump
-            return self._seek(seconds, rough=rough)
-        self._seek(start, rough=rough)
-        self.progress(f"Playing up to {seconds:.2f}s so the aircraft are drawn solid")
-        self.command("play")
-        deadline = time.monotonic() + 3 * LEAD + 5
-        try:
-            while time.monotonic() < deadline:
-                reply = self.command("wait 5")  # "waited, time <film seconds>"
-                try:
-                    if float(reply[0].rsplit(" ", 1)[1]) >= seconds - .3:
-                        break
-                except (IndexError, ValueError):
-                    break
-        finally:
-            self.command("pause")
-        self._seek(seconds)
-        self.jumped = 0.0  # a short seek forward: nothing fades in
-
-    def _settle(self):
-        """Let the aircraft fade in after a jump, before a picture that will stay on screen for a while."""
-        while time.monotonic() - self.jumped < SETTLE * self.pace:
-            self.command("wait 10")
 
     def _open(self, film):
         if film not in {row["path"] for row in self.data["films"]}:
@@ -758,7 +687,6 @@ class Desk:
                              assembly=json.loads(assembly.read_text(encoding="utf-8")) if assembly.exists() else None)
         self._let_go(film)
         self._seek(min(1, length))
-        self._settle()
         self._frame(project["revision"])
 
     def _filmable(self, events, length):
@@ -828,8 +756,9 @@ class Desk:
         hero = number(raw.get("hero"), 0, 1000000, "hero")
         if not .1 <= end - start <= 120:
             raise ValueError("Choose a stretch of 0.1 to 120 seconds")
-        names = {plane["id"]: plane["name"] for plane in self.data["planes"]}
-        aircraft = [{**row, "name": names.get(row["id"])} for row in nearby(self._tracks(start, end), int(hero))]
+        known = {plane["id"]: plane for plane in self.data["planes"]}
+        aircraft = [{**row, "name": known.get(row["id"], {}).get("name"), "model": known.get(row["id"], {}).get("model")}
+                    for row in nearby(self._tracks(start, end), int(hero))]
         with self.lock:
             self.data["nearby"] = {"start": start, "end": end, "hero": int(hero), "aircraft": aircraft}
 
@@ -963,7 +892,7 @@ class Desk:
         if only is not None:
             shots, token = only, ("cut", project["revision"], *(s["id"] for s in only))
         if self.applied != token:
-            commands, problems, drawn = [], {}, 0.0
+            commands, problems = [], {}
             for shot in shots:
                 try:
                     lines = self._camera(shot)
@@ -971,8 +900,7 @@ class Desk:
                     # One shot that cannot be built must not stop the picture for the rest.
                     problems[shot["id"]] = str(error)
                     continue
-                commands.extend(lead(lines[0], max(drawn, shot["start"] - LEAD)) + lines)
-                drawn = max(drawn, shot["end"])
+                commands.extend(lines)
             self.progress("Applying camera plan")
             self.applied = None
             self.command("cams clear")
@@ -1079,10 +1007,8 @@ class Desk:
         path = self.media_root / (uuid.uuid4().hex + ".bmp")
         self.command("shot " + path.as_posix())
         with self.lock:
-            # fresh: taken while the aircraft were still fading in after a jump; worth taking again once they are solid
             self.data["preview"] = {"url": "/media/" + path.name, "kind": "image", "time": self.data["now"],
-                                    "revision": revision, "film": self.data["project"]["film"],
-                                    "fresh": time.monotonic() - self.jumped < FADE}
+                                    "revision": revision, "film": self.data["project"]["film"]}
         self.stills.append(path)
         while len(self.stills) > 3:  # A browser may still be fetching the last couple.
             try:
@@ -1100,7 +1026,7 @@ class Desk:
             self._around(raw, project)
         if raw.get("bare") and not row:  # to be played in the viewer's own window: its cameras and a still, no render
             self._apply(project, raw)
-            self._preroll(number(raw.get("still", start), 0, length, "time"), rough=True)
+            self._seek(number(raw.get("still", start), 0, length, "time"), rough=True)
             return self._frame(project["revision"])
         film = next((row for row in self.data["films"] if row["path"] == project["film"]), {})
         name = hashlib.sha256(json.dumps([
@@ -1122,7 +1048,6 @@ class Desk:
                 self._apply(project, raw)
             if raw.get("still") is not None and not row:  # something to look at while the clip renders
                 self._seek(number(raw["still"], 0, length, "time"), rough=True)
-                self._settle()
                 self._frame(project["revision"])
             self._render(start, end, path, CLIP)  # the film is back where it was afterwards
             for old in sorted(folder.glob("*.mp4"), key=lambda p: p.stat().st_mtime)[:-80]:
@@ -1151,8 +1076,7 @@ class Desk:
 
     def _live(self, raw, project):
         """The stretch played in Film Viewer's own window, through its cameras: seen at once, with its sound,
-        nothing rendered. Playing just before a render thins the render's sound (see LEAD), so the next render
-        waits as after a render of that length, and never less than 12 s (renders that far apart were whole)."""
+        nothing rendered."""
         start, end, row = self._stretch(raw, project)
         if row:
             self._cut(project, row)
@@ -1175,7 +1099,6 @@ class Desk:
                     self.data["now"] = min(now, project["length"])
         finally:
             self.command("pause")
-            self.quiet = max(self.quiet, time.monotonic() + max(12, end - start + TAIL) * self.pace)
             self.applied = None
             with self.lock:
                 self.data["now"] = min(now, project["length"])
@@ -1212,14 +1135,21 @@ class Desk:
         camera_file.write_text("\n".join(cameras), encoding="ascii")
         ids = sorted({shot[key] for shot in shots for key in ("hero", "target") if shot[key] is not None})
         self.progress(f"Rating {len(shots)} camera angles over the whole shot")
-        self.command(f"project {start:.8f} {end:.8f} {step:.10f} {camera_file.as_posix()} {output.as_posix()} ids {','.join(map(str, ids))} aspect 16/9")
-        steps, seen = set(), {}
+        self.command(f"project {start:.8f} {end:.8f} {step:.10f} {camera_file.as_posix()} {output.as_posix()} ids {','.join(map(str, ids))} aspect 16/9 check")
+        steps, seen, buried, hidden = set(), {}, set(), set()
         for line in output.read_text().splitlines():
             row = line.split()
             if row and row[0] in ("eye", "on"):
                 steps.add(index(float(row[1])))
                 if row[0] == "on":
                     seen[int(row[2]), index(float(row[1])), int(row[3])] = tuple(map(float, row[4:7]))
+            # `check`: "ground <t> <cam> <feet above it>" for an eye under the ground or within 3 ft of it (a camera
+            # at the wheels on a runway is 0.1 ft up: kept), "blocked <t> <cam> <id> terrain|object <n>" for one hidden.
+            elif row[:1] == ["ground"] and float(row[3]) < 0:
+                buried.add((int(row[2]), index(float(row[1]))))
+            elif row[:1] == ["blocked"] and row[3].isdigit():
+                hidden.add((int(row[2]), index(float(row[1])), int(row[3])))
+        seen = {key: value for key, value in seen.items() if key[:2] not in buried and key not in hidden}
         if not steps:
             raise ValueError("Film Viewer returned no framing for this interval")
         proposals = []
@@ -1267,7 +1197,6 @@ class Desk:
         # The viewer holds one camera at a time: takes of one stretch come out as videos of their own, each the
         # same length, to lay over one another in an editor. Asked apart, every shot is a video of its own.
         rows = video_rows(sorted(shots, key=lambda s: s["start"]), bool(raw.get("apart")))
-        # Read before the first render: touching the film between renders can thin the next one's sound (TAIL).
         segments = {s["id"]: self._segment(project, s) for s in shots if s["effects"].get("overlay")}
         files = []
         # How long it should take: the page says (it shows what each effect costs before the render is asked for:
@@ -1282,13 +1211,11 @@ class Desk:
         # ffmpeg then does to it, and before them the trails' cameras.
         with self.lock:
             self.data["job"].update(expect=expect and round(expect, 1), video=1, videos=len(rows), steps=sum(
-                (PASSES if blur else 1) + (ffmpeg and bool(blur or filters or drawn or row[0]["start"] >= .05 or fps < 50)) + bool(drawn)
+                (PASSES if blur else 1) + (ffmpeg and bool(blur or filters or drawn or fps < 50)) + bool(drawn)
                 for row, (blur, filters, drawn) in zip(rows, made)))
         mark = self.data["job"]["clock"]
         scripts = []
         try:
-            # Worked out before the first render, as the overlay's numbers are: touching the film between renders
-            # can thin the next one's sound (TAIL).
             for n, (row, (_blur, _filters, asked)) in enumerate(zip(rows, made), 1):
                 if not asked:
                     scripts.append(None)
@@ -1353,8 +1280,8 @@ class Desk:
         action = raw["action"]
         if action == "connect":
             greeting = self.viewer.connect(self.progress)
-            if int(greeting.split()[1]) < 5:
-                raise ValueError("Update Film Viewer to 3.07 Patch 2 or newer")
+            if int(greeting.split()[1]) < PROTOCOL:
+                raise ConnectionError("Update Aces High to 3.07 Patch 3 or newer: start the game once and it updates itself, then Connect")
             self._library()
             self.command("icons " + ("on" if self.data["icons"] else "off"))
             with self.lock:
@@ -1394,6 +1321,6 @@ class Desk:
             if action in ("seek", "preview") or raw.get("seconds") is not None:
                 seconds = number(raw.get("seconds", selected["start"] if selected else 0), 0, project["length"], "time")
                 if action != "seek" or abs(seconds - self.data["now"]) >= .02:  # asked for where it is, the film is not moved
-                    self._preroll(seconds, rough=bool(raw.get("rough")))
+                    self._seek(seconds, rough=bool(raw.get("rough")))
             return self._frame(project["revision"])
         return self._export(raw, project)
