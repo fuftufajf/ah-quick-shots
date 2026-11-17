@@ -100,6 +100,10 @@ only that camera is sent, so the still is back in about a tenth of a second
 Play or a moment asks for the clip. A still has the viewer window's
 shape and the video's width of view; drawn at full width it sits where it will
 in the 16:9 video, which shows more above and below when the window is wider.
+The black bands over and under such a still are that difference, not a fault;
+a viewer window of 16:9 has none. 9:16 dims all but a 9:16 frame as tall as
+the video, in its middle (the reel's crop): it covers the bands too, so it is
+right on a still as on a clip.
 A seek can leave the film up to 0.08 s past the moment asked for (measured; the
 viewer tells its time in tenths), so the first still may be a frame or two later
 than the clip frame it replaces. A seek plays the five seconds before the

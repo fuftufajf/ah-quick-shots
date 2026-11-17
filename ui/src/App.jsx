@@ -78,6 +78,7 @@ export function App() {
   const [closedVideo, setClosedVideo] = useState("");
   const [sending, setSending] = useState(false);
   const [looking, setLooking] = useState(false);  // a quick look in flight: it holds the next one back and shows nothing
+  const [upright, setUpright] = useState(false);  // the 9:16 frame of a vertical reel laid over the picture
   const scrubbing = useRef(false);
   const autoConnect = useRef(true);
   const casting = useRef(null);  // a moment waiting to learn who was around, then which framing reads best
@@ -767,7 +768,8 @@ export function App() {
       <section className="stage">
         <div className="picture panel" aria-busy={working}>
           <div className="panel-heading"><h2>2 <span>Picture</span></h2>
-            <div className="chips"><span className="note">Trails: tick them in Film Viewer</span><button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Names</button></div>
+            <div className="chips"><span className="note">Trails: tick them in Film Viewer</span><button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Names</button>
+              <button aria-pressed={upright} onClick={() => setUpright(!upright)} title="The frame a vertical 9:16 reel keeps: the middle of the 16:9 picture, as tall as it. A guide only: the video stays 16:9.">9:16</button></div>
           </div>
           <div ref={screen} className={`screen ${movable ? "movable" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
             onClick={e => { if (!dragged.current && clip && !video && !e.target.closest("button, .hud")) renderPlay(); }}>
@@ -775,7 +777,8 @@ export function App() {
             : clip ? <video key={clip.url} ref={player} src={clip.url} playsInline onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} onTimeUpdate={e => { if (!scrubbing.current && !trimGrab.current) setCursor(clip.start + e.target.currentTime); }}/>
             : still ? <img src={still.url} draggable={false} alt={`Film Viewer frame at ${formatTime(still.time)}`}/>
             : <div className="empty-preview"><FilmStrip size={44} weight="thin"/><h2>See the film here.</h2><p>Open a replay and click a moment.<br/>The desk renders that shot as a short clip and plays it.</p></div>}
-            {adjustable && <div className={`hud ${rolling || live ? "dim" : ""}`}>
+            {upright && (video || clip || still) && <div className="reel-guide" aria-hidden="true"/>}
+            {adjustable &&<div className={`hud ${rolling || live ? "dim" : ""}`}>
               {CORNERS.map(([corner, label]) => {
                 const rows = tuning.filter(row => HUD[row[0]][0] === corner), sided = corner === "place" && ["wing", "shoulder", "gear"].includes(draft.kind);
                 return (rows.length > 0 || sided) && <div key={corner} className={`corner ${corner}`} role="group" aria-label={label}>
