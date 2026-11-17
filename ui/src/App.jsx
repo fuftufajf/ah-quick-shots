@@ -78,7 +78,9 @@ export function App() {
   const [closedVideo, setClosedVideo] = useState("");
   const [sending, setSending] = useState(false);
   const [looking, setLooking] = useState(false);  // a quick look in flight: it holds the next one back and shows nothing
-  const [upright, setUpright] = useState(false);  // the 9:16 frame of a vertical reel laid over the picture
+  // The 9:16 frame of a vertical reel laid over the picture, kept in this browser across reloads (when it may store).
+  const [upright, setUpright] = useState(() => { try { return localStorage.getItem("upright") === "1"; } catch { return false; } });
+  const stand = on => { setUpright(on); try { localStorage.setItem("upright", on ? "1" : "0"); } catch { /* not kept: still works */ } };
   const scrubbing = useRef(false);
   const autoConnect = useRef(true);
   const casting = useRef(null);  // a moment waiting to learn who was around, then which framing reads best
@@ -769,7 +771,7 @@ export function App() {
         <div className="picture panel" aria-busy={working}>
           <div className="panel-heading"><h2>2 <span>Picture</span></h2>
             <div className="chips"><span className="note">Trails: tick them in Film Viewer</span><button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Names</button>
-              <button aria-pressed={upright} onClick={() => setUpright(!upright)} title="The frame a vertical 9:16 reel keeps: the middle of the 16:9 picture, as tall as it. A guide only: the video stays 16:9.">9:16</button></div>
+              <button aria-pressed={upright} onClick={() => stand(!upright)} title="The frame a vertical 9:16 reel keeps: the middle of the 16:9 picture, as tall as it. A guide only: the video stays 16:9.">9:16</button></div>
           </div>
           <div ref={screen} className={`screen ${movable ? "movable" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
             onClick={e => { if (!dragged.current && clip && !video && !e.target.closest("button, .hud")) renderPlay(); }}>

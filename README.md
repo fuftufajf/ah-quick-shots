@@ -88,7 +88,8 @@ marked, and goes to the Recycle Bin when you open the next.
    picture to move the camera, turn the wheel to zoom, Shift and the wheel to
    bring the camera nearer. The camera's values sit in the picture's corners:
    click one to set it exactly. Names shows the pilots' names, in renders too.
-   9:16 dims all but the middle of the picture that a vertical reel keeps.
+   9:16 dims all but the middle of the picture that a vertical reel keeps; the
+   page remembers it.
 3. **Cameras** — Lead and Opponent say whom the shot films; one click shows the
    shot through that camera; Rate cameras measures them all. Add to cut keeps
    the shot. Double-click a shot in The cut to rename it.
