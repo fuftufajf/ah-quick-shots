@@ -63,7 +63,8 @@ opponents is better made as two shots.
 **Picture.** The socket has no picture stream, and the viewer renders a video
 in about the time it plays, whatever its size (measured: five seconds of film
 in five seconds at 480×270 and at 960×540). So the desk's moving picture is a
-preview clip: the selected shot rendered once at 960×540 with sound, then
+preview clip: the selected shot rendered once at 960×540 and 60 frames a
+second (as the viewer makes it: no ffmpeg) with sound, then
 replayed, paused and scrubbed from its file. A still of the moment shows while
 it renders. A clip is kept under `clips/` in the output folder (the newest 80)
 and reused for as long as the stretch, its cameras and Names are the same, also
@@ -387,6 +388,18 @@ beautiful. ffmpeg's motion interpolation took 130 times the film's length. The s
 the first pass's. Measured on a 7 s shot at 1080p60: 67 s with blur, 17 s
 without.
 
+At 4K the same frames come as eight passes at 60 fps. Asked for 4K at 120,
+Film Viewer crashed at the video's first frame (17 Nov 2026, twice with an
+826 s film open, the second time on a viewer just started; the crash of the
+day before was the same fault). It writes its videos with the PC's H.264
+encoder through Media Foundation: NVIDIA's was loaded for 1080p at 60 and 120
+and for 4K at 60 (levels 4.2, 5.1 and 5.2), and for 4K at 120 the viewer turned
+to the other one on that PC, Intel Quick Sync's (driver of Oct 2024), and
+crashed inside it reading a stack address with its top bit gone: the long film
+had filled the viewer's lower 2 GB of addresses (it is a 32-bit program), so
+the new thread's stack lay above them. With a 446 s film open the same video
+was written.
+
 Film look (experimental) is applied by ffmpeg in the same step (`look()` in director_core.py).
 Its colour is `looks/film.cube`, a 17-point LUT fitted to three stills of this
 footage before and after a DaVinci Resolve grade (Film Look Creator, Cinematic):
@@ -395,7 +408,12 @@ from 7.5-8.4 to 4.2-5.8 (of 255); the rest is the grade's haze on the horizon,
 which follows depth, not colour. That grade mixes its colour in at half and
 could hardly be seen, so the LUT holds the whole of it, and the bloom, the red
 halation round highlights, the vignette (corners about 20% darker) and the grain
-are stronger than the grade's; all are sized to the picture's height. The same
+are stronger than the grade's; all are sized to the picture's height. The
+bloom and the halation are blurred at a quarter of the picture's size and the
+vignette is made on a white picture an eighth of it and multiplied in: all
+three are soft, and blurred and drawn at full size they were most of the
+look's time (at 1080p60 1.19 s a second of film, now 0.47; the two ways'
+pictures are 49 dB apart, PSNR without the grain: measured 17 Nov 2026). The same
 7 s shot: 82 s with the look and motion blur, a mean change of 6.6 of 255 from
 the plain render.
 
@@ -409,8 +427,12 @@ are present the picture goes towards a grey-blue that the film look turns into
 the grade's mist. Dark things, such as a canopy frame, keep clear. On the
 grade's stills the far ground and the sky just above it misted much as in
 Resolve; an aircraft against the sky and clouds stayed as they were. An aircraft
-in front of the horizon is misted with it. Haze and film look on 5 s of 4K:
-53 s.
+in front of the horizon is misted with it. Sky and ground are worked out once
+a pixel, as two colours of one small picture, and the masks stay one plane
+until they are laid on (worked out for all three colours, with the haze's
+colour drawn as a box over a whole picture, it took 1.12 s a second of film at
+1080p60, now 0.34, the picture the same: 84 dB). Haze and film look on 5 s of
+4K took 53 s before that.
 
 Trails (experimental, `trails.py`) draws two soft lines of vapour from the
 wingtips of each shot's aircraft: the lead aircraft in one colour, his opponent
@@ -437,7 +459,11 @@ aircraft circling at 1080p60: 0.3 to 0.6 s more script a second of film than
 every aircraft's track from the trail's length before the video, and asks the viewer's `project` where the
 shot's camera stands at every frame: a moving camera is first placed on its
 curve (a uniform Catmull-Rom through the shot's points, as the viewer moves it:
-within 0.05 ft halfway between points), then projected as a still one. Its eye
+within 0.05 ft halfway between points), then projected as a still one. A
+standing camera is asked once for all its frames, a moving one 60 frames at a
+time (60 still cameras, each one's answer taken at its own frame): asked a frame
+at a time, a 22 s shot at 60 frames a second took 18 s, and so 0.6 s, with the
+same answers (measured 17 Nov 2026). Its eye
 puts the aircraft where the viewer does to 0.7 px (median, 1080p), and to
 0.15 px on airframe cameras rolled up to 70 degrees. The wingtips are 0.88 of
 the aircraft's visible radius out (a Yak's tips matched at 75 ft). libass draws
@@ -461,22 +487,24 @@ file ffmpeg writes with `-progress`); the viewer says nothing of its own
 render, so that step's share of the bar pulses. The bar is never full while
 work goes on. Cancel, large under it, stops ffmpeg at once and the render
 after the pass Film Viewer is rendering, which only the viewer's own window can
-stop at once; the wait says so. Each video's record keeps how long it took (`took`, seconds). Seconds for one second of film, measured on one PC (a 7 s pair
-shot of film13):
+stop at once; the wait says so. Each video's record keeps how long it took (`took`, seconds). Seconds for one second of film, measured on one PC
+(17 Nov 2026, Film Viewer 3.07 Patch 3; the viewer from renders of two lengths,
+so without what a video takes before its first frame):
 
-| | 1080p60 | 4K |
-| --- | --- | --- |
-| Film Viewer's own render | 1.4 | not timed: 2.9 assumed |
-| one of motion blur's four passes (120 fps) | 1.7 | not timed: 3.4 assumed |
-| ffmpeg re-encoding (a 30 fps video keeps every second frame; timed as the lead-in cut before Patch 3) | 0.22 | 0.85 |
-| ffmpeg blending the four passes | 0.4 | not timed: 1.6 assumed |
-| film look | + 1.0 | + 4.8 |
-| haze | + 1.1 | + 4.0 |
-| trails, short (ffmpeg 3.1, the script 0.1) | + 3.2 | + 13.2 |
-| trails, half a minute long | + 1.0 more | + 6.0 more |
+| | 960×540 | 1080p60 | 4K |
+| --- | --- | --- | --- |
+| Film Viewer before a video's first frame, in seconds a video (and a pass of motion blur), whatever its length and frame rate | 5.1 | 5.6 | 5.0 to 6.1 |
+| Film Viewer's own render (at 60 frames a second, a 30 fps video too) | 0.80 | 0.87 | 1.49 |
+| one of motion blur's passes (four at 120 fps; at 4K eight at 60) | 1.61 | 1.64 | 1.49 |
+| ffmpeg re-encoding (a 30 fps video keeps every second frame) | 0.07 | 0.22 | 0.85 |
+| ffmpeg blending the passes | not timed | 0.4 | not timed: 1.6 assumed |
+| film look (1.0 and 4.8 until its soft parts were made small) | not timed | + 0.47 | + 1.7 |
+| haze (1.1 and 4.0 until its masks were one plane) | not timed | + 0.34 | + 1.3 |
+| trails, short: ffmpeg 0.5 (0.9 until the glow was blurred small), the script 0.2 | not timed | + 0.75 | not timed |
+| trails, half a minute long: ffmpeg 0.8, the script 0.7 | not timed | + 0.8 more | not timed |
 
 At 30 fps the page takes ffmpeg's share and the trails' as half of these, and
-the viewer's own render and motion blur (the same four passes) as at 60: worked
+the viewer's own render and motion blur (the same passes) as at 60: worked
 out, not timed. Timed on 15 s of film at 1080p30 with motion blur: with one pass
 46 s in all (about 5 s of it waiting for the last clip's sound), a third more
 than said; with two passes 74 s, 6% more, each pass of the viewer about 1.9 s
@@ -490,12 +518,15 @@ The effects add up nearly as a sum (look, haze and lasting trails together:
 picture: with its far-off points drawn, two aircraft circling with 30 s trails
 took 34 s of ffmpeg a second of film instead of 1.2 (a 58 s shot with every
 effect on: 45 minutes against the 19 the page had said). Motion blur is the dearest because the viewer renders the
-film four times; the trails' share is libass drawing and ffmpeg's glow, and
-what the viewer takes to tell where its camera is at every frame has not been
-timed apart (1.5 is assumed). A draft is taken as a sixth of 1080p's ffmpeg
-work, the viewer at about real time. Each video adds about two seconds for
-the seek before it. Another PC is faster or slower, so the desk
-keeps a pace for each size (`.quickshots/pace.json`, `state.pace`): a render
+film four times (eight at 4K), and each pass starts as a video does; the trails' share is
+ffmpeg's glow more than libass drawing, and the viewer tells where its camera
+is at every frame in well under a second for a whole shot. Where the page has
+no timing (the draft's ffmpeg, the trails at 4K) it works one out from the
+picture's size. The viewer draws a frame of 960×540 as fast as one of 1080p,
+and at 30 frames a second it took 0.43 s a second of film at 1080p, half of
+60's: but then the recording pilot's aircraft hops (see below), so nothing is
+rendered under 50. Another PC is faster or slower, so the desk
+keeps a pace for each size (`.quickshots/pace-2.json`, `state.pace`): a render
 that took `r` times its estimate moves the pace halfway there, and the page
 multiplies its next estimates by it. Until a size has been rendered once, the
 page says the estimate was measured on another PC.
@@ -532,8 +563,9 @@ the message, where he leaves the film; between the guns and that the cut skips.
 Seen on a real kill: he hit the ground about a second before the message, so the
 end of his fall shows grass. The cameras stay yours to change.
 
-Take-offs & landings reads your flight path for the whole film, a second
-apart (about 5 s for 9 minutes), and adds shots for each take-off and landing
+Take-offs & landings looks through your flight path for the whole film, a
+second apart (read once, when the film is opened, with who is in it: about 5 s
+for 10 minutes), and adds shots for each take-off and landing
 that has none yet. You are the aircraft at the eye of the recorded cockpit view
 (3 to 5 ft from it). A take-off starts from standing (under 8 ft/s); the
 lift-off is the last moment within 1.5 ft of that height before you are 8 ft
@@ -634,8 +666,13 @@ appear in status and must be answered in the viewer. Stop a native render in
 Film Viewer if needed.
 
 A shot's camera commands are kept while its geometry is unchanged, and the
-aircraft tracks of a stretch are read once for every camera tried on it. The
-desk controls only the offline viewer, never the live game.
+aircraft tracks of a stretch are read once for every camera tried on it, for
+the ratings of its angles, and for the same stretch cut shorter at its end (a
+read of 22 s took 5 s). Commands that belong together go to the viewer in one
+piece, 60 at a time: it takes one command a frame when they come one by one,
+and an observer's camera of 224 lines took 3.0 s so, against 0.05 s together
+(measured 17 Nov 2026). The desk controls only the offline viewer, never the
+live game.
 
 `.quickshots/current.ahs` is the most recently applied native plan; JSON is the
 editable project. `.quickshots/errors.log` gets every operation that failed,
@@ -850,7 +887,9 @@ What the film tells, measured:
   the airframe or one the viewer aims hides them (the aircraft is where the camera is fastened), which is
   why they were only seen from a camera flying a path of its own. So the desk never asks the viewer for
   fewer than 50: a video of 30 is rendered at 60 and ffmpeg keeps every second frame (without ffmpeg the
-  video stays at 60), a preview clip too; a blurred one was always rendered at 120. Found by following
+  video stays at 60); a preview clip is rendered at 60 and played so; a blurred one was always rendered at
+  120. Still so on Patch 3 (17 Nov 2026: the same shot at 30 hopped 2.7 ft at 432.00 s and 9.9 ft at 444.60 s
+  in two renders of two, and not at 60, where the viewer took 0.85 s a second of film against 0.43). Found by following
   corners on the aircraft from frame to frame (Lucas-Kanade) against the background's own step.
 - **The viewer carries a camera's turn straight from point to point.** `curve` or not, between two points
   of a moving camera the picture turns at one pace. Measured in a finished video, frame by frame (phase
@@ -898,8 +937,13 @@ works round what is still there; Patch 3 made two workarounds unnecessary.
   every seek plays the five seconds before the moment, and a still straight
   after a seek showed the opponent solid from 90 ft (2 of 2), as did a video's
   first frame, with the same sound as the old way (-24.2 against -24.5 dB, 2 of
-  2 alternating). So the desk seeks and takes the still or starts the render
-  there.
+  2 alternating). So the desk seeks and takes the still. A `video` plays those
+  five seconds itself and leaves the film where it was, so a render is not
+  sought first: a seek before it took 2.1 to 2.4 s more for a 6 s stretch at
+  960×540 (12.4 against 10.0 s from 3 s into the stretch, 11.8 against 9.4 s
+  from 96 s before it, 3 of 3 alternating), with the same first frame (the
+  opponent solid; to the pixel from near, 45 dB PSNR from far) and the same
+  first second of sound. Not tried: 4K, a film by day, the `weapon` camera.
 - **Where a seek lands.** Up to 0.08 s past the time asked for, while `time`
   answers in tenths of a second.
 - **The end of a film.** `open` tells the length rounded to 0.1 s, and `tracks`

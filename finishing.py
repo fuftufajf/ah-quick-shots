@@ -15,6 +15,19 @@ import threading
 # slow and beautiful. ffmpeg's motion interpolation took 130 times the film's length.
 FASTEST = 120
 PASSES = 4
+# Not at 4K: 4K at 120 frames a second is more than the H.264 encoder the viewer writes with takes (NVIDIA's, through
+# Media Foundation, was loaded for 1080p at 60 and 120 and 4K at 60, and wrote levels 4.2, 5.1 and 5.2). The viewer
+# then turned to the PC's other one, Intel Quick Sync's (mfx_mft_h264ve_32.dll of Oct 2024), and crashed in it at the
+# video's first frame: twice on 17 Nov 2026 with an 826 s film open, the second time on a viewer just started (the
+# film filled the viewer's lower 2 GB of addresses, and the fault read a stack address with its top bit gone); the
+# crash of 16 Nov was the same fault. With a film of 446 s open the same video was written. So a picture past LEVEL
+# is rendered at half the rate in twice the passes: the same frames at the same instants.
+LEVEL = 3840 * 2160 * 60  # pixels a second: what was seen written
+
+
+def fastest(width, height):
+    """The frame rate the viewer renders the passes of a blurred video of this size at (see LEVEL)."""
+    return FASTEST if width * height * FASTEST <= LEVEL else FASTEST // 2
 # The film look: the colour of a DaVinci Resolve grade (Film Look Creator), fitted as a LUT to stills of the same
 # footage before and after it, then bloom, a red halation round highlights, a vignette and grain. As faint as the grade
 # (its colour mixed in at half, corners 10% darker, grain about 1/255) it could not be seen, so all are stronger: the
@@ -35,13 +48,19 @@ def graph_path(path):
     return Path(path).as_posix().replace(":", r"\:").replace("'", r"'\\\''")
 
 
-def look(height):
-    """ffmpeg filters giving a video `height` pixels high the film look (see LOOK): one input, one output."""
-    return (f"lut3d=file='{graph_path(LOOK)}':interp=tetrahedral,format=gbrp,split=3[lk0][lk1][lk2];"
-            f"[lk1]curves=all='0/0 0.6/0 1/1',gblur=sigma={height / 108:.1f}[lkb];"
-            f"[lk2]curves=all='0/0 0.75/0 1/1',gblur=sigma={height / 270:.1f},colorchannelmixer=gg=.4:bb=.15[lkh];"
-            f"[lk0][lkb]blend=all_mode=screen:all_opacity=.3[lkm];[lkm][lkh]blend=all_mode=screen:all_opacity=.35,"
-            f"vignette=angle=.3,format=yuv420p,noise=c0s=6:c0f=t+u")
+def look(height, width=None):
+    """ffmpeg filters giving a video `height` pixels high (16:9 unless `width` says otherwise) the film look (see
+    LOOK): one input, one output. The bloom and the halation are blurred at a quarter of the size, and the vignette
+    is made on a white picture an eighth of the size and multiplied in: all three are soft, and at full size the two
+    blurs and ffmpeg's vignette (one thread) were most of the look's time. Measured 17 Nov 2026 at 1080p60: 1.19 s a
+    second of film, now 0.47, the pictures 49 dB apart (PSNR, without the grain)."""
+    small, back = "scale=iw/4:ih/4:flags=bilinear", f"scale={width or height * 16 // 9}:{height}:flags=bilinear"
+    return (f"lut3d=file='{graph_path(LOOK)}':interp=tetrahedral,format=gbrp,split=4[lk0][lk1][lk2][lk3];"
+            f"[lk1]curves=all='0/0 0.6/0 1/1',{small},gblur=sigma={height / 432:.2f},{back}[lkb];"
+            f"[lk2]curves=all='0/0 0.75/0 1/1',{small},gblur=sigma={height / 1080:.2f},{back},colorchannelmixer=gg=.4:bb=.15[lkh];"
+            f"[lk3]scale=iw/8:ih/8:flags=neighbor,lutrgb=r=255:g=255:b=255,vignette=angle=.3,{back}[lkv];"
+            f"[lk0][lkb]blend=all_mode=screen:all_opacity=.3[lkm];[lkm][lkh]blend=all_mode=screen:all_opacity=.35[lkn];"
+            f"[lkn][lkv]blend=all_mode=multiply,format=yuv420p,noise=c0s=6:c0f=t+u")
 
 
 def _step(x, a, c):
@@ -57,20 +76,25 @@ def haze(width, height):
     colour = f"(({most}-min(min({r},{g}),{b}))/max({most},.001))"
     sky = f"{_step(blue, .02, .1)}*{_step(light, .12, .2)}"
     ground = f"(1-{_step(blue, 0, .06)})*{_step(colour, .05, .12)}*{_step(light, .1, .18)}"
-    grey = lambda e: f"geq=r='255*{e}':g='255*{e}':b='255*{e}'"
     both = "0.85*clip(6*val/maxval,0,1)*maxval"  # full haze where sky and ground are each about a sixth
     sigma = height / 8 * .08
-    return (f"format=gbrp,split=4[hz0][hz1][hz2][hz3];[hz2]scale={width // 8}:{height // 8}:flags=area,split[hs][hg];"
-            f"[hs]{grey(sky)},gblur=sigma={sigma:.1f}[hsb];"
-            f"[hg]{grey(ground)},{'erosion,' * 4}{'dilation,' * 4}gblur=sigma={sigma:.1f}[hgb];"
-            f"[hsb][hgb]blend=all_mode=multiply,lutrgb=r='{both}':g='{both}':b='{both}',scale={width}:{height}[hb];"
-            f"[hz3]format=gray,lut=c0='maxval*{_step('val/maxval', .2, .35)}',format=gbrp[hl];"
-            f"[hb][hl]blend=all_mode=multiply[hm];[hz1]drawbox=c={HAZE}:t=fill[hc];[hz0][hc][hm]maskedmerge")
+    r, g, b = (int(HAZE[i:i + 2], 16) for i in (2, 4, 6))
+    # Sky and ground are worked out once a pixel, as the red and the green of one small picture, and the masks stay
+    # one plane until they are laid on; the haze's colour is a lookup. Each worked out for all three colours, and the
+    # colour drawn as a box over a whole picture, took 1.12 s a second of film at 1080p60, and so 0.34, the pictures
+    # the same (84 dB PSNR; measured 17 Nov 2026).
+    return (f"format=gbrp,split=4[hz0][hz1][hz2][hz3];"
+            f"[hz2]scale={width // 8}:{height // 8}:flags=area,geq=r='255*{sky}':g='255*{ground}':b=0,format=gbrp,extractplanes=r+g[hs][hg];"
+            f"[hs]gblur=sigma={sigma:.1f}[hsb];"
+            f"[hg]{'erosion,' * 4}{'dilation,' * 4}gblur=sigma={sigma:.1f}[hgb];"
+            f"[hsb][hgb]blend=all_mode=multiply,lut=c0='{both}',scale={width}:{height}[hb];"
+            f"[hz3]format=gray,lut=c0='maxval*{_step('val/maxval', .2, .35)}'[hl];"
+            f"[hb][hl]blend=all_mode=multiply,format=gbrp[hm];[hz1]lutrgb=r={r}:g={g}:b={b}[hc];[hz0][hc][hm]maskedmerge")
 
 
 def style(width, height, film=False, hazy=False):
     """The filters for the chosen looks, the haze first as in the grade; "" for none."""
-    return ",".join(([haze(width, height)] if hazy else []) + ([look(height)] if film else []))
+    return ",".join(([haze(width, height)] if hazy else []) + ([look(height, width)] if film else []))
 
 
 def trim(source, target, filters="", fps=None):
@@ -84,7 +108,7 @@ def trim(source, target, filters="", fps=None):
 
 def blend(sources, target, fps, filters=""):
     """The passes of a blurred video (see PASSES), as `target` at `fps` with the first pass's sound: as `trim`."""
-    rate = FASTEST * len(sources)
+    rate = FASTEST * PASSES  # the instants the passes hold between them, however many passes they came in (see LEVEL)
     each = rate // fps  # woven frames in one frame's time: all of them make it
     weave = "".join(f"[{n}:v]setpts=PTS+{n}/{rate}/TB[w{n}];" for n in range(len(sources)))
     graph = (weave + "".join(f"[w{n}]" for n in range(len(sources))) + f"interleave=nb_inputs={len(sources)},"

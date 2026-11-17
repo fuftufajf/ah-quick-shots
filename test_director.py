@@ -81,6 +81,9 @@ class SlowViewer:
             return ["saved"]
         return []
 
+    def commands(self, commands, progress):
+        return [self.command(command, progress) for command in commands]
+
 
 class DeskTests(unittest.TestCase):
     def setUp(self):
@@ -308,7 +311,7 @@ class DeskTests(unittest.TestCase):
         self.assertIn("skip 3.00000000 9.00000000", commands)
         self.assertTrue(commands[-1].startswith("video 1.00000000 11.00000000 ") and commands[-1].endswith(" 960 540 60"))  # twice the clip's 30: see Desk._render
         self.assertNotIn("play", commands)  # playing just before a render takes the engine and guns out of its sound
-        self.assertEqual(commands[-3:-1], ["seek 1.00000000", "planes long"])  # from far off: a seek first, which draws the aircraft
+        self.assertFalse(any(c.startswith("seek ") for c in commands))  # no seek first: `video` plays the 5 s before its start itself
         self.run_action({"action": "icons", "on": True})
         self.assertIn("icons on", commands)
         self.assertTrue(self.desk.snapshot()["icons"])
@@ -363,6 +366,35 @@ class DeskTests(unittest.TestCase):
         with self.assertRaises(ConnectionError):
             viewer.command("seek 1")
         peer.close()
+
+    def test_commands_sent_together_are_each_answered_and_an_error_leaves_no_reply_waiting(self):
+        viewer = Viewer()
+        client, peer = socket.socketpair()
+        viewer.sock, viewer.reader = client, client.makefile("r", encoding="utf-8", newline="\n")
+        peer.sendall(b"one\n.end\nerror: no such aircraft\n.end\nthree\n.end\nfour\n.end\n")
+        with self.assertRaises(ValueError):
+            viewer.commands(["a", "b", "c"])
+        self.assertEqual(peer.recv(100), b"a\nb\nc\n")  # in one piece
+        self.assertEqual(viewer.command("d"), ["four"])
+        peer.close()
+        viewer.close()
+
+    def test_the_ratings_and_a_stretch_cut_shorter_pick_from_the_read_already_made(self):
+        commands = []
+        def native(command, progress):
+            commands.append(command)
+            start, end, step = map(float, command.split()[1:4])
+            return [f"track {start + i * step:.4f} 19 0 200 {300 * (start + i * step):.1f} 0 0 0" for i in range(round((end - start) / step) + 1)]
+        self.desk.viewer.command = native
+        self.desk.progress = lambda *told: None
+        whole = self.desk._tracks(1, 3)
+        self.assertEqual(len(self.desk._tracks(1, 3, .25)), 9)  # the ratings' moments
+        short = self.desk._tracks(1, 2)
+        self.assertEqual(commands, ["tracks 0.90000000 3.00000000 0.0200000000"])
+        self.assertEqual(short, {t: row for t, row in whole.items() if t < 2.001})
+        self.desk._tracks(1, 4)  # longer, or from another start: read
+        self.desk._tracks(1.5, 3)
+        self.assertEqual(len(commands), 3)
 
     def test_a_shot_that_cannot_be_built_does_not_block_the_desk(self):
         commands = []
@@ -485,9 +517,10 @@ class DeskTests(unittest.TestCase):
             self.run_action({"action": "export_cut", "quality": "4k", "effects": {"blur": True, "look": True}})
         videos = [c.split() for c in commands if c.startswith("video ")]
         self.assertEqual([(v[1], v[2], v[4:]) for v in videos[:4]], [(f"{3 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["1920", "1080", "120"]) for n in range(4)])
-        # At 30 fps, the default, the same four passes: sixteen frames a frame.
-        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[4:]], [(f"{3 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["3840", "2160", "120"]) for n in range(4)])
-        self.assertEqual(blends, [([True] * 4, 60, ""), ([True] * 4, 30, finishing.style(3840, 2160, True, True))])
+        # At 30 fps, the default, sixteen frames a frame. At 4K they come as eight passes at 60: asked for 4K at
+        # 120, the viewer crashed in its encoder.
+        self.assertEqual([(v[1], v[2], v[4:]) for v in videos[4:]], [(f"{3 + n / 480:.8f}", f"{5 + n / 480:.8f}", ["3840", "2160", "60"]) for n in range(8)])
+        self.assertEqual(blends, [([True] * 4, 60, ""), ([True] * 8, 30, finishing.style(3840, 2160, True, True))])
 
     def test_the_film_look_goes_on_in_ffmpeg(self):
         trims = []
@@ -573,6 +606,15 @@ class DeskTests(unittest.TestCase):
         # At 30 fps the four passes are blended sixteen frames a frame.
         for part in parts:
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=120:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
+                            "-c:v", "libx264", "-c:a", "aac", str(part)], check=True)
+        finishing.blend(parts, target, 30)
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
+                                "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.split()
+        self.assertEqual(probe[0], "video,30/1,45")
+        # And so are eight passes at 60, as 4K is rendered.
+        parts = [Path(self.temp.name) / f"slow{n}.mp4" for n in range(8)]
+        for part in parts:
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=60:d=1.5", "-f", "lavfi", "-i", "sine=d=1.5",
                             "-c:v", "libx264", "-c:a", "aac", str(part)], check=True)
         finishing.blend(parts, target, 30)
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
@@ -718,15 +760,17 @@ class DeskTests(unittest.TestCase):
             if command.startswith("project "):
                 parts = command.split()
                 begin, end, step = map(float, parts[1:4])
-                projects.append((begin, end, step, Path(parts[4]).read_text().strip(), " " in parts[4] + parts[5]))
-                times = [begin] if end - begin < 1e-9 else [begin, end]
-                Path(parts[5]).write_text("".join(f"eye {t:.4f} 1 0 500 -400 0 0 0 1.2\n" for t in times))  # behind them, looking +z
+                cameras = Path(parts[4]).read_text().splitlines()
+                projects.append((begin, end, step, cameras, " " in parts[4] + parts[5]))
+                times = [begin + n * step for n in range(round((end - begin) / step) + 1)] if end - begin > 1e-9 else [begin]
+                Path(parts[5]).write_text("".join(f"eye {t:.2f} {n} 0 500 -400 0 0 0 1.2\n"  # behind them, looking +z
+                                                  for t in times for n in range(1, len(cameras) + 1)))
             if command.startswith("video "):
                 Path(command.split()[3]).write_bytes(b"film")
             return []
         return native
 
-    def test_trails_ask_the_viewer_where_the_camera_is_at_every_frame_and_leave_no_script_behind(self):
+    def test_trails_ask_the_viewer_where_the_camera_is_for_every_frame_at_once_and_leave_no_script_behind(self):
         projects, scripts = [], []
         def trim(source, target, filters="", fps=None):
             name = filters.split("subtitles=filename='")[1].split("'")[0].replace("\\:", ":")
@@ -738,17 +782,30 @@ class DeskTests(unittest.TestCase):
                                                           {**SHOT, "id": "two", "start": 5, "end": 6}]})
         with patch("director_core.shutil.which", return_value="ffmpeg"), patch("director_core.trim", trim):
             self.run_action({"action": "export_cut", "quality": "draft", "apart": True, "effects": {"trails": {"seconds": 2.5}}})
-        seat, two = projects[:31], projects[31:]
-        self.assertEqual((len(seat), len(two)), (31, 31))  # every frame of a second at 30 a second, both ends
-        # Never before the film's start: its first frame is asked in one step, the next from the start up to it.
-        self.assertEqual(seat[0][:3], (0, 0, .15))
-        self.assertEqual([round(v, 4) for v in seat[1][:3]], [0, .0333, .0333])
-        self.assertEqual([round(v, 4) for v in seat[30][:3]], [.85, 1, .15])
-        self.assertTrue(all(row[3].startswith("mount 19 ") and "outside" not in row[3] for row in seat))
-        # The moving camera is placed on its curve and asked as a still one; the files have no space in their path.
-        self.assertTrue(all(row[3].startswith("fixed ") and " to " not in row[3] and len(row[3].split()) == 8 for row in two))
-        self.assertNotEqual(two[0][3], two[15][3])
+        seat, two = projects
+        # A camera that stands on its airframe is asked once, for every frame of a second at 30 a second, both ends,
+        # and never before the film's start. The step is rounded down, so the last one is not past the end.
+        self.assertEqual([round(v, 4) for v in seat[:3]], [0, 1, .0333])
+        self.assertLessEqual(30 * seat[2], 1)
+        self.assertTrue(len(seat[3]) == 1 and seat[3][0].startswith("mount 19 ") and "outside" not in seat[3][0])
+        # The moving camera is placed on its curve at every frame, and those asked together as still ones; the files
+        # have no space in their path.
+        self.assertEqual([round(v, 4) for v in two[:3]], [5, 6, .0333])
+        self.assertEqual(len(two[3]), 31)
+        self.assertTrue(all(row.startswith("fixed ") and " to " not in row and len(row.split()) == 8 for row in two[3]))
+        self.assertNotEqual(two[3][0], two[3][15])
         self.assertFalse(any(row[4] for row in projects))
+        # More than 60 frames of a moving camera are asked 60 at a time; a last frame off the others' steps, alone.
+        del projects[:]
+        moving = next(shot for shot in self.desk.snapshot()["project"]["shots"] if shot["id"] == "two")
+        times = [5 + n / 100 for n in range(70)] + [5.999]
+        eyes = self.desk._eyes(self.desk._camera(moving), times, moving)
+        self.assertEqual([len(row[3]) for row in projects], [60, 10, 1])
+        # The viewer projects a tenth of a second at least: the few last frames are begun whole steps earlier.
+        self.assertTrue(all(end - begin >= .1 - 1e-9 for begin, end, *_rest in projects))
+        self.assertEqual([round(v, 4) for v in projects[1][:3]], [5.59, 5.69, .01])
+        self.assertEqual([round(v, 4) for v in projects[2][:3]], [5.899, 5.999, .1])
+        self.assertTrue(len(eyes) == 71 and all(eye == [0, 500, -400, 0, 0, 0, 1.2] for eye in eyes))
         self.assertTrue(all("Dialogue:" in script for script in scripts) and len(scripts) == 2)
         self.assertEqual(list(self.desk.media_root.glob("*.ass")), [])
 
@@ -1122,7 +1179,7 @@ class DeskTests(unittest.TestCase):
         self.assertAlmostEqual(gap(after[-1], 4), math.hypot(100, 10), delta=1)
         self.assertGreater(abs(after[-1][0] - before[-1][0]) + abs(after[-1][2] - before[-1][2]), 50)
 
-    def test_airfield_reads_the_whole_film_and_keeps_what_it_found(self):
+    def test_airfield_is_found_in_the_whole_film_as_it_was_read_when_opened(self):
         commands = []
         def native(command, progress):
             commands.append(command)
@@ -1131,9 +1188,14 @@ class DeskTests(unittest.TestCase):
             return []
         self.desk.viewer.command = native
         self.desk.data["project"]["length"] = 1300
-        self.run_action({"action": "airfield"})
+        with patch.object(self.desk, "progress"):
+            self.desk._filmable([], 1300)  # as a film is opened
         self.assertEqual([c for c in commands if c.startswith("tracks")],
                          ["tracks 0.00 600.00 1", "tracks 600.00 1200.00 1", "tracks 1200.00 1300.00 1"])
+        self.assertEqual(self.desk.own, [(1.0, 88, 0.0, 100.0, 0.0)])
+        del commands[:]
+        self.run_action({"action": "airfield"})
+        self.assertEqual(commands, [])  # the film is not read a second time
         self.assertEqual(self.desk.snapshot()["airfield"], {"film": "films/test.ahf", "moments": []})
 
     def test_a_sequence_previews_as_the_cut_renders_it(self):
