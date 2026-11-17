@@ -34,7 +34,9 @@ RATES = (30, 60)
 def rate(raw):
     return 60 if raw.get("fps") == 60 else 30
 # The viewer renders in about real time whatever the size (measured: 5 s of film in 5 s at 480x270 and at 960x540).
-CLIP = "960 540 30"
+# A preview clip is asked for at 60 frames a second and played as it comes: under 50 the viewer draws the recording
+# pilot's aircraft a frame off (see Desk._render), and keeping every second frame of a 6 s clip took ffmpeg 0.45 s.
+CLIP = "960 540 60"
 # Since 3.07 Patch 3 a seek plays the 5 s before the moment: the aircraft are solid in a still taken straight after
 # it and in a video's first frame, and renders keep their whole sound back to back, after a seek or just after open
 # (measured 17 Nov 2026; see "What was measured in the viewer" in docs/how-it-works.md). So nothing waits for them.
@@ -135,6 +137,8 @@ class Desk:
         self.lock = threading.RLock()
         self.compiled = {}  # camera_key -> cam commands, so an unchanged shot never rereads its tracks
         self.paths = {}  # (start, end, step) -> aircraft tracks: every angle tried on one stretch reads them once
+        self.reads = {}  # start -> (end, every aircraft every 0.02 s from there): what `paths` are picked out of
+        self.own = []  # the recording pilot's path a second apart through the whole film, read as it was opened
         self.flight = None  # the last stretch's flight data in full; state["flight"] only says what it holds
         self.applied, self.built = None, {}  # which plan the viewer holds, and what could not be built in it
         self.stills = deque()
@@ -555,6 +559,9 @@ class Desk:
     def command(self, command):
         return self.viewer.command(command, self.progress)
 
+    def commands(self, commands):
+        return self.viewer.commands(commands, self.progress)
+
     def _render(self, start, end, path, size, label="", blur=None, filters=""):
         """One video of a stretch, with the film's sound. `blur`: the frame rate to blend the passes of a `size`
         at FASTEST down to (see PASSES). `filters`: the looks to give it (see style). Cancel (see stop) is heard before
@@ -650,7 +657,7 @@ class Desk:
         if film not in {row["path"] for row in self.data["films"]}:
             raise ValueError("Choose a film from the viewer library")
         self.progress("Opening film and reading its moments")
-        self.compiled, self.paths, self.applied, self.flight = {}, {}, None, None
+        self.compiled, self.paths, self.reads, self.own, self.applied, self.flight = {}, {}, {}, [], None, None
         with self.lock:
             self.data.update(project=None, preview=None, planes=[], problems={}, nearby=None, airfield=None, flight=None, assembly=None)
         reply = self.command("open " + film)
@@ -696,12 +703,14 @@ class Desk:
         is missing (the victim) stays, marked `alone`: a shot of it opens on the one aircraft there is. Who is in
         the film comes from every aircraft's path a second apart (about 5 s for a 9 minute film); with no paths
         read at all, nothing is left out."""
-        seen = {}  # aircraft id: the seconds at which it is in the film
+        seen, lines = {}, []  # aircraft id: the seconds at which it is in the film
         for start in range(0, math.ceil(length), 600):
             self.progress(f"Finding who is in the film: {start / length:.0%}")
-            for t, row in track_rows(self.command(f"tracks {start:.2f} {min(length, start + 600):.2f} 1")).items():
-                for ident in row:
-                    seen.setdefault(ident, []).append(t)
+            lines += self.command(f"tracks {start:.2f} {min(length, start + 600):.2f} 1")
+        for t, row in track_rows(lines).items():
+            for ident in row:
+                seen.setdefault(ident, []).append(t)
+        self.own = filmer_path(lines)  # for the take-offs and landings (_airfield): the same read, not a second one
         if not seen:
             return events
         def there(value, t):
@@ -722,13 +731,20 @@ class Desk:
         step = step or (end - start) / max(1, math.ceil((end - start) * POINTS))
         key = (round(start, 3), round(end, 3), round(step, 6))
         if key not in self.paths:
-            self.progress("Reading aircraft paths")
             # Read every 0.02 s and the snapshots wanted picked out. Read every 0.5 s, the recording pilot was 25 to
             # 51 ft off his own path (measured on a Me 163): 7 degrees seen from an observer 390 ft away, nearly the
             # whole picture on a 9-degree lens, and the camera shook. The first snapshots of a read are off as well.
-            early = min(.1, start)
-            fine = track_rows(self.command(f"tracks {start - early:.8f} {end:.8f} {FINE:.10f}"))
-            grid = sorted(fine)
+            # The read is kept by its start: the ratings pick other moments out of the cameras' own read, and a
+            # stretch cut shorter at its end is in the longer one's (a second read of 22 s took 5 s: measured).
+            reach, fine = self.reads.get(round(start, 3), (-1, {}))
+            if reach < end - 1e-9:
+                self.progress("Reading aircraft paths")
+                early = min(.1, start)
+                reach, fine = end, track_rows(self.command(f"tracks {start - early:.8f} {end:.8f} {FINE:.10f}"))
+                self.reads[round(start, 3)] = reach, fine
+                while len(self.reads) > 4:
+                    del self.reads[next(iter(self.reads))]
+            grid = [t for t in sorted(fine) if reach <= end + 1e-9 or t <= end + 1e-6]  # of a longer read, what a read to here holds
             picked = {}
             # Each aircraft where it is at the moment asked for, between the snapshots either side of it. The nearer
             # snapshot alone is up to 0.01 s off, 3 ft of a 300 ft/s flight and different at every point (a shot of
@@ -764,13 +780,9 @@ class Desk:
 
     def _airfield(self, project):
         """Your take-offs and touchdowns in the whole film, from your flight path a second apart (see
-        ground_moments): about 5 s for a 9 minute film, read ten minutes at a time."""
-        length, lines = project["length"], []
-        for start in range(0, math.ceil(length), 600):
-            self.progress(f"Reading your flight path for take-offs and landings: {start / length:.0%}")
-            lines += self.command(f"tracks {start:.2f} {min(length, start + 600):.2f} 1")
+        ground_moments), read when the film was opened (_filmable): a read of its own took 5 s for a 10 minute film."""
         with self.lock:
-            self.data["airfield"] = {"film": project["film"], "moments": ground_moments(filmer_path(lines))}
+            self.data["airfield"] = {"film": project["film"], "moments": ground_moments(self.own)}
 
     def _flight(self, raw, project):
         """What every aircraft did in a stretch, and the lead and his opponent to each other (flight_data.py), from
@@ -903,11 +915,7 @@ class Desk:
                 commands.extend(lines)
             self.progress("Applying camera plan")
             self.applied = None
-            self.command("cams clear")
-            for command in commands:
-                self.command(command)
-            self.command("cams on")
-            self.command("cams save " + (self.root / "current.ahs").as_posix())
+            self.commands(["cams clear", *commands, "cams on", "cams save " + (self.root / "current.ahs").as_posix()])
             self.applied, self.built = token, problems
         if only is not None:
             return
@@ -932,15 +940,16 @@ class Desk:
         for shot in row:
             spans.append((offset, shot, self._camera(shot)))
             offset += shot["end"] - shot["start"]
-        frames = []
         self._stage("Finding the camera for the trails")
+        times = [[] for _ in spans]  # each shot's frames, by film time
         for k in range(round(offset * fps) + 1):
-            if k % fps == 0:
-                self._go_on()
-                self.progress(f"Finding the camera for the trails: {k // fps} of {math.ceil(offset)} s", k / fps / max(.1, offset))
-            begin, shot, lines = next(span for span in reversed(spans) if span[0] <= k / fps + 1e-9)
-            t = min(shot["end"], shot["start"] + k / fps - begin)
-            frames.append((t, self._eye(lines, t, shot)))
+            at = max(i for i, span in enumerate(spans) if span[0] <= k / fps + 1e-9)
+            times[at].append(min(spans[at][1]["end"], spans[at][1]["start"] + k / fps - spans[at][0]))
+        frames = []
+        for (begin, shot, lines), mine in zip(spans, times):
+            self._go_on()
+            self.progress(f"Finding the camera for the trails: {begin:.0f} of {math.ceil(offset)} s", begin / max(.1, offset))
+            frames += zip(mine, self._eyes(lines, mine, shot))
         radii = {int(ident): plane["radius"] for ident, plane in flight["data"]["aircraft"].items()}
         path = self.media_root / (uuid.uuid4().hex + ".ass")
         with path.open("w", encoding="utf-8") as script:  # line by line: the whole of it need not be held in memory
@@ -948,33 +957,56 @@ class Desk:
                                                                  fps, width, height, style, tail))
         return path
 
-    def _eye(self, lines, t, shot):
-        """Where the camera of a shot's compiled `cam` lines is at film time t (x, alt, z, yaw, pitch, roll, fov), by
-        the viewer's own projection from the kept tracks; None for the pilot's view and the weapon ride, which it
-        does not project. The projection takes still cameras only: a moving one is placed on its curve first."""
+    def _eyes(self, lines, times, shot):
+        """Where the camera of a shot's compiled `cam` lines is at each of these film times, a frame apart: [(x, alt,
+        z, yaw, pitch, roll, fov) or None], by the viewer's own projection from the kept tracks; None for the pilot's
+        view and the weapon ride, which it does not project, and where the camera's aircraft is not in the film. The
+        projection takes still cameras only: a standing one is asked once for all its times, a moving one is placed
+        on its curve at each time and those cameras are asked 60 at a time, each one's answer taken at its own time.
+        Asked a frame at a time, a 22 s shot at 60 frames a second took 18 s; so, under one, with the same answers
+        (measured 17 Nov 2026)."""
         if shot["kind"] in ("recorded", "weapon"):
-            return None
+            return [None] * len(times)
         pieces = [line.split(maxsplit=3) for line in lines]  # cam, start, duration, the camera
         rest = pieces[0][3]
-        if " to " in rest:
+        moving = " to " in rest
+        if moving:
             points = [(float(p[1]), [float(v) for v in p[3].split()[1:8]]) for p in pieces]
             points.append((float(pieces[-1][1]) + float(pieces[-1][2]), [float(v) for v in pieces[-1][3].split(" to ")[1].split()[:7]]))
-            # Whom the viewer holds in the middle can change within a shot (an aircraft that leaves the film lets go).
-            piece = next((p for p in reversed(pieces) if float(p[1]) <= t + 1e-9), pieces[0])
-            held = re.search(r" at (\S+)", piece[3])
-            camera = "fixed " + " ".join(f"{v:.8f}" for v in trails.between(points, t)) + (f" at {held[1]}" if held else "")
+
+            def camera(t):
+                # Whom the viewer holds in the middle can change within a shot (an aircraft that leaves the film lets go).
+                piece = next((p for p in reversed(pieces) if float(p[1]) <= t + 1e-9), pieces[0])
+                held = re.search(r" at (\S+)", piece[3])
+                return "fixed " + " ".join(f"{v:.8f}" for v in trails.between(points, t)) + (f" at {held[1]}" if held else "")
         else:
-            camera = re.sub(r" (outside|curve)\b", "", rest).split(" name ")[0]
+            standing = re.sub(r" (outside|curve)\b", "", rest).split(" name ")[0]
         # In the working folder: its path has no spaces, which the viewer promises to take only for a few commands.
         camfile, found = self.media_root / "trailcam.txt", self.media_root / "trailcam-eye.txt"
-        camfile.write_text(camera + "\n", encoding="ascii")
-        # Ending at t keeps it inside the kept tracks (beyond them the viewer would read the film); its last step is t.
-        # A shot at the film's very start has less than .15 s before it, or nothing: then one step, at t.
-        begin = max(0.0, t - .15)
-        begin = begin if t - begin >= .01 else t
-        self.command(f"project {begin:.8f} {t:.8f} {t - begin or .15:.8f} {camfile.as_posix()} {found.as_posix()} ids {shot['hero']}")
-        eyes = [row.split() for row in found.read_text().splitlines() if row.startswith("eye ")]
-        return [float(v) for v in min(eyes, key=lambda row: abs(float(row[1]) - t))[3:10]] if eyes else None
+        size = 60 if moving else max(1, len(times))
+        parts, eyes = [times[at:at + size] for at in range(0, len(times), size)], []
+        while parts:
+            part = parts.pop(0)
+            if len(part) > 2 and abs((part[-1] - part[-2]) - (part[1] - part[0])) > 1e-6:
+                parts[:0] = [part[:-1], part[-1:]]  # a video's last frame, held at the shot's end, is off the others' steps: asked alone
+                continue
+            camfile.write_text("\n".join(map(camera, part) if moving else [standing]) + "\n", encoding="ascii")
+            # From the first time to the last, so inside the kept tracks (beyond them the viewer would read the film).
+            # The step is rounded down: the last step must not fall past the end and be left out.
+            first, last = round(part[0], 8), round(part[-1], 8)
+            step = math.floor((last - first) / (len(part) - 1) * 1e10) / 1e10 if len(part) > 1 else .15
+            self.command(f"project {first:.8f} {last:.8f} {step:.10f} {camfile.as_posix()} {found.as_posix()} ids {shot['hero']}")
+            told = {}  # camera number: [(time, eye)] in time order
+            for row in (line.split() for line in found.read_text().splitlines()):
+                if row[:1] == ["eye"]:
+                    told.setdefault(int(row[2]), []).append((float(row[1]), [float(v) for v in row[3:10]]))
+            for k, t in enumerate(part):
+                mine = told.get(k + 1 if moving else 1, [])
+                at = bisect.bisect_left(mine, (t,))
+                near = min(mine[max(0, at - 1):at + 1], key=lambda eye: abs(eye[0] - t), default=None)
+                # The viewer tells the time in hundredths: its own step, or the camera's aircraft is not there then.
+                eyes.append(near[1] if near and abs(near[0] - t) < .006 else None)
+        return eyes
 
     def _cut(self, project, row):
         """The viewer set to film these shots in a row as one video, the gaps between them skipped."""
@@ -997,10 +1029,7 @@ class Desk:
         # tells tenths), so a moving camera's neighbouring pieces go too.
         lines = [command for command, start, duration in spans if start - .3 <= now <= start + duration + .3]
         self.applied = None  # the viewer now holds this one camera, not the plan
-        self.command("cams clear")
-        for line in lines or [spans[0][0]]:
-            self.command(line)
-        self.command("cams on")
+        self.commands(["cams clear", *(lines or [spans[0][0]]), "cams on"])
         self._frame(project["revision"])
 
     def _frame(self, revision):

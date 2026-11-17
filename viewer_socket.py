@@ -57,17 +57,36 @@ class Viewer:
         raise ConnectionError("Start Film Viewer 3.07 Patch 3 or newer, then Connect")
 
     def command(self, command, progress=lambda message: None):
-        if "\n" in command or "\r" in command or len(command.encode("utf-8")) > 8191:
+        return self.commands([command], progress)[0]
+
+    def commands(self, commands, progress=lambda message: None):
+        """Each command's reply. They are sent 60 at a time (the viewer lets 64 lines wait): it takes one command a
+        frame when they come one by one, 3.0 s for a camera plan of 224 lines against 0.05 s sent together (measured
+        17 Nov 2026). Every reply of those sent is read before one's error is raised, so none is left waiting."""
+        if any("\n" in command or "\r" in command or len(command.encode("utf-8")) > 8191 for command in commands):
             raise ValueError("Invalid viewer command")
         if not self.sock:
             self.connect(progress)
+        replies, refused = [], None
         try:
             self.sock.settimeout(self.patience)
-            self.sock.sendall((command + "\n").encode("utf-8"))
-            return self._reply(progress)
+            for at in range(0, len(commands), 60):
+                self.sock.sendall("".join(command + "\n" for command in commands[at:at + 60]).encode("utf-8"))
+                for _ in commands[at:at + 60]:
+                    try:
+                        replies.append(self._reply(progress))
+                    except ValueError as error:  # the viewer's "error:", told once its reply was read whole
+                        if isinstance(error, UnicodeError):  # not a reply at all: the connection is given up below
+                            raise
+                        refused = refused or error
+                if refused:
+                    break
         except (OSError, ConnectionError, UnicodeError):
             self.close()
             raise ConnectionError("Viewer did not confirm completion. Check it before reconnecting; the action was not retried.")
+        if refused:
+            raise refused
+        return replies
 
 
 def number(value, low, high, name):

@@ -63,7 +63,8 @@ opponents is better made as two shots.
 **Picture.** The socket has no picture stream, and the viewer renders a video
 in about the time it plays, whatever its size (measured: five seconds of film
 in five seconds at 480×270 and at 960×540). So the desk's moving picture is a
-preview clip: the selected shot rendered once at 960×540 with sound, then
+preview clip: the selected shot rendered once at 960×540 and 60 frames a
+second (as the viewer makes it: no ffmpeg) with sound, then
 replayed, paused and scrubbed from its file. A still of the moment shows while
 it renders. A clip is kept under `clips/` in the output folder (the newest 80)
 and reused for as long as the stretch, its cameras and Names are the same, also
@@ -437,7 +438,11 @@ aircraft circling at 1080p60: 0.3 to 0.6 s more script a second of film than
 every aircraft's track from the trail's length before the video, and asks the viewer's `project` where the
 shot's camera stands at every frame: a moving camera is first placed on its
 curve (a uniform Catmull-Rom through the shot's points, as the viewer moves it:
-within 0.05 ft halfway between points), then projected as a still one. Its eye
+within 0.05 ft halfway between points), then projected as a still one. A
+standing camera is asked once for all its frames, a moving one 60 frames at a
+time (60 still cameras, each one's answer taken at its own frame): asked a frame
+at a time, a 22 s shot at 60 frames a second took 18 s, and so 0.6 s, with the
+same answers (measured 17 Nov 2026). Its eye
 puts the aircraft where the viewer does to 0.7 px (median, 1080p), and to
 0.15 px on airframe cameras rolled up to 70 degrees. The wingtips are 0.88 of
 the aircraft's visible radius out (a Yak's tips matched at 75 ft). libass draws
@@ -535,8 +540,9 @@ the message, where he leaves the film; between the guns and that the cut skips.
 Seen on a real kill: he hit the ground about a second before the message, so the
 end of his fall shows grass. The cameras stay yours to change.
 
-Take-offs & landings reads your flight path for the whole film, a second
-apart (about 5 s for 9 minutes), and adds shots for each take-off and landing
+Take-offs & landings looks through your flight path for the whole film, a
+second apart (read once, when the film is opened, with who is in it: about 5 s
+for 10 minutes), and adds shots for each take-off and landing
 that has none yet. You are the aircraft at the eye of the recorded cockpit view
 (3 to 5 ft from it). A take-off starts from standing (under 8 ft/s); the
 lift-off is the last moment within 1.5 ft of that height before you are 8 ft
@@ -637,8 +643,13 @@ appear in status and must be answered in the viewer. Stop a native render in
 Film Viewer if needed.
 
 A shot's camera commands are kept while its geometry is unchanged, and the
-aircraft tracks of a stretch are read once for every camera tried on it. The
-desk controls only the offline viewer, never the live game.
+aircraft tracks of a stretch are read once for every camera tried on it, for
+the ratings of its angles, and for the same stretch cut shorter at its end (a
+read of 22 s took 5 s). Commands that belong together go to the viewer in one
+piece, 60 at a time: it takes one command a frame when they come one by one,
+and an observer's camera of 224 lines took 3.0 s so, against 0.05 s together
+(measured 17 Nov 2026). The desk controls only the offline viewer, never the
+live game.
 
 `.quickshots/current.ahs` is the most recently applied native plan; JSON is the
 editable project. `.quickshots/errors.log` gets every operation that failed,
@@ -853,7 +864,9 @@ What the film tells, measured:
   the airframe or one the viewer aims hides them (the aircraft is where the camera is fastened), which is
   why they were only seen from a camera flying a path of its own. So the desk never asks the viewer for
   fewer than 50: a video of 30 is rendered at 60 and ffmpeg keeps every second frame (without ffmpeg the
-  video stays at 60), a preview clip too; a blurred one was always rendered at 120. Found by following
+  video stays at 60); a preview clip is rendered at 60 and played so; a blurred one was always rendered at
+  120. Still so on Patch 3 (17 Nov 2026: the same shot at 30 hopped 2.7 ft at 432.00 s and 9.9 ft at 444.60 s
+  in two renders of two, and not at 60, where the viewer took 0.85 s a second of film against 0.43). Found by following
   corners on the aircraft from frame to frame (Lucas-Kanade) against the background's own step.
 - **The viewer carries a camera's turn straight from point to point.** `curve` or not, between two points
   of a moving camera the picture turns at one pace. Measured in a finished video, frame by frame (phase
