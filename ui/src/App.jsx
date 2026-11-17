@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {Aperture, ArrowArcRight, ArrowBendUpRight, ArrowClockwise, ArrowRight, ArrowsClockwise, ArrowsHorizontal, ArrowsInLineHorizontal, ArrowsOutLineHorizontal, ArrowsVertical, CaretLeft, CaretRight, Copy, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Mouse, Pause, Play, Plus, SkipBack, Sparkle, Stop, Swap, Trash, Wind, X} from "@phosphor-icons/react";
+import {Aperture, ArrowArcRight, ArrowBendUpRight, ArrowClockwise, ArrowFatLinesUp, ArrowLineRight, ArrowLineUp, ArrowRight, ArrowsClockwise, ArrowsHorizontal, ArrowsInLineHorizontal, ArrowsOutLineHorizontal, ArrowsVertical, CaretLeft, CaretRight, Copy, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Mouse, Pause, Play, Plus, SkipBack, Sparkle, Stop, Swap, Trash, Wind, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
 import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, when, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera} from "./desk.js";
 
@@ -12,8 +12,13 @@ const TUNING = [["orbit", "Around", "°", -180, 180, 1, FREE], ["distance", "Dis
   // How many seconds of your path the observer flies the average of: more, and it follows you less closely.
   ["loose", "Looseness", " s", 1, 10, 1, ["escort"]],
   // Cameras on the airframe that never lock on him: where they look (a drag on the picture does the same).
-  ["turn", "Turn (left +)", "°", -180, 180, 1, ["cockpit", "nose", "belly", "gear"]], ["tilt", "Tilt (up +)", "°", -89, 89, 1, ["cockpit", "nose", "belly", "gear"]]];
-const AS_FLOWN = ["recorded", "weapon"];  // the pilot's own view and the bomb's ride: nothing to adjust
+  ["turn", "Turn (left +)", "°", -180, 180, 1, ["cockpit", "nose", "belly", "gear", "airframe"]], ["tilt", "Tilt (up +)", "°", -89, 89, 1, ["cockpit", "nose", "belly", "gear", "airframe"]],
+  // Where the camera on your airframe sits: feet from the pilot's eye.
+  ["right", "Right", "ft", -100, 100, 1, ["airframe"]], ["up", "Up", "ft", -30, 30, 1, ["airframe"]], ["ahead", "Ahead", "ft", -100, 60, 1, ["airframe"]]];
+const AS_FLOWN = ["recorded", "weapon"];
+// What a place on the airframe the desk keeps for an aircraft type holds, and that place as a shot's values.
+const KEEP = ["right", "up", "ahead", "turn", "tilt", "fov", "roll"];
+const placeOf = kept => Object.fromEntries(KEEP.map(key => [key, kept[key]]));  // the pilot's own view and the bomb's ride: nothing to adjust
 // The camera's controls over the picture, in its corners by what they do: where it stands and looks (top left), its
 // lens (top right), how it moves through the shot (bottom left). One shows only where it changes this camera, and
 // its tooltip names the gesture that does the same, so a drag or a wheel is seen moving its numbers.
@@ -22,6 +27,9 @@ const HUD = {
   distance: ["place", ArrowsOutLineHorizontal, "Distance", "How far from the aircraft the camera stands: nearer, the aircraft grows and the perspective deepens. Shift and the wheel over the picture do the same."],
   height: ["place", ArrowsVertical, "Height", "How far above (+) or below (−) the aircraft the camera stands. Dragging the picture up and down does the same."],
   turn: ["place", ArrowsHorizontal, "Turn", "Where the camera looks: to the left (+) or to the right. Dragging the picture sideways does the same."],
+  right: ["place", ArrowLineRight, "Right", "Where the camera sits on your aircraft: feet to the right of the pilot (−: to the left)."],
+  up: ["place", ArrowLineUp, "Up", "Where the camera sits on your aircraft: feet above the pilot's eye (−: below)."],
+  ahead: ["place", ArrowFatLinesUp, "Ahead", "Where the camera sits on your aircraft: feet ahead of the pilot (−: behind, toward the tail)."],
   tilt: ["place", ArrowsVertical, "Tilt", "Where the camera looks: up (+) or down. Dragging the picture up and down does the same."],
   fov: ["lens", Aperture, "Lens", "The lens's angle: narrower, the aircraft grows without the camera moving. The wheel over the picture does the same."],
   roll: ["lens", ArrowArcRight, "Roll", "Tilts the picture's horizon."],
@@ -436,8 +444,21 @@ export function App() {
   function angle(a) {
     let next = {...draft, roll: 0, watch: "both", keys: undefined, path: undefined, loose: undefined, zoom: undefined, ride: undefined, ...bestVariant(a, stage, scores).variant};
     if (next.path === "own") next = toggleKey(next, at);  // the tripod: pinned to the sky where it is at the playhead
+    const model = desk.planes.find(p => p.id === next.hero)?.model, first = (desk.mounts || []).find(m => m.model === model);
+    if (next.kind === "airframe" && first) next = {...next, ...placeOf(first)};  // the first place kept for this aircraft type
     if (a.pair) setCast(stage);
     film.current?.pause(); tune(next);  // a still to set the view on first: the clip is rendered when Play asks for it
+  }
+  // Places of the camera on the airframe, kept by the desk per aircraft type: offered again on any film.
+  function keepMounts(mounts) {
+    request("/api/mounts", {mounts}).then(result => setDesk(old => ({...old, mounts: result.mounts}))).catch(e => setError(e.message));
+  }
+  function keepPlace(type) {
+    const mounts = desk.mounts || [], own = mounts.filter(m => m.model === type);
+    const name = window.prompt(`A name for this place on the ${type}: the same name replaces it`, `Place ${own.length + 1}`)?.trim().slice(0, 80);
+    if (!name) return;
+    const place = {model: type, name, ...placeOf({...Object.fromEntries(KEEP.map(key => [key, 0])), ...draft})}, at = mounts.findIndex(m => m.model === type && m.name === name);
+    keepMounts(at < 0 ? [...mounts, place] : mounts.map((m, i) => i === at ? place : m));
   }
   // Whom the camera ship keeps in its picture: both of you, you alone (then from any side), or him alone on a
   // long lens from its steady seat beside you. The lens closes on him at once when it was wider than he needs.
@@ -709,6 +730,10 @@ export function App() {
   // The pilot's seat keeps the horizon level: the viewer is told no roll for it (shot_plan._mount).
   const tuning = adjustable ? TUNING.filter(row => (row[6] ? row[6].includes(draft.kind) : true) && (!row[7] || draft[row[0]] != null)
     && !(row[0] === "roll" && draft.kind === "cockpit")) : [];
+  // The places the desk keeps for the type of the aircraft the camera on the airframe rides, and the one it is at.
+  const type = draft?.kind === "airframe" ? desk.planes.find(p => p.id === draft.hero)?.model : null;
+  const kept = type ? (desk.mounts || []).filter(m => m.model === type) : [];
+  const here = kept.find(m => KEEP.every(key => (draft[key] ?? 0) === m[key]));
   const dropInShot = draft && events.some(e => e.kind === "drop" && e.time >= draft.start - 1 && e.time <= draft.end);
   onWheel.current = adjustable ? (closer, shift) => {
     film.current?.pause();
@@ -896,6 +921,11 @@ export function App() {
             {["cockpit", "recorded"].includes(draft.kind) && <div className="around" aria-label="How the pilot's seat looks"><span>Looks</span>
               <button aria-pressed={draft.kind === "cockpit"} disabled={conflict} onClick={() => tune({...draft, kind: "cockpit", target: stage.other ?? null, fov: 69})} title="Straight ahead, or where the sliders turn it">Straight ahead</button>
               <button aria-pressed={draft.kind === "recorded"} disabled={conflict} onClick={() => tune({...draft, kind: "recorded", target: null})} title="The pilot's view as you saw it in the fight, head movements and all">As recorded</button>
+            </div>}
+            {draft.kind === "airframe" && <div className="around" aria-label="Places on this aircraft type the desk keeps"><span>{type ? `Kept for the ${type}` : "Kept places"}</span>
+              {kept.map(m => <button key={m.name} aria-pressed={m === here} disabled={conflict} onClick={() => tune({...draft, ...placeOf(m)})} title={`Put the camera where it was kept as ${m.name}`}>{m.name}</button>)}
+              <button disabled={conflict || !type} onClick={() => keepPlace(type)} title={type ? `Keep where the camera is now for every ${type}: offered here on any film, and taken first when you choose this camera` : "Move the playhead to where this aircraft flies: the desk learns its type there"}>Keep this place</button>
+              {here && <button disabled={conflict} onClick={() => keepMounts(desk.mounts.filter(m => m !== here))} title="The desk forgets this kept place">Forget {here.name}</button>}
             </div>}
             {watching && <div className="around" aria-label="Whom the observer watches"><span title={draft.keys?.length ? "Kept in the keyframe at the playhead: the observer turns from one keyframe's aircraft to the next one's" : undefined}>Looks at{draft.keys?.length ? " · here" : ""}</span>
               <button aria-pressed={watching === "both"} disabled={conflict || stage.other == null} onClick={() => watch("both")}>Both</button>

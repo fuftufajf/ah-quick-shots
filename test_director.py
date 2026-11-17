@@ -1001,6 +1001,15 @@ class DeskTests(unittest.TestCase):
         finally:
             server.shutdown(); server.server_close()
 
+    def test_places_on_the_airframe_are_kept_per_aircraft_type(self):
+        place = {"model": "La-7", "name": "Flaps", "right": 9, "up": 6, "ahead": -14, "turn": 0, "tilt": -20, "fov": 75, "roll": 0}
+        self.assertEqual(self.desk.save_mounts({"mounts": [place]})["mounts"], [place])
+        self.assertEqual(Desk(self.temp.name, self.viewer).data["mounts"], [place])  # kept across a restart
+        for wrong in ({"mounts": "all"}, {"mounts": [{**place, "right": 500}]}, {"mounts": [{**place, "name": None}]}, {"mounts": [place] * 201}):
+            with self.subTest(wrong=str(wrong)[:60]), self.assertRaises(ValueError):
+                self.desk.save_mounts(wrong)
+        self.assertEqual(self.desk.snapshot()["mounts"], [place])
+
     def test_an_assembly_is_checked_kept_and_made_while_the_desk_goes_on(self):
         found = self.assembly_desk()
         song = self.desk.keep_music("song.mp3", b"notes")
@@ -1350,6 +1359,11 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(probe_cameras({**base, "kind": "belly"}, {}), [(None, "mount 19 0 -4.5 -6 0.0000 0.09 0.00000000 1.15191731")])
         self.assertEqual(validate_shot({**SHOT, "kind": "weapon", "target": None}, 20)["kind"], "weapon")
         self.assertEqual(compile_shot({**base, "kind": "recorded"}, {}), ["cam 1 2 recorded"])
+        # Anywhere on the airframe: where it sits and where it looks are the shot's own.
+        free = validate_shot({**SHOT, "kind": "airframe", "target": None, "right": 9, "up": 6, "ahead": -14, "tilt": -20, "fov": 75}, 20)
+        self.assertEqual(compile_shot(free, {}), ["cam 1 2 mount 19 9 6 -14 0.0000 -0.3491 0.00000000 1.30899694 outside"])
+        with self.assertRaises(ValueError):
+            validate_shot({**free, "ahead": -400}, 20)
         # Behind the tail and fastened to the airframe, so a loop or a roll cannot swing it round to the side.
         behind = {**base, "kind": "follow", "target": None, "orbit": 0, "distance": 80, "height": 16}
         self.assertEqual(compile_shot(behind, {}), ["cam 1 2 mount 19 0.00 16 -80.00 0.0000 -0.0974 0.00000000 1.15191731 outside"])

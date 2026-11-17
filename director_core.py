@@ -20,7 +20,7 @@ from finishing import FASTEST, PASSES, Cancelled, assemble, blend, fastest, peak
 from flight_data import derive, pair, read_kept
 import overlay
 import trails
-from shot_plan import (RIDES, compile_shot, film_order, filmer_path, ground_moments, nearby, passes, probe_cameras, stamp, track_rows, validate_effects,
+from shot_plan import (PLACE, RIDES, compile_shot, film_order, filmer_path, ground_moments, nearby, passes, probe_cameras, stamp, track_rows, validate_effects,
                        validate_plan, validate_shot, videos as video_rows)
 from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 
@@ -159,7 +159,7 @@ class Desk:
         self.data = {"connected": False, "films": [], "project": None, "planes": [], "recent": kept("recent.json"), "waiting": kept("waiting.json"),
                      "now": 0, "icons": True, "problems": {}, "nearby": None, "airfield": None, "flight": None,
                      "preview": None, "proposals": [], "job": None, "videos": str(self.videos), "renders": [],
-                     "ffmpeg": bool(shutil.which("ffmpeg")), "overlays": None, "assembly": None, "assembling": None,
+                     "ffmpeg": bool(shutil.which("ffmpeg")), "mounts": kept("mounts.json"), "overlays": None, "assembly": None, "assembling": None,
                      "pace": json.loads((self.root / PACE).read_text(encoding="utf-8")) if (self.root / PACE).exists() else {}}
 
     @staticmethod
@@ -459,6 +459,20 @@ class Desk:
             self._write(self._file(self.data["project"]["film"], ".assembly"), assembly)
             self.data["assembly"] = assembly
             return {"assembly": copy.deepcopy(assembly)}
+
+    def save_mounts(self, raw):
+        """Places of the camera on the airframe kept for an aircraft type, the page's whole list:
+        [{model, name, right, up, ahead, turn, tilt, fov, roll}]."""
+        rows = raw.get("mounts")
+        if not isinstance(rows, list) or len(rows) > 200 or not all(isinstance(row, dict) for row in rows):
+            raise ValueError("The desk keeps up to 200 places on the airframe")
+        mounts = [{"model": safe_text(row.get("model"), 80), "name": safe_text(row.get("name"), 80),
+                   **{key: number(row.get(key, 0), low, high, key) for key, low, high in
+                      (*PLACE, ("turn", -180, 180), ("tilt", -89, 89), ("fov", 6, 140), ("roll", -180, 180))}} for row in rows]
+        with self.lock:
+            self._write(self.root / "mounts.json", mounts)
+            self.data["mounts"] = mounts
+        return {"mounts": copy.deepcopy(mounts)}
 
     def assemble(self, raw):
         """The assembly as one video in the videos folder. ffmpeg makes it while the desk goes on: the viewer has no

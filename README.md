@@ -104,6 +104,9 @@ marked, and goes to the Recycle Bin when you open the next.
    - The rest: you or the opponent in front, close views, over your shoulder,
      from your wing, behind you, fly-bys, the cockpit (straight ahead, or as
      you looked in the fight), cameras on the airframe, riding the bomb.
+   - **On your airframe** sits anywhere on your aircraft: Right, Up and Ahead
+     in the picture's corner place it, in feet from the pilot. Keep this place
+     keeps it for that aircraft type, and the camera opens there on any film.
 4. **The cut** — tick the shots to render, choose 1080p, 4K or a quick
    draft, 30 or 60 frames a second, one video or a file per shot, then Render
    selected. Motion blur (kept with each shot) takes about four times as long

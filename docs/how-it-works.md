@@ -279,6 +279,14 @@ the two-aircraft cameras then take whoever comes nearest.
   the two cameras that are directed, come first in the list.
 - On your nose, Under your belly, At your gear — the viewer's own airframe
   cameras from its director help; the gear cameras are for take-offs and landings.
+- On your airframe — a camera anywhere on your aircraft, placed by hand: Right,
+  Up and Ahead in feet from the pilot's eye, Turn and Tilt where it looks. It
+  opens above and behind the right wing, looking along it. Keep this place keeps
+  it under the aircraft's type (as `planes long` names it, so the playhead must
+  be where that aircraft flies); choosing the camera on that type opens at the
+  first place kept. Film Viewer moves the flaps in a film, not the ailerons or
+  elevators (a 105°/s roll of a La-7 showed them still): it shows flaps, the
+  belly and the wing, not the controls working.
 - Ride the bomb — from just before a release to the blast; offered when a bomb,
   rocket or torpedo leaves during the shot. A drop moment starts with it.
 
@@ -770,8 +778,15 @@ Kinds:
 - `recorded` — the pilot's own view as flown, head movements included
 - `wing`, `shoulder` (turn to hold the target), `cockpit` (straight ahead),
   `nose`, `belly`, `gear` — cameras on the hero's airframe
+- `airframe` — anywhere on the hero's airframe: `right`, `up`, `ahead` (feet
+  from the pilot's eye), looking where `turn` and `tilt` say
 - `weapon` — rides the hero's next bomb, rocket or torpedo: start the shot a
   second before its drop event
+
+**POST /api/mounts** `{mounts}` — the places of the camera on the airframe kept
+per aircraft type, the whole list (up to 200), in `state.mounts` and
+`.quickshots/mounts.json`: each `{model, name, right, up, ahead, turn, tilt,
+fov, roll}`.
 
 **POST /api/action** `{action, expected_revision, ...}` — answers 202 at once
 (with `wait: true`, 200 with the whole state once the action has finished, at
