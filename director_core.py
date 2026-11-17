@@ -1041,9 +1041,10 @@ class Desk:
             first, last = round(part[0], 8), round(part[-1], 8)
             step = math.floor((last - first) / (len(part) - 1) * 1e10) / 1e10 if len(part) > 1 else .1
             # The viewer projects a tenth of a second at least ("the project must end at least 0.1 s after it starts"):
-            # a few last frames are begun whole steps earlier, though not before the film's start.
+            # a few last frames are begun whole steps earlier, though not before the film's start. A hair more than a
+            # tenth: one asked from 243.9 to 244.0 was refused, the difference a hair short in the viewer's own sums.
             # shortcut: frames within a tenth of a second of the film's start, asked alone, are refused; begin them later if a shot ever is that short there
-            first -= min(max(0, math.ceil((.1 - (last - first)) / step - 1e-9)), int(first / step)) * step
+            first -= min(max(0, math.ceil((.1001 - (last - first)) / step)), int(first / step)) * step
             self.command(f"project {first:.8f} {last:.8f} {step:.10f} {camfile.as_posix()} {found.as_posix()} ids {shot['hero']}")
             told = {}  # camera number: [(time, eye)] in time order
             for row in (line.split() for line in found.read_text().splitlines()):
