@@ -1,7 +1,7 @@
 # How AH Quick Shots works
 
-Requires Film Viewer 3.07 Patch 3 (socket protocol 9) or newer. Start the viewer,
-then `AH Quick Shots.bat`; the desk connects by itself. The batch file starts
+Requires Film Viewer 3.07 Patch 3 (socket protocol 9) or newer. Start the viewer
+(from Patch 4: the game's main menu, Editing Tools, Film Viewer), then `AH Quick Shots.bat`; the desk connects by itself. The batch file starts
 `director_api.py --page`, which opens the page once the server listens. If the
 port is held by a desk of this folder, or by one busy rendering, that page opens
 instead; a desk of another folder is stopped first (found with `netstat`).
@@ -908,7 +908,9 @@ What the film tells, measured:
   fewer than 50: a video of 30 is rendered at 60 and ffmpeg keeps every second frame (without ffmpeg the
   video stays at 60); a preview clip is rendered at 60 and played so; a blurred one was always rendered at
   120. Still so on Patch 3 (17 Nov 2026: the same shot at 30 hopped 2.7 ft at 432.00 s and 9.9 ft at 444.60 s
-  in two renders of two, and not at 60, where the viewer took 0.85 s a second of film against 0.43). Found by following
+  in two renders of two, and not at 60, where the viewer took 0.85 s a second of film against 0.43), and on
+  Patch 4 (18 Nov 2026: 2.7 and 2.8 ft at 432.00 s, 10.0 ft at 444.60 s in two renders of two, not at 60;
+  its "moving cameras keep exact frame timing" is not this). Found by following
   corners on the aircraft from frame to frame (Lucas-Kanade) against the background's own step.
 - **The viewer carries a camera's turn straight from point to point.** `curve` or not, between two points
   of a moving camera the picture turns at one pace. Measured in a finished video, frame by frame (phase

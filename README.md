@@ -37,7 +37,9 @@ overlay and the Assembly's video. The package brings both.
    [latest release](https://github.com/fuftufajf/ah-quick-shots/releases/latest).
 2. Unzip it to a place **without spaces in its path**, for example `C:\`:
    it makes the folder `C:\ah-quick-shots`.
-3. Close the game and start Film Viewer.
+3. Start Film Viewer: in the game's main menu choose Editing Tools, then
+   Film Viewer (since 3.07 Patch 4; the game closes by itself). That window
+   can also put a Film Viewer shortcut on your desktop for next time.
 4. Double-click **AH Quick Shots.bat** in that folder. The page opens and
    connects by itself.
 
@@ -144,7 +146,8 @@ by the Windows package: they are experimental.
 ## Known limits
 
 - **Film Viewer does not run beside the game.** If the viewer exits at once,
-  close the game and start the viewer again.
+  close the game and start the viewer again (Editing Tools in the game's
+  main menu closes the game for you).
 - **Cancel stops a render after the pass Film Viewer is rendering.** The
   socket cannot stop the viewer's own render, so Cancel (on the wait over the
   picture) stops ffmpeg at once and begins nothing more; to stop the viewer at
