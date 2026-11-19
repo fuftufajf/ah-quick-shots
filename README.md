@@ -37,7 +37,9 @@ overlay and the Assembly's video. The package brings both.
    [latest release](https://github.com/fuftufajf/ah-quick-shots/releases/latest).
 2. Unzip it to a place **without spaces in its path**, for example `C:\`:
    it makes the folder `C:\ah-quick-shots`.
-3. Close the game and start Film Viewer.
+3. Start Film Viewer: in the game's main menu choose Editing Tools, then
+   Film Viewer (since 3.07 Patch 4; the game closes by itself). That window
+   can also put a Film Viewer shortcut on your desktop for next time.
 4. Double-click **AH Quick Shots.bat** in that folder. The page opens and
    connects by itself.
 
@@ -88,6 +90,8 @@ marked, and goes to the Recycle Bin when you open the next.
    picture to move the camera, turn the wheel to zoom, Shift and the wheel to
    bring the camera nearer. The camera's values sit in the picture's corners:
    click one to set it exactly. Names shows the pilots' names, in renders too.
+   9:16 dims all but the middle of the picture that a vertical reel keeps; the
+   page remembers it.
 3. **Cameras** — Lead and Opponent say whom the shot films; one click shows the
    shot through that camera; Rate cameras measures them all. Add to cut keeps
    the shot. Double-click a shot in The cut to rename it.
@@ -102,6 +106,9 @@ marked, and goes to the Recycle Bin when you open the next.
    - The rest: you or the opponent in front, close views, over your shoulder,
      from your wing, behind you, fly-bys, the cockpit (straight ahead, or as
      you looked in the fight), cameras on the airframe, riding the bomb.
+   - **On your airframe** sits anywhere on your aircraft: Right, Up and Ahead
+     in the picture's corner place it, in feet from the pilot. Keep this place
+     keeps it for that aircraft type, and the camera opens there on any film.
 4. **The cut** — tick the shots to render, choose 1080p, 4K or a quick
    draft, 30 or 60 frames a second, one video or a file per shot, then Render
    selected. Motion blur (kept with each shot) takes about four times as long
@@ -139,7 +146,8 @@ by the Windows package: they are experimental.
 ## Known limits
 
 - **Film Viewer does not run beside the game.** If the viewer exits at once,
-  close the game and start the viewer again.
+  close the game and start the viewer again (Editing Tools in the game's
+  main menu closes the game for you).
 - **Cancel stops a render after the pass Film Viewer is rendering.** The
   socket cannot stop the viewer's own render, so Cancel (on the wait over the
   picture) stops ffmpeg at once and begins nothing more; to stop the viewer at

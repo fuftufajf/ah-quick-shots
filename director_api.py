@@ -162,6 +162,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, {"halted": True})
             if self.path == "/api/assembly":
                 return self.send_json(200, self.server.desk.save_assembly(raw))
+            if self.path == "/api/mounts":  # the places on the airframe kept per aircraft type
+                return self.send_json(200, self.server.desk.save_mounts(raw))
             if self.path == "/api/assemble":
                 return self.send_json(202, self.server.desk.assemble(raw))
             if self.path == "/api/action":

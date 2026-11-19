@@ -1,7 +1,7 @@
 # How AH Quick Shots works
 
-Requires Film Viewer 3.07 Patch 3 (socket protocol 9) or newer. Start the viewer,
-then `AH Quick Shots.bat`; the desk connects by itself. The batch file starts
+Requires Film Viewer 3.07 Patch 3 (socket protocol 9) or newer. Start the viewer
+(from Patch 4: the game's main menu, Editing Tools, Film Viewer), then `AH Quick Shots.bat`; the desk connects by itself. The batch file starts
 `director_api.py --page`, which opens the page once the server listens. If the
 port is held by a desk of this folder, or by one busy rendering, that page opens
 instead; a desk of another folder is stopped first (found with `netstat`).
@@ -100,6 +100,10 @@ only that camera is sent, so the still is back in about a tenth of a second
 Play or a moment asks for the clip. A still has the viewer window's
 shape and the video's width of view; drawn at full width it sits where it will
 in the 16:9 video, which shows more above and below when the window is wider.
+The black bands over and under such a still are that difference, not a fault;
+a viewer window of 16:9 has none. 9:16 dims all but a 9:16 frame as tall as
+the video, in its middle (the reel's crop): it covers the bands too, so it is
+right on a still as on a clip.
 A seek can leave the film up to 0.08 s past the moment asked for (measured; the
 viewer tells its time in tenths), so the first still may be a frame or two later
 than the clip frame it replaces. A seek plays the five seconds before the
@@ -275,6 +279,14 @@ the two-aircraft cameras then take whoever comes nearest.
   the two cameras that are directed, come first in the list.
 - On your nose, Under your belly, At your gear — the viewer's own airframe
   cameras from its director help; the gear cameras are for take-offs and landings.
+- On your airframe — a camera anywhere on your aircraft, placed by hand: Right,
+  Up and Ahead in feet from the pilot's eye, Turn and Tilt where it looks. It
+  opens above and behind the right wing, looking along it. Keep this place keeps
+  it under the aircraft's type (as `planes long` names it, so the playhead must
+  be where that aircraft flies); choosing the camera on that type opens at the
+  first place kept. Film Viewer moves the flaps in a film, not the ailerons or
+  elevators (a 105°/s roll of a La-7 showed them still): it shows flaps, the
+  belly and the wing, not the controls working.
 - Ride the bomb — from just before a release to the blast; offered when a bomb,
   rocket or torpedo leaves during the shot. A drop moment starts with it.
 
@@ -766,8 +778,15 @@ Kinds:
 - `recorded` — the pilot's own view as flown, head movements included
 - `wing`, `shoulder` (turn to hold the target), `cockpit` (straight ahead),
   `nose`, `belly`, `gear` — cameras on the hero's airframe
+- `airframe` — anywhere on the hero's airframe: `right`, `up`, `ahead` (feet
+  from the pilot's eye), looking where `turn` and `tilt` say
 - `weapon` — rides the hero's next bomb, rocket or torpedo: start the shot a
   second before its drop event
+
+**POST /api/mounts** `{mounts}` — the places of the camera on the airframe kept
+per aircraft type, the whole list (up to 200), in `state.mounts` and
+`.quickshots/mounts.json`: each `{model, name, right, up, ahead, turn, tilt,
+fov, roll}`.
 
 **POST /api/action** `{action, expected_revision, ...}` — answers 202 at once
 (with `wait: true`, 200 with the whole state once the action has finished, at
@@ -889,7 +908,9 @@ What the film tells, measured:
   fewer than 50: a video of 30 is rendered at 60 and ffmpeg keeps every second frame (without ffmpeg the
   video stays at 60); a preview clip is rendered at 60 and played so; a blurred one was always rendered at
   120. Still so on Patch 3 (17 Nov 2026: the same shot at 30 hopped 2.7 ft at 432.00 s and 9.9 ft at 444.60 s
-  in two renders of two, and not at 60, where the viewer took 0.85 s a second of film against 0.43). Found by following
+  in two renders of two, and not at 60, where the viewer took 0.85 s a second of film against 0.43), and on
+  Patch 4 (18 Nov 2026: 2.7 and 2.8 ft at 432.00 s, 10.0 ft at 444.60 s in two renders of two, not at 60;
+  its "moving cameras keep exact frame timing" is not this). Found by following
   corners on the aircraft from frame to frame (Lucas-Kanade) against the background's own step.
 - **The viewer carries a camera's turn straight from point to point.** `curve` or not, between two points
   of a moving camera the picture turns at one pace. Measured in a finished video, frame by frame (phase
@@ -944,6 +965,17 @@ works round what is still there; Patch 3 made two workarounds unnecessary.
   from 96 s before it, 3 of 3 alternating), with the same first frame (the
   opponent solid; to the pixel from near, 45 dB PSNR from far) and the same
   first second of sound. Not tried: 4K, a film by day, the `weapon` camera.
+- **Cameras name aircraft that are there now.** The viewer takes `mount <id>`
+  and `at <id>` only for an aircraft in the film where it stands (`planes`
+  lists them). A render sends its cameras where the viewer stands, and that was
+  so before the seek before a render was dropped too: just opened, at 1 s, an
+  over-the-shoulder shot of 714.5 to 722.5 s on `152stall` was refused ("at 72:
+  no aircraft with that id in this film"), and after a seek to 716 s it
+  rendered (17 Nov 2026). So when an aircraft a video's cameras name is not in
+  the last `planes`, the desk sends that video's shots one by one, each after a
+  rough seek to a tenth of a second past the first moment of its stretch with
+  all of its aircraft in the film (from the shot's tracks). With them all
+  there, nothing is sought.
 - **Where a seek lands.** Up to 0.08 s past the time asked for, while `time`
   answers in tenths of a second.
 - **The end of a film.** `open` tells the length rounded to 0.1 s, and `tracks`

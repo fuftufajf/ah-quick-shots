@@ -228,6 +228,10 @@ export const ANGLES = [
     make: c => [{kind: "belly", hero: c.lead, target: null, side: "right", fov: 72}]},
   {key: "gear", label: "At your gear", hint: "Take-offs and landings", rate: false,
     make: c => SIDES.map(side => ({kind: "gear", hero: c.lead, target: null, side, fov: 66}))},
+  // Anywhere on your aircraft, set by hand and kept for its type (App.jsx): it opens above and behind the right wing,
+  // looking along it, which framed a fighter's wing on the first try (La-7, 17 Nov 2026).
+  {key: "airframe", label: "On your airframe", hint: "Anywhere on it: place it, keep it for the type", rate: false,
+    make: c => [{kind: "airframe", hero: c.lead, target: null, right: 9, up: 6, ahead: -14, tilt: -20, fov: 75}]},
   {key: "weapon", label: "Ride the bomb", hint: "From the release to the blast", rate: false, drop: true,
     make: c => [{kind: "weapon", hero: c.lead, target: null}]},
 ];
@@ -244,7 +248,7 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 // aircraft, and up when the hand goes down. A long lens moves finer. `width` is the picture's in pixels.
 // Cameras on the airframe turn where they look instead: the scene follows the hand, as a free camera's does.
 // Over your shoulder and from your wing, locked on him, they keep him in frame and do not turn.
-const AIRFRAME = ["cockpit", "nose", "belly", "gear", "wing", "shoulder"];
+const AIRFRAME = ["cockpit", "nose", "belly", "gear", "airframe", "wing", "shoulder"];
 export const turnable = shot => AIRFRAME.includes(shot.kind) && !(["shoulder", "wing"].includes(shot.kind) && shot.target != null);
 export function dragCamera(shot, dx, dy, width) {
   if (AIRFRAME.includes(shot.kind)) {

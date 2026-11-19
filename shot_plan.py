@@ -13,12 +13,14 @@ MOUNTS = {"nose": (0, 3.2, 16, math.pi, -.09), "shoulder": (1.4, 3.6, -2.5, 0, -
 # pair, follow, fixed, ambush and escort stand anywhere around an aircraft: `orbit` degrees round it, `distance`
 # and `height` feet. fixed stands still by the hero's path; ambush stands still by the target's, watching the
 # target; escort is a camera ship flying its own line beside the two of them.
-KINDS = ("pair", "follow", "fixed", "ambush", "escort", "wing", "cockpit", "weapon", "recorded", *MOUNTS)
+KINDS = ("pair", "follow", "fixed", "ambush", "escort", "wing", "cockpit", "weapon", "recorded", "airframe", *MOUNTS)
 WATCH = ("both", "hero", "target")  # whom a camera ship keeps in its picture
 # Where a shot saved before `orbit` existed stood. `side` now only picks the wing, shoulder or gear leg.
 SIDES = {"right": 90, "left": -90, "rear": 0, "front": 180, "top": 0}
 # The camera travels with the lead aircraft (or is the pilot's own view): no tracks needed.
-RIDES = ("follow", "wing", "cockpit", "weapon", "recorded", *MOUNTS)
+RIDES = ("follow", "wing", "cockpit", "weapon", "recorded", "airframe", *MOUNTS)
+# Where the free camera on the airframe sits (`airframe`): feet to the right, up and ahead of the pilot's eye.
+PLACE = (("right", -150, 150), ("up", -60, 60), ("ahead", -150, 150))
 # What a keyframe of the observer holds, with the limits each has on a shot: where the ship sits and its lens.
 KEYED = (("orbit", -180, 180), ("distance", 20, 10000), ("height", -2000, 5000), ("fov", 6, 140))
 
@@ -47,7 +49,7 @@ def validate_shot(raw, length):
         shot[key] = None if parsed is None else int(parsed)
     # A camera ship watching its hero can swing `sweep` degrees round it and close in to `closer` feet over the shot.
     # A camera on the airframe can be turned from where it looks: `turn` degrees to the left, `tilt` up.
-    for key, low, high in (("sweep", -360, 360), ("closer", 20, 10000), ("turn", -180, 180), ("tilt", -89, 89)):
+    for key, low, high in (("sweep", -360, 360), ("closer", 20, 10000), ("turn", -180, 180), ("tilt", -89, 89), *PLACE):
         if raw.get(key) is not None:
             shot[key] = number(raw[key], low, high, key)
     shot["watch"] = raw.get("watch", "both")
@@ -554,6 +556,10 @@ def _mount(shot):
         turn, d, up = math.radians(shot["orbit"]), shot["distance"], shot["height"]
         return (f"mount {shot['hero']} {math.sin(turn) * d:.2f} {up:g} {-math.cos(turn) * d:.2f} {turn:.4f} "
                 f"{.1 - math.atan2(up, d):.4f} {roll:.8f} {fov:.8f}{target}")
+    if shot["kind"] == "airframe":
+        # Anywhere on the airframe, looking where turn and tilt say (0, 0: ahead): set by hand, kept per aircraft type.
+        return (f"mount {shot['hero']} {shot.get('right', 0):g} {shot.get('up', 0):g} {shot.get('ahead', 0):g} "
+                f"{turn:.4f} {tilt:.4f} {roll:.8f} {fov:.8f}")
     if shot["kind"] == "wing":
         return f"mount {shot['hero']} {24 * left} {shot['height']:g} -6 {turn:g} {tilt:g} {roll:.8f} {fov:.8f}{target}"
     right, up, ahead, yaw, pitch = MOUNTS[shot["kind"]]

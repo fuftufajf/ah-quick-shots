@@ -93,7 +93,9 @@ class DeskTests(unittest.TestCase):
         no_ffmpeg = patch("director_core.shutil.which", return_value=None)  # the fakes write no real video
         no_ffmpeg.start()
         self.addCleanup(no_ffmpeg.stop)
-        self.desk.data.update(project=copy.deepcopy(PROJECT), connected=True, now=10)
+        # The viewer stands where both of the test film's aircraft are (as `planes long` told the last seek).
+        self.desk.data.update(project=copy.deepcopy(PROJECT), connected=True, now=10,
+                              planes=[{"id": 19, "name": "Pilot"}, {"id": 10, "name": "Other"}])
 
     def tearDown(self):
         self.viewer.release.set()
@@ -802,9 +804,9 @@ class DeskTests(unittest.TestCase):
         eyes = self.desk._eyes(self.desk._camera(moving), times, moving)
         self.assertEqual([len(row[3]) for row in projects], [60, 10, 1])
         # The viewer projects a tenth of a second at least: the few last frames are begun whole steps earlier.
-        self.assertTrue(all(end - begin >= .1 - 1e-9 for begin, end, *_rest in projects))
-        self.assertEqual([round(v, 4) for v in projects[1][:3]], [5.59, 5.69, .01])
-        self.assertEqual([round(v, 4) for v in projects[2][:3]], [5.899, 5.999, .1])
+        self.assertTrue(all(end - begin > .1 for begin, end, *_rest in projects))
+        self.assertEqual([round(v, 4) for v in projects[1][:3]], [5.58, 5.69, .01])
+        self.assertEqual([round(v, 4) for v in projects[2][:3]], [5.799, 5.999, .1])
         self.assertTrue(len(eyes) == 71 and all(eye == [0, 500, -400, 0, 0, 0, 1.2] for eye in eyes))
         self.assertTrue(all("Dialogue:" in script for script in scripts) and len(scripts) == 2)
         self.assertEqual(list(self.desk.media_root.glob("*.ass")), [])
@@ -821,6 +823,45 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(list(self.desk.media_root.glob("*.ass")), [])  # the second video's script went too
         with self.assertRaises(ValueError):  # the script grows with the video: a long one is asked for shot by shot
             self.desk._trails(PROJECT, [{**SHOT, "start": 0, "end": 121}], 960, 540, 30, {}, trails.STYLE)
+
+    def test_a_render_sends_each_camera_where_its_aircraft_are_in_the_film(self):
+        # Film Viewer refuses `mount <id>` and `at <id>` for an aircraft not in the film where it stands: just opened,
+        # at 1 s, the opponent who joined later was refused and the render failed (17 Nov 2026). Here he joins at 4 s.
+        commands, viewer = [], {"now": 1.0}
+        def native(command, progress):
+            commands.append(command)
+            here = {19} | ({10} if viewer["now"] >= 4 else set())
+            if command.startswith("seek "):
+                viewer["now"] = float(command.split()[1])
+                return [f"at {viewer['now']} in 0.1 s"]
+            if command.startswith("planes"):
+                return [f'plane {ident} "P{ident}" 0 0 0 0 0 0' for ident in sorted(here)]
+            if command.startswith("tracks "):
+                start, end, step = map(float, command.split()[1:4])
+                times = [start + i * step for i in range(round((end - start) / step) + 1)]
+                return [f"track {t:.4f} {ident} 0 500 {300 * t:.1f} 0 0 0" for t in times for ident in (19, 10) if ident == 19 or t >= 4]
+            named = {int(ident) for ident in command.split()[4:] if ident.isdigit()} & {19, 10}  # mount 19 ... at 10
+            if command.startswith("cam ") and named - here:
+                raise ValueError(f"at {min(named - here)}: no aircraft with that id in this film")
+            if command.startswith("video "):
+                Path(command.split()[3]).write_bytes(b"film")
+            return []
+        self.desk.viewer.command = native
+        self.desk.data.update(now=1, planes=[{"id": 19, "name": "Pilot"}])
+        self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "kind": "shoulder", "start": 3, "end": 6}]})
+        self.run_action({"action": "export_cut", "quality": "draft"})
+        # A rough seek to the first moment with both of them in the film (and a tenth more), then its camera.
+        first = next(i for i, c in enumerate(commands) if c.startswith("cam "))
+        seek = commands[first - 2].split()
+        self.assertEqual((seek[0], seek[2], commands[first - 1]), ("seek", "rough", "planes long"))
+        self.assertTrue(4 < float(seek[1]) <= 4.6)
+        self.assertEqual(len([c for c in commands if c.startswith("video ")]), 1)
+        # Standing where they both are, nothing is sought.
+        del commands[:]
+        self.desk.save({"expected_revision": 2, "shots": [{**SHOT, "kind": "shoulder", "start": 3, "end": 6, "fov": 40}]})
+        self.run_action({"action": "export_cut", "quality": "draft"})
+        self.assertFalse(any(c.startswith("seek ") for c in commands))
+        self.assertEqual(len([c for c in commands if c.startswith("video ")]), 1)
 
     def test_a_full_disk_is_not_a_lost_viewer_and_the_error_is_written_down(self):
         def native(command, progress):
@@ -959,6 +1000,15 @@ class DeskTests(unittest.TestCase):
             self.assertEqual([call("GET", "/api/wave/video/" + "0" * 32)[0], call("GET", "/api/wave/music/..%2Fone.mp3")[0]], [404, 404])
         finally:
             server.shutdown(); server.server_close()
+
+    def test_places_on_the_airframe_are_kept_per_aircraft_type(self):
+        place = {"model": "La-7", "name": "Flaps", "right": 9, "up": 6, "ahead": -14, "turn": 0, "tilt": -20, "fov": 75, "roll": 0}
+        self.assertEqual(self.desk.save_mounts({"mounts": [place]})["mounts"], [place])
+        self.assertEqual(Desk(self.temp.name, self.viewer).data["mounts"], [place])  # kept across a restart
+        for wrong in ({"mounts": "all"}, {"mounts": [{**place, "right": 500}]}, {"mounts": [{**place, "name": None}]}, {"mounts": [place] * 201}):
+            with self.subTest(wrong=str(wrong)[:60]), self.assertRaises(ValueError):
+                self.desk.save_mounts(wrong)
+        self.assertEqual(self.desk.snapshot()["mounts"], [place])
 
     def test_an_assembly_is_checked_kept_and_made_while_the_desk_goes_on(self):
         found = self.assembly_desk()
@@ -1309,6 +1359,11 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(probe_cameras({**base, "kind": "belly"}, {}), [(None, "mount 19 0 -4.5 -6 0.0000 0.09 0.00000000 1.15191731")])
         self.assertEqual(validate_shot({**SHOT, "kind": "weapon", "target": None}, 20)["kind"], "weapon")
         self.assertEqual(compile_shot({**base, "kind": "recorded"}, {}), ["cam 1 2 recorded"])
+        # Anywhere on the airframe: where it sits and where it looks are the shot's own.
+        free = validate_shot({**SHOT, "kind": "airframe", "target": None, "right": 9, "up": 6, "ahead": -14, "tilt": -20, "fov": 75}, 20)
+        self.assertEqual(compile_shot(free, {}), ["cam 1 2 mount 19 9 6 -14 0.0000 -0.3491 0.00000000 1.30899694 outside"])
+        with self.assertRaises(ValueError):
+            validate_shot({**free, "ahead": -400}, 20)
         # Behind the tail and fastened to the airframe, so a loop or a roll cannot swing it round to the side.
         behind = {**base, "kind": "follow", "target": None, "orbit": 0, "distance": 80, "height": 16}
         self.assertEqual(compile_shot(behind, {}), ["cam 1 2 mount 19 0.00 16 -80.00 0.0000 -0.0974 0.00000000 1.15191731 outside"])
