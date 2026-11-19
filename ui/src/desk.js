@@ -352,8 +352,36 @@ export function fights(events, you) {
     const start = group[0].time, end = group.at(-1).time;
     const detail = [`${Math.max(1, Math.round(end - start))} s`, kills.length && hits ? `${hits} hits` : "", taken && (kills.length || hits || lost) ? `${taken} taken` : ""].filter(Boolean).join(" · ");
     return {id: `fight:${index}`, kind: "fight", time: killed ?? most?.time ?? lost?.time ?? struck?.time ?? end, start, end, fields: [], text: `${title} · ${detail}`,
-      fight: {title, kills, hits, taken, bursts, me: idValue(mine), opponent: idValue(top) ?? idValue(lost?.id)}};
+      fight: {title, kills, hits, taken, bursts, lost: lost?.by ?? null, me: idValue(mine), opponent: idValue(top) ?? idValue(lost?.id)}};
   });
+}
+
+// The simple desk says a moment as a sentence, for someone who never cut a film: [what happened, a detail or ""].
+export function momentSentence(event) {
+  const fight = event.fight, f = event.fields, count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  if (!fight) return [event.kind === "kill" ? `${f[0]} shot down ${f[1]}` : momentLabel(event), ""];
+  const took = count(Math.max(1, Math.round(event.end - event.start)), "second");
+  if (fight.kills.length) return [`You shot down ${fight.kills.join(" and ")}`, fight.hits ? `${count(fight.hits, "hit")} in ${took}` : `${took} of shooting`];
+  if (fight.lost) return [`${fight.lost} shot you down`, took];
+  if (fight.hits) return [`You scored ${count(fight.hits, "hit")}`, took];
+  if (fight.taken) return [`You took ${count(fight.taken, "hit")}`, took];
+  return ["You fired, no hits", `${count(fight.bursts, "burst")}, ${took}`];
+}
+
+// A replay's day as people say it (its file's time, seconds since 1970): today and yesterday with the time, the
+// weekday within a week, else the date. Names in English like the page; the time as this PC writes it.
+export function dayOf(seconds, now = Date.now()) {
+  const at = new Date(seconds * 1000), midnight = date => new Date(date).setHours(0, 0, 0, 0);
+  const days = Math.round((midnight(now) - midnight(at)) / 864e5), time = at.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+  if (days === 0 || days === 1) return `${days ? "Yesterday" : "Today"}, ${time}`;
+  return at.toLocaleDateString("en-US", days > 0 && days < 7 ? {weekday: "long"} : {day: "numeric", month: "long", year: "numeric"});
+}
+
+// The simple desk films a kill as one shot through the observer, from closing in to flying on (the stretch of the
+// kill sequence above, whose four cameras it does not offer).
+export function killShot(project, planes, kill, events = []) {
+  const parts = killSequence(project, planes, kill, events);
+  return {...newShot(project, planes, kill, kill.time), start: parts[0].start, end: parts.at(-1).end};
 }
 
 // Your own kills, for a kill reel in one click.

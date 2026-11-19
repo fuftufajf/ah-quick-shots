@@ -924,6 +924,8 @@ class DeskTests(unittest.TestCase):
         self.desk.worker.join(3)
         self.assertIn("3.07 Patch 3", self.desk.snapshot()["job"]["error"])
         self.assertFalse(self.desk.snapshot()["connected"])
+        # No Film Viewer to connect to is a state, not an error: the simple desk asks again every few seconds.
+        self.assertFalse((self.desk.root / "errors.log").exists())
 
     def test_a_line_the_viewer_quoted_badly_is_left_out(self):
         self.assertEqual([p["id"] for p in plane_rows(['plane 19 "Pil\\" 0 0 0 0 0 0', 'plane 10 "Other" 1 2 3 0 0 0', "plane"])], [10])

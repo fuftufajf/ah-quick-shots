@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, fitShot, killSequence, landingSequence, ownKills, sequenceOf, turnable, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera} from './desk.js';
+import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, fitShot, killSequence, landingSequence, ownKills, sequenceOf, turnable, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera, dayOf, killShot, momentSentence} from './desk.js';
 const event = {time:199, kind:'kill', text:'Hawk Raven 1 19 10', fields:['Hawk','Raven','1','19','10']};
 assert.equal(formatTime(195.3), '03:15.3');
 assert.equal(filterMoments([event], 'Raven 03:19', 'kill').length, 1);
@@ -148,6 +148,19 @@ assert.deepEqual([vulch.length, vulch[0].time, vulch[0].fight.opponent, vulch[0]
 assert.equal(ratingLabel(ANGLES.find(a => a.key === 'behind'), cast, {score: 1}), 'You in frame 100%');
 assert.equal(newShot({length:400}, [], line(64.1, 'kill', 'Hawk', 'Raven', 1, 19, 10), 64.1).start, 59.1);
 assert.equal(fights([line(5, 'guns', 'start', 19), line(5.5, 'guns', 'stop', 19, 9)], me)[0].fight.title, '1 burst, no hits');
+// The simple desk says the same fights as sentences, and anything else as the full desk labels it.
+assert.deepEqual(fought.map(momentSentence), [['You shot down Raven', '7 hits in 3 seconds'], ['You shot down Merlin', '1 second of shooting'],
+  ['You took 3 hits', '1 second'], ['Osprey shot you down', '1 second']]);
+assert.deepEqual(momentSentence(fights([line(5, 'guns', 'start', 19), line(5.5, 'guns', 'stop', 19, 9)], me)[0]), ['You fired, no hits', '1 burst, 1 second']);
+assert.deepEqual([momentSentence(film[8]), momentSentence(film[11])], [['Hawk shot down Raven', ''], ['3 hits received', '']]);
+// A replay's day: today and yesterday by name, the weekday within a week, then the date.
+const noon = new Date(2026, 10, 19, 12).getTime(), day = (y, m, d, h = 9) => new Date(y, m, d, h).getTime() / 1000;
+assert.match(dayOf(day(2026, 10, 19), noon), /^Today, /);
+assert.match(dayOf(day(2026, 10, 18, 23), noon), /^Yesterday, /);
+assert.deepEqual([dayOf(day(2026, 10, 16), noon), dayOf(day(2026, 10, 12), noon)], ['Monday', 'November 12, 2026']);
+// A kill as one shot: the observer on both, from where the kill sequence begins to where it ends.
+const parts = killSequence({length:400}, [], film[8], film), whole = killShot({length:400}, [], film[8], film);
+assert.deepEqual([whole.kind, whole.hero, whole.target, whole.start, whole.end], ['escort', 19, 10, parts[0].start, parts.at(-1).end]);
 assert.deepEqual(['shoulder', 'nose', 'belly', 'gear', 'weapon', 'wing', 'cockpit', 'recorded', 'ambush', 'escort', 'follow', 'fixed'].map(kind => angleOf({kind}, cast)), ['shoulder', 'nose', 'belly', 'gear', 'weapon', 'wing', 'cockpit', 'cockpit', 'ambush', 'escort', 'behind', 'flyby']);
 assert.deepEqual(ANGLES.slice(0, 2).map(a => a.key), ['escort', 'tripod']);  // the two cameras that are directed come first
 assert.ok(ANGLES.every(a => ANGLES.some(b => b.key === angleOf({...shot, ...a.make(cast)[0]}, cast))));  // every camera finds its own card

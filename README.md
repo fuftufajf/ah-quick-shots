@@ -75,6 +75,28 @@ unzipping.
 
 ## How to use it
 
+The Windows package shows the simple desk: one step at a time, in large print.
+
+1. **Replay** — pick a replay; the newest come first.
+2. **Moment** — your fights are listed as sentences ("You shot down Lefty59"). Click one to see it. Everything
+   lists every event of the film; Any place lets you film any part of it. Film all my kills makes a shot of
+   every kill at once.
+3. **Camera** — Observer flies beside you and films the fight, Tripod stands still and follows, Pilot's view is
+   what you saw. Buttons move the camera and make the shot longer or shorter (dragging the picture and the mouse
+   wheel do the same). Watch it plays the shot in Film Viewer's own window.
+4. **Video** — choose how good it should look (Quick, Good or Best, each with the time it takes) and press Make
+   the video. Shots from an earlier day wait below, unticked.
+5. When it is done the video plays on the page, and a button opens its folder.
+
+A − and A + at the top make everything smaller or larger. If Film Viewer is not running, the page says how to
+start it and goes on by itself once it is.
+
+### The full desk
+
+Run from the source code, the page shows the full desk instead: every camera, keyframes, the timeline, the data
+overlay and the Assembly. The rest of this section describes it. (Add `?release` to the page's address to see the
+simple desk there too.)
+
 **Replays.** Choose a replay (the ones you opened lately come first) and
 press Open. Its name stands large at the top: type over it and press Enter to
 rename the file. The bin deletes the chosen replay; the open one is only

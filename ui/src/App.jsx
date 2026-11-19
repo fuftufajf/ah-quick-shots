@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {Aperture, ArrowArcRight, ArrowBendUpRight, ArrowClockwise, ArrowFatLinesUp, ArrowLineRight, ArrowLineUp, ArrowRight, ArrowsClockwise, ArrowsHorizontal, ArrowsInLineHorizontal, ArrowsOutLineHorizontal, ArrowsVertical, CaretLeft, CaretRight, Copy, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Mouse, Pause, Play, Plus, SkipBack, Sparkle, Stop, Swap, Trash, Wind, X} from "@phosphor-icons/react";
+import {Aperture, ArrowArcRight, ArrowBendUpRight, ArrowClockwise, ArrowFatLinesUp, ArrowLineRight, ArrowLineUp, ArrowRight, ArrowsClockwise, ArrowsHorizontal, ArrowsInLineHorizontal, ArrowsOutLineHorizontal, ArrowsVertical, CaretDown, CaretLeft, CaretRight, CaretUp, Check, Copy, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Minus, Mouse, Pause, Play, Plus, SkipBack, Sparkle, Stop, Swap, Trash, Wind, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, when, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera} from "./desk.js";
+import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, when, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera, dayOf, killShot, momentSentence} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
@@ -47,6 +47,21 @@ const TAIL = "#b9ff9e";
 const FIRST = {blur: true};
 const CHUNK = 10;  // seconds of film per preview when no shot is selected
 const NEAR = 3000;  // feet: an aircraft that never comes this close is a dot, not someone to film
+// The simple desk, what a released package shows: made for someone who never cut a film and is not at ease with a
+// computer. One step on screen at a time, each a question with one navy button onward; large text and buttons; a
+// visible button for everything a drag or the wheel does; sentences instead of terms. Same desk, same actions.
+const STEPS = [["replay", "Replay"], ["moment", "Moment"], ["camera", "Camera"], ["video", "Video"]];
+const ASKS = {replay: "Which replay do you want to make a video from?", moment: "Which moment do you want to film?",
+  camera: "How should the camera film it?", video: "Ready to make your video?"};
+// Its cameras: the observer (alone with you when nobody is near), the tripod, your own eyes, and the bomb's ride
+// when one is dropped in the shot. The key is the full desk's camera, or "recorded" for the pilot's view as flown.
+const CARDS = [["escort", "Observer", "Flies beside you and films the fight"], ["tripod", "Tripod", "Stands still, turns and zooms to follow"],
+  ["recorded", "Pilot's view", "What you saw from the cockpit"], ["weapon", "Ride the bomb", "From the release to the blast"]];
+const AS_SEEN = {key: "recorded", rate: false, make: c => [{kind: "recorded", hero: c.lead, target: null}]};
+// One question about quality, each answer a size and whether motion blur is on: [key, label, size, blur, what it gives].
+const LEVELS = [["quick", "Quick", "final", false, "Sharp, plain motion"], ["good", "Good", "final", true, "Smooth motion, like film"],
+  ["best", "Best", "4k", true, "Extra sharp (4K), smooth motion"]];
+const STEP = 2;  // seconds a shot's start or end moves at a press
 
 export function App() {
   const [desk, setDesk] = useState({films: [], planes: [], proposals: []});
@@ -89,6 +104,13 @@ export function App() {
   // The 9:16 frame of a vertical reel laid over the picture, kept in this browser across reloads (when it may store).
   const [upright, setUpright] = useState(() => { try { return localStorage.getItem("upright") === "1"; } catch { return false; } });
   const stand = on => { setUpright(on); try { localStorage.setItem("upright", on ? "1" : "0"); } catch { /* not kept: still works */ } };
+  const [step, setStep] = useState("replay");  // the simple desk: the step on screen
+  const [anywhere, setAnywhere] = useState(false);  // the simple desk: a place in the replay found by hand, not a moment
+  const [older, setOlder] = useState(false);  // the simple desk: every replay listed, not only the newest
+  // The simple desk is drawn larger than its sizes say (see .simple in styles.css); A− and A+ change by how much.
+  const [scale, setScale] = useState(() => { try { return Number(localStorage.getItem("scale")) || 1.4; } catch { return 1.4; } });
+  const resize = by => { const next = Math.round(Math.min(1.8, Math.max(1.1, scale + by)) * 10) / 10; setScale(next); try { localStorage.setItem("scale", next); } catch { /* not kept: still works */ } };
+  const opening = useRef(false);  // the simple desk: a replay was asked for, and its moments are the next step
   const scrubbing = useRef(false);
   const autoConnect = useRef(true);
   const casting = useRef(null);  // a moment waiting to learn who was around, then which framing reads best
@@ -117,6 +139,11 @@ export function App() {
   const events = project?.events || [];
   const length = project?.length || 1;
   const running = Boolean(desk.job?.running);
+  // The film look and the trails are still being made: offered only by a copy run from the source
+  // code, not by a released package (and not with ?release in the address, to see the page as a release shows it).
+  // A released package shows the simple desk; the full one is this page run from the source code.
+  const dev = desk.version === "source" && !/[?&]release\b/.test(window.location.search), simple = !dev;
+  const making = running && desk.job.action === "export_cut";
   const live = running && desk.job.action === "live";  // a stretch is playing in Film Viewer's own window
   const busy = running || sending || looking;  // the viewer cannot take another request yet
   // Worth showing: a look at a changed camera is back before a spinner could be read.
@@ -152,11 +179,21 @@ export function App() {
   useEffect(() => {
     if (autoConnect.current && desk.connected === false && !desk.job) { autoConnect.current = false; action("connect"); }
   }, [desk.connected, desk.job]);
+  // The simple desk keeps asking for Film Viewer until it is there: nobody has to find a Connect button.
+  useEffect(() => {
+    if (!simple || desk.connected !== false || running || sending) return;
+    const timer = setTimeout(() => action("connect"), 4000);
+    return () => clearTimeout(timer);
+  }, [simple, desk.connected, running, sending, desk.job?.id]);
+  // A render shows on the simple desk's last screen, also one begun before the page was opened again.
+  useEffect(() => { if (simple && making) { setStep("done"); setClosedVideo(""); } }, [simple, making]);
 
   useEffect(() => {
     setNaming(null);
+    if (opening.current) { opening.current = false; setStep("moment"); }
     if (dirty) {setError("The active film changed. Your unsaved shot is kept until you discard it."); return;}
-    setDraft(null); setMoment(null); setCursor(0); setRated(""); setSkipped(new Set());
+    // The simple desk makes a video of the moments chosen now: shots kept from an earlier day wait unticked.
+    setDraft(null); setMoment(null); setCursor(0); setRated(""); setSkipped(new Set(simple ? shots.map(s => s.id) : []));
     you.current = null;
   }, [project?.film]);
 
@@ -545,10 +582,61 @@ export function App() {
     const shot = !isSaved && / \(copy(?: \d+)?\)$/.test(draft.name) ? {...draft, name: takeName(draft.name, camera(draft), shots)} : draft;
     const saved = await save([...shots.filter(s => s.id !== shot.id), shot], isSaved && dirty ? baseRevision : project.revision);
     if (saved) { setDraft(saved.shots.find(s => s.id === shot.id)); setDirty(false); setBaseRevision(saved.revision); }
+    return saved;
   }
   function discard() {
     const shot = shots.find(s => s.id === draft.id);
     if (shot) open({...shot}, false); else { setDraft(null); setDirty(false); }
+  }
+
+  // The simple desk's steps. A finished video leaves the picture when another step is taken.
+  function go(next) {
+    if (video) setClosedVideo(video.url);
+    setStep(next);
+  }
+  // Its replays: the open one goes on as it is, another is opened and its moments come up once it is.
+  function openReplay(path) {
+    if (path === project?.film) return go("moment");
+    if (keepDraft()) return;
+    if (video) setClosedVideo(video.url);
+    setDraft(null); setDirty(false); setFilmChoice(path); opening.current = true;
+    setWanted({action: "open", body: {film: path}});
+  }
+  // A shot of ten seconds from a place found by hand, filmed by the observer watching you: nobody need be near.
+  // A place already filmed opens that shot, as a moment inside one does.
+  function freshHere() {
+    if (keepDraft()) return;
+    const inside = shots.find(s => cursor >= s.start && cursor <= s.end);
+    if (inside) { setMoment(null); open({...inside}, false); show(inside, cursor, castOf(inside, desk.planes).lead); return setStep("camera"); }
+    const base = newShot(project, desk.planes, null, cursor), lead = castOf(base, desk.planes).lead;
+    const shot = fitShot({...base, ...ANGLES.find(a => a.key === "closeYou").make({lead, other: null})[0], end: Math.min(length, base.start + 10)}, shots);
+    setMoment(null); open(shot, true); look(shot); setStep("camera");
+  }
+  function hop(by) { film.current?.pause(); goTo(Math.max(0, Math.min(length - 1, Math.round(cursor + by)))); }
+  // Its cameras: the observer films you alone until someone is near; the pilot's view is the one as flown.
+  function card(key) {
+    angle(key === "recorded" ? AS_SEEN : ANGLES.find(a => a.key === (key === "escort" && stage.other == null ? "closeYou" : key)));
+  }
+  // A press on its buttons is a short drag on the picture, or a notch of the wheel; a shot's ends move by seconds.
+  function nudge(dx, dy) {
+    const shot = latest.current, t = inShot(shot);
+    film.current?.pause(); tune(reframe(shot, t, dragCamera(frameOf(shot, t), dx, dy, 600)));
+  }
+  function stretch(edge, by) {
+    const next = trim(edge, latest.current[edge] + by);
+    if (next) trimLook(next, edge);
+  }
+  // The shot goes into the cut as it is and is ticked for the video, whatever it was before.
+  async function keepCamera() {
+    if ((!isSaved || dirty) && !await commit()) return;
+    setSkipped(old => { const next = new Set(old); next.delete(draft.id); return next; });
+    setStep("video");
+  }
+  // How good the video should look: the size is the page's, motion blur each shot's own, so the ticked shots get it.
+  async function setLevel(size, blur) {
+    setQuality(size);
+    const list = shots.map(s => chosen.includes(s.id) && !!effectsOf(s).blur !== blur ? {...s, effects: {...effectsOf(s), blur}} : s);
+    if (list.some((s, i) => s !== shots[i])) await save(list);
   }
   // A name typed over in The cut is saved as soon as the desk takes it (not while Film Viewer is busy: the click that
   // began the double-click asked it for a picture); the shot being changed keeps it with its other changes until Update shot.
@@ -655,12 +743,13 @@ export function App() {
   async function reel() {
     const made = [];
     for (const e of uncovered) {
-      for (const part of killSequence(project, desk.planes, e, events)) {
+      // The simple desk: one shot a kill through the observer, and on to the video they make.
+      for (const part of simple ? [killShot(project, desk.planes, e, events)] : killSequence(project, desk.planes, e, events)) {
         const shot = fitShot(part, [...shots, ...made]);
         if (shot.end - shot.start >= .5) made.push(shot);
       }
     }
-    if (made.length && await save([...shots, ...made])) select(made[0]);
+    if (made.length && await save([...shots, ...made])) { select(made[0]); if (simple) setStep("video"); }
   }
 
   const battles = useMemo(() => fights(events, you.current), [project?.film, events.length, you.current?.id, you.current?.name]);
@@ -680,9 +769,6 @@ export function App() {
   const cost = costOf(chosen, apart);
   // The effects the render options show and set: the selected shot's, kept with it, or with none selected those a
   // new shot gets. Set on a shot, they are also what the next new shot gets.
-  // The film look and the trails are still being made: offered only by a copy run from the source
-  // code, not by a released package (and not with ?release in the address, to see the page as a release shows it).
-  const dev = desk.version === "source" && !/[?&]release\b/.test(window.location.search);
   const effects = draft ? effectsOf(draft) : defaults, fixed = !desk.ffmpeg || conflict;
   function setEffects(next) { setDefaults(next); if (draft) change({...draft, effects: next}); }
   function setTrails(changes) { trailsKept.current = {...effects.trails, ...changes}; setEffects({...effects, trails: trailsKept.current}); }
@@ -752,8 +838,41 @@ export function App() {
   function keyframe(only) { if (keyed && (only !== true || on >= 0)) { film.current?.pause(); tune(toggleKey(draft, at)); } }
   function toKey(step) { const k = keyed && keyBeside(draft, at, step); if (k) { film.current?.pause(); goTo(k.t); } }
 
-  return <main className="desk">
-    <header className="topbar">
+  // The simple desk's screen: Film Viewer first, then a replay; a step whose shot or cut is gone falls back to the moments.
+  const face = !simple ? "" : desk.connected == null ? "wait" : !desk.connected ? "start" : !project ? "replay"
+    : (step === "camera" && !draft) || (step === "video" && !shots.length) ? "moment" : step;
+  const reached = face === "done" ? STEPS.length : STEPS.findIndex(([key]) => key === face);
+  // Its replays, newest first as the desk lists them, the ones opened lately before the rest.
+  const lately = (desk.recent || []).map(path => desk.films.find(f => f.path === path)).filter(Boolean);
+  const replays = [...lately, ...desk.films.filter(f => !lately.includes(f))], few = 6;
+  const ticked = shots.filter(s => chosen.includes(s.id));
+  const level = quality === "4k" ? "best" : ticked.length && ticked.every(s => effectsOf(s).blur) ? "good" : "quick";
+  const levelCost = (size, blur) => cutCost(videoRows(ticked.map(s => ({...s, effects: {...effectsOf(s), blur}})), false), size, fps, !!desk.ffmpeg, desk.pace?.[size] ?? 1).total;
+  // Which of its cameras a shot is filmed by: the observer also when it watches you alone.
+  const cardOf = (s, c = castOf(s, desk.planes)) => s.kind === "recorded" ? "recorded" : {closeYou: "escort"}[angleOf(s, c)] || angleOf(s, c);
+  const onCard = draft ? cardOf(draft, cast) : "";
+  const seconds = s => { const n = Math.round(s.end - s.start); return `${n} second${n === 1 ? "" : "s"}`; };
+  // How far a job is and the way to stop a render: over the picture, or on the simple desk's last screen.
+  const progress = <>
+    {running && <small>{job.videos > 1 ? `Video ${job.video} of ${job.videos} · ` : ""}{job.steps ? `Step ${Math.max(1, job.step)} of ${job.steps} · ` : ""}{clock(job.elapsed)}{job.expect ? (job.elapsed > job.expect ? ` · longer than the ${clock(job.expect)} expected for all of it` : ` of about ${clock(job.expect)} for all of it`) : ""}</small>}
+    {running && <span className="meter"><i style={{width: `${(base + (within ?? 0) * part) * 100}%`}}/>{within == null && <b style={{left: `${base * 100}%`, width: `${part * 100}%`}}/>}</span>}
+    {rendering && <><button className="cancel" disabled={job.cancelling} onClick={() => request("/api/halt", {}).catch(e => setError(e.message))}><X weight="bold"/> {job.cancelling ? "Cancelling…" : "Cancel"}</button>
+      <small className="cancel-note">{simple ? "Stopping can take a moment: Film Viewer first finishes the part it is recording."
+        : job.cancelling ? "Film Viewer finishes the pass it is rendering, then the render stops. To stop it at once, stop it in Film Viewer's window."
+        : "ffmpeg stops at once. Film Viewer finishes the pass it is rendering: only its own window can stop that."}</small></>}
+  </>;
+  const operation = <div className={`operation ${working ? "working" : desk.job?.error ? "failed" : ""}`} role="status" aria-live="polite">
+    <span className={working ? "spinner" : "status-dot"}/><strong>{status}</strong>{working && <span className="elapsed">{Math.floor(desk.job?.elapsed || 0)}s</span>}
+  </div>;
+
+  return <main className={`desk ${simple ? "simple" : ""}`} data-step={face || undefined} hidden={desk.version == null && !error} style={simple ? {zoom: scale, "--z": scale} : undefined}>
+    {simple ? <header className="topbar">
+      <div className="brand"><FilmStrip size={26} weight="duotone"/><h1>AH <span>QUICK SHOTS</span></h1>{desk.version && <small className="version">{desk.version}</small>}</div>
+      <nav className="steps" aria-label="Steps">{STEPS.map(([key, label], i) => <button key={key} className={i < reached ? "past" : ""} aria-current={i === reached ? "step" : undefined}
+        disabled={i > reached || reached < 0 || making} onClick={() => go(key)}><b>{i < reached ? <Check weight="bold"/> : i + 1}</b>{label}</button>)}</nav>
+      {working && ["replay", "video"].includes(face) && operation /* the other steps say it over the picture */}
+      <span className="sizes"><button onClick={() => resize(-.1)} disabled={scale <= 1.1} aria-label="Smaller text">A −</button><button onClick={() => resize(.1)} disabled={scale >= 1.8} aria-label="Larger text">A +</button></span>
+    </header> : <header className="topbar">
       <div className="brand"><FilmStrip size={26} weight="duotone"/><h1>AH <span>QUICK SHOTS</span></h1>{desk.version && <small className="version" title="The version of AH Quick Shots this desk runs: say it when you report a problem">{desk.version}</small>}</div>
       <div className="tabs" role="tablist" aria-label="View">
         <button role="tab" aria-selected={view === "shots"} aria-pressed={view === "shots"} onClick={() => setView("shots")} title="Moments, cameras and the cut">Shots</button>
@@ -766,22 +885,50 @@ export function App() {
         })()}</select><button disabled={!(filmChoice || project?.film) || (running && desk.job.action === "export_cut")} onClick={load} title="Open this replay; an operation in progress finishes first">Open</button>
         <button className="danger" aria-label={`Delete this replay${waiting.length ? ` · ${waiting.length} waiting` : ""}`} aria-pressed={picked ? waiting.includes(picked.path) : undefined} disabled={!picked || working} onClick={trash}
           title={!picked ? "Choose a replay" : picked.path !== project?.film ? "Move the chosen replay to the Recycle Bin" : waiting.includes(picked.path) ? "Keep this replay after all" : "Film Viewer holds the open replay: mark it, and it goes to the Recycle Bin when you open another"}><Trash/>{waiting.length > 0 && <span>{waiting.length}</span>}</button></div>
-      <div className={`operation ${working ? "working" : desk.job?.error ? "failed" : ""}`} role="status" aria-live="polite">
-        <span className={working ? "spinner" : "status-dot"}/><strong>{status}</strong>{working && <span className="elapsed">{Math.floor(desk.job?.elapsed || 0)}s</span>}
-      </div>
+      {operation}
       <button disabled={working} onClick={() => action("connect")}><ArrowClockwise/> {desk.connected ? "Reconnect" : "Connect viewer"}</button>
-    </header>
-    {project && <form className="replay" onSubmit={rename}>
+    </header>}
+    {!simple && project && <form className="replay" onSubmit={rename}>
       <input aria-label="The open replay's name" value={naming ?? stem} maxLength={100} disabled={working} spellCheck={false} onChange={e => setNaming(e.target.value)} onKeyDown={e => e.key === "Escape" && setNaming(null)} title="The open replay. Type another name and press Enter to rename its file"/>
       {naming != null && naming.trim() !== stem && <><button className="primary" disabled={working || !naming.trim()}>Rename</button><button type="button" onClick={() => setNaming(null)}>Cancel</button>
         <small>Film Viewer shows another replay for a moment while the file is renamed; saved shots keep.</small></>}
       {waiting.length > 0 && <small className="marked" role="status">{waiting.length === 1 ? "1 replay goes" : `${waiting.length} replays go`} to the Recycle Bin when you open another: {waiting.map(path => path.replace(/^films\//, "")).join(", ")}</small>}
     </form>}
     {desk.stale && <div className="notice" role="alert">AH Quick Shots was updated while it was running: the desk still runs the old version, and the page may ask it for things it cannot do. An unsaved shot is lost on restart.<button onClick={restartDesk}>Restart the desk</button></div>}
-    {(error || conflict) && <div className="notice" role="alert">{conflict ? "The shared plan changed while you were editing. Discard your changes to load it, then redo them." : error}{!conflict && <button onClick={() => setError("")} aria-label="Dismiss message">×</button>}</div>}
+    {(error || conflict) && face !== "start" && <div className="notice" role="alert">{conflict ? "The shared plan changed while you were editing. Discard your changes to load it, then redo them." : error}{!conflict && <button onClick={() => setError("")} aria-label="Dismiss message">×</button>}</div>}
 
-    <section className="workspace" hidden={view !== "shots"}>
-      <aside className="moments panel">
+    {face === "start" && <section className="start panel">
+      <h2>Start Film Viewer</h2>
+      <ol><li>Start Aces High.</li><li>In its main menu choose <b>Editing Tools</b>, then <b>Film Viewer</b>. The game closes and Film Viewer opens.</li><li>Come back to this page. It goes on by itself.</li></ol>
+      <p role="status"><span className="spinner"/>Waiting for Film Viewer…</p>
+      {/* Film Viewer not running is what the steps above are for; anything else it answered (an old version) is said. */}
+      {desk.job?.error && !/^Start Film Viewer/.test(desk.job.error) && <p className="problem" role="alert">{desk.job.error.replace(/, then Connect$/, "")}</p>}
+    </section>}
+    {ASKS[face] && <h2 className="ask">{ASKS[face]}</h2>}
+    {face === "replay" && <section className="replays">
+      {replays.slice(0, older ? undefined : few).map(f => <button key={f.path} className={f.path === project?.film ? "selected" : ""} disabled={working} onClick={() => openReplay(f.path)}>
+        <span><strong>{f.name.replace(/\.ahf$/i, "")}</strong><small>{f.path === project?.film ? "Open in Film Viewer now" : f.modified ? dayOf(f.modified) : ""}</small></span><b>{f.path === project?.film ? "Go on" : "Open"}<CaretRight weight="bold"/></b></button>)}
+      {!replays.length && <p className="empty-small">Film Viewer lists no replays. Record a film in the game first.</p>}
+    </section>}
+
+    <section className="workspace" hidden={view !== "shots" || ["wait", "start", "replay"].includes(face)}>
+      <aside className="moments panel">{simple ? <>
+        <div className="filters" aria-label="What to choose from">
+          <button aria-pressed={!anywhere && kind === "fight"} onClick={() => { setAnywhere(false); setKind("fight"); }}>Your fights</button>
+          <button aria-pressed={!anywhere && kind !== "fight"} onClick={() => { setAnywhere(false); setKind(""); }}>Everything</button>
+          <button aria-pressed={anywhere} onClick={() => setAnywhere(true)}>Any place</button>
+        </div>
+        {anywhere ? <div className="anyplace">
+          <p>Move to where your shot should begin. The picture shows that place.</p>
+          <p className="clock"><strong>{clock(cursor)}</strong> of {clock(length)}</p>
+          <div className="presses">{[[-60, "− 1 min"], [-10, "− 10 s"], [-1, "− 1 s"], [1, "+ 1 s"], [10, "+ 10 s"], [60, "+ 1 min"]].map(([by, label]) => <button key={by} disabled={!project} onClick={() => hop(by)}>{label}</button>)}</div>
+        </div> : <div className="moment-list">{moments.slice(0, 300).map(e => {
+          const [what, detail] = momentSentence(e);
+          return <button key={e.id} className={`moment ${moment?.id === e.id ? "selected" : ""}`} onClick={() => pick(e)}><time>at {clock(e.time)}</time><span><strong>{what}</strong>{detail && <small>{detail}</small>}</span></button>;
+        })}
+          {!moments.length && <p className="empty-small">{kind === "fight" ? "No fights of yours in this replay. Try Everything, or Any place to film any part of it." : "Nothing is listed for this replay. Try Any place to film any part of it."}</p>}
+        </div>}
+      </> : <>
         <div className="panel-heading"><h2>1 <span>Moments</span></h2><span>{moments.length}</span></div>
         <label className="search"><MagnifyingGlass/><input aria-label="Search moments" placeholder="Pilot, weapon or 03:15…" value={query} onChange={e => setQuery(e.target.value)}/></label>
         <div className="filters" aria-label="Event type">{KINDS.map(([value, label]) => <button key={value} aria-pressed={kind === value} onClick={() => setKind(value)}>{label}</button>)}</div>
@@ -790,22 +937,22 @@ export function App() {
           {!moments.length && <p className="empty-small">{!project ? "Start Film Viewer and open a replay. Its moments appear here." : kind === "fight" ? "No fights of yours in this film. Try All, or press New shot at the playhead." : "No matching moments. Try another filter, or press New shot at the playhead."}</p>}
           {moments.length > 300 && <p className="hint">Showing 300 of {moments.length}. Narrow your search.</p>}
         </div>
-      </aside>
+      </>}</aside>
 
       <section className="stage">
         <div className="picture panel" aria-busy={working}>
-          <div className="panel-heading"><h2>2 <span>Picture</span></h2>
+          {!simple && <div className="panel-heading"><h2>2 <span>Picture</span></h2>
             <div className="chips"><span className="note">Trails: tick them in Film Viewer</span><button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Names</button>
               <button aria-pressed={upright} onClick={() => stand(!upright)} title="The frame a vertical 9:16 reel keeps: the middle of the 16:9 picture, as tall as it. A guide only: the video stays 16:9.">9:16</button></div>
-          </div>
+          </div>}
           <div ref={screen} className={`screen ${movable ? "movable" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
             onClick={e => { if (!dragged.current && clip && !video && !e.target.closest("button, .hud")) renderPlay(); }}>
             {video ? <video key={video.url} ref={made} src={video.url} controls onLoadedData={() => { asking.current = null; }} onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} playsInline/>
             : clip ? <video key={clip.url} ref={player} src={clip.url} playsInline onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} onTimeUpdate={e => { if (!scrubbing.current && !trimGrab.current) setCursor(clip.start + e.target.currentTime); }}/>
             : still ? <img src={still.url} draggable={false} alt={`Film Viewer frame at ${formatTime(still.time)}`}/>
-            : <div className="empty-preview"><FilmStrip size={44} weight="thin"/><h2>See the film here.</h2><p>Open a replay and click a moment.<br/>The desk renders that shot as a short clip and plays it.</p></div>}
-            {upright && (video || clip || still) && <div className="reel-guide" aria-hidden="true"/>}
-            {adjustable &&<div className={`hud ${rolling || live ? "dim" : ""}`}>
+            : <div className="empty-preview"><FilmStrip size={44} weight="thin"/><h2>See the film here.</h2>{simple ? <p>Click a moment: its picture comes up here.</p> : <p>Open a replay and click a moment.<br/>The desk renders that shot as a short clip and plays it.</p>}</div>}
+            {upright && !simple && (video || clip || still) && <div className="reel-guide" aria-hidden="true"/>}
+            {adjustable && !simple && <div className={`hud ${rolling || live ? "dim" : ""}`}>
               {CORNERS.map(([corner, label]) => {
                 const rows = tuning.filter(row => HUD[row[0]][0] === corner), sided = corner === "place" && ["wing", "shoulder", "gear"].includes(draft.kind);
                 return (rows.length > 0 || sided) && <div key={corner} className={`corner ${corner}`} role="group" aria-label={label}>
@@ -830,18 +977,20 @@ export function App() {
               <div className="corner help"><span className="control" tabIndex={0} aria-label="How to move the camera"
                 title={`${movable && turnable(draft) ? "Drag the picture: the camera turns where it looks." : movable ? "Drag the picture: sideways the camera walks round the aircraft, up and down it climbs or sinks." : ""} The wheel over the picture: the lens.${FREE.includes(draft.kind) ? " Shift and the wheel: the camera nearer or further." : ""} The controls in the corners light up as they change; click one for a slider.`}><Mouse weight="bold"/></span></div>
             </div>}
-            {working && (quick ? <div className="preview-busy"><span className="spinner"/><span>{job.message || "Working…"}</span></div>
+            {working && !(simple && making) && (quick ? <div className="preview-busy"><span className="spinner"/><span>{job.message || "Working…"}</span></div>
               : <div className="waiting" role="status"><div>
                 <strong><span className="spinner"/>{job.message || "Working…"}</strong>
-                {running && <small>{job.videos > 1 ? `Video ${job.video} of ${job.videos} · ` : ""}{job.steps ? `Step ${Math.max(1, job.step)} of ${job.steps} · ` : ""}{clock(job.elapsed)}{job.expect ? (job.elapsed > job.expect ? ` · longer than the ${clock(job.expect)} expected for all of it` : ` of about ${clock(job.expect)} for all of it`) : ""}</small>}
-                {running && <span className="meter"><i style={{width: `${(base + (within ?? 0) * part) * 100}%`}}/>{within == null && <b style={{left: `${base * 100}%`, width: `${part * 100}%`}}/>}</span>}
-                {rendering && <><button className="cancel" disabled={job.cancelling} onClick={() => request("/api/halt", {}).catch(e => setError(e.message))}><X weight="bold"/> {job.cancelling ? "Cancelling…" : "Cancel"}</button>
-                  <small className="cancel-note">{job.cancelling ? "Film Viewer finishes the pass it is rendering, then the render stops. To stop it at once, stop it in Film Viewer's window."
-                    : "ffmpeg stops at once. Film Viewer finishes the pass it is rendering: only its own window can stop that."}</small></>}
+                {progress}
               </div></div>)}
             {failure && <div className="preview-busy failed" role="alert"><span>{failure}</span><button onClick={() => setHidden(desk.job.id)} aria-label="Dismiss message">×</button></div>}
           </div>
-          <div className="caption"><span title={video ? (video.files || [video]).map(f => baseName(f.file)).join("\n") : undefined}>{video ? `Rendered by Film Viewer · original sound · ${(video.files || []).length > 1 ? `${video.files.length} videos saved` : `saved as ${baseName(video.file)}`}${(video.files || []).some(f => f.overlays) ? (desk.overlays?.running ? ` · ${desk.overlays.message} (${desk.overlays.left} left), the desk goes on meanwhile ·` : desk.overlays?.error ? ` · data overlay failed: ${desk.overlays.message} ·` : " with data overlays") : ""} in ${desk.videos}${(video.files || []).some(f => f.stayed) ? " · an earlier video was open elsewhere: it stays beside the new one" : ""}`
+          {simple && <div className="under">
+            {rolling || live ? <button aria-pressed="true" onClick={pause}><Pause weight="fill"/> Pause</button>
+              : <button disabled={!project || working} onClick={play}><Play weight="fill"/> Watch it</button>}
+            <span>It plays in Film Viewer's window, with sound.</span>
+            <button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Pilots' names</button>
+          </div>}
+          {!simple && <><div className="caption"><span title={video ?(video.files || [video]).map(f => baseName(f.file)).join("\n") : undefined}>{video ? `Rendered by Film Viewer · original sound · ${(video.files || []).length > 1 ? `${video.files.length} videos saved` : `saved as ${baseName(video.file)}`}${(video.files || []).some(f => f.overlays) ? (desk.overlays?.running ? ` · ${desk.overlays.message} (${desk.overlays.left} left), the desk goes on meanwhile ·` : desk.overlays?.error ? ` · data overlay failed: ${desk.overlays.message} ·` : " with data overlays") : ""} in ${desk.videos}${(video.files || []).some(f => f.stayed) ? " · an earlier video was open elsewhere: it stays beside the new one" : ""}`
             : clip ? `Preview ${formatTime(clip.start)} — ${formatTime(clip.end)}${movable ? " · drag the picture to move the camera" : ""}`
             : still && draft ? `Still at ${formatTime(still.time)} through this camera${movable ? ` · drag to ${turnable(draft) ? "turn" : "move"} it, wheel to zoom` : ""} · Play shows it moving`
             : still ? `Still at ${formatTime(still.time)} · Play shows it moving in Film Viewer` : "Play plays in Film Viewer's own window. Render and play makes a clip here, in about the time it plays."}</span>{video && <span><button onClick={openVideos}>Open folder</button><button onClick={() => setClosedVideo(video.url)}>Back to the film</button></span>}</div>
@@ -889,10 +1038,29 @@ export function App() {
             </span>}
             {draft && <span className="range">{formatTime(draft.start)} — {formatTime(draft.end)} · {(draft.end - draft.start).toFixed(1)} s · drag arrows: 1 s</span>}
             <button className="zoom" aria-pressed={zoom && Boolean(draft)} disabled={!draft} onClick={() => setZoom(!zoom)} title="Fill the timeline with this shot, a strip of the film left either side">Close-up</button>
-          </div>
+          </div></>}
         </div>
 
-        <div className="angles panel">
+        <div className="angles panel">{simple ? draft && <>
+          {problems[draft.id] && <p className="problem" role="alert">{problems[draft.id]}</p>}
+          <div className="angle-list">{CARDS.filter(([key]) => key !== "weapon" || dropInShot).map(([key, label, says]) =>
+            <button key={key} className={`angle ${onCard === key ? "selected" : ""}`} disabled={conflict || stage.lead == null} onClick={() => card(key)}><strong>{label}</strong><small>{says}</small></button>)}</div>
+          {watching && onCard === "escort" && <div className="set"><h3>It films</h3><div className="presses">
+            <button aria-pressed={watching === "both"} disabled={conflict || stage.other == null} onClick={() => watch("both")}>Both of you</button>
+            <button aria-pressed={watching === "you"} disabled={conflict} onClick={() => watch("you")}>Only you</button>
+            <button aria-pressed={watching === "them"} disabled={conflict || stage.other == null} onClick={() => watch("them")}>Only him</button>
+          </div></div>}
+          {adjustable ? <div className="set"><h3>Move it</h3><div className="presses">
+            {movable && <><button onClick={() => nudge(120, 0)}><CaretLeft weight="bold"/> Left</button><button onClick={() => nudge(-120, 0)}>Right <CaretRight weight="bold"/></button>
+              <button onClick={() => nudge(0, 30)}><CaretUp weight="bold"/> Higher</button><button onClick={() => nudge(0, -30)}><CaretDown weight="bold"/> Lower</button></>}
+            <button onClick={() => onWheel.current?.(true, false)}><Plus weight="bold"/> Closer</button><button onClick={() => onWheel.current?.(false, false)}><Minus weight="bold"/> Farther</button>
+          </div></div> : !conflict && <p className="hint">This camera shows the flight as you saw it: there is nothing to move.</p>}
+          <div className="set"><h3>How long<small>{seconds(draft)}</small></h3><div className="presses">
+            {["start", "end"].map(edge => <span key={edge} className="edge">{edge === "start" ? "Start" : "End"} <b>{clock(draft[edge])}</b>
+              <button disabled={conflict} onClick={() => stretch(edge, -STEP)} aria-label={`${edge === "start" ? "Start" : "End"} ${STEP} seconds earlier`}>− {STEP} s</button>
+              <button disabled={conflict} onClick={() => stretch(edge, STEP)} aria-label={`${edge === "start" ? "Start" : "End"} ${STEP} seconds later`}>+ {STEP} s</button></span>)}
+          </div></div>
+        </> : <>
           <div className="panel-heading"><h2>3 <span>Cameras</span></h2>
             <div className="chips"><button disabled={working || !draft || cast.lead == null || draft.end - draft.start < .5} onClick={() => { setRated(rateKey); action("suggest", {shots: candidates(draft, stage)}); }} title="Measure every camera over the whole shot: each then opens on the framing that reads best"><Sparkle/> Rate cameras</button>{draft && (dirty || !isSaved) && <button onClick={discard}
               title={isSaved ? "Back to this shot as it is in the cut" : "Drop this shot: it is not in the cut"}>Discard changes</button>}<button className={`primary ${unsaved ? "unsaved" : ""}`} disabled={working || conflict || !draft || (isSaved && !dirty)} onClick={commit}
@@ -937,10 +1105,30 @@ export function App() {
             {!adjustable && !conflict && !video && <p className="hint">This camera shows the flight as it was: there is nothing to adjust.</p>}
             {adjustable && <p className="hint">{movable && turnable(draft) ? "Drag the picture to turn this camera where it looks; the wheel over it zooms the lens." : movable ? "Drag the picture: sideways walks the camera round the aircraft, up and down changes its height; the wheel over it zooms the lens, with Shift it moves the camera nearer." : "The wheel over the picture zooms the lens."} The controls in its corners show each value: click one to set it exactly.{keyed && (draft.zoom === "hold" && draft.keys?.length === 1 ? " The tripod stands where it was at its keyframe: a change moves it there, and its lens keeps the aircraft this size." : draft.keys?.length ? " With keyframes, every change you make, whom it looks at too, is a keyframe at the playhead." : " Keyframe (K) keeps this framing at the playhead: set another further on, and the observer glides between them.")}{watching === "both" && " The observer opens its lens to hold you both; further off, it flies more of a line of its own."}</p>}
           </> : <p className="empty-small">Click a moment, or press New shot at the playhead. The cameras for that shot appear here.</p>}
-        </div>
+        </>}</div>
       </section>
 
-      <aside className="cut panel" aria-label="Shots to render">
+      <aside className="cut panel" aria-label="Shots to render">{simple ? <>
+        <div className="set">
+          {/* What this video shows first; below it what was filmed on an earlier day, to tick in. */}
+          <div className="cut-list">{[[true, "In this video"], [false, "Filmed earlier: tick one to add it"]].map(([inside, title]) => {
+            const rows = shots.filter(s => skipped.has(s.id) !== inside);
+            return (inside || rows.length > 0) && <div key={title}><h3>{title}</h3>
+              {rows.map(s => <div key={s.id} className={`cut-row ${inside ? "selected" : ""}`}>
+                <label><input type="checkbox" checked={inside} onChange={() => setSkipped(old => { const next = new Set(old); if (!next.delete(s.id)) next.add(s.id); return next; })}/>
+                  <span><strong>{s.name}</strong><small>{`${CARDS.find(([key]) => key === cardOf(s))?.[1] || camera(s)} · ${seconds(s)}${s.created ? ` · made ${when(s.created)}` : ""}`}</small></span></label>
+                <button className="forget" disabled={working} onClick={() => setForgetting({ids: [s.id], label: s.name})}>Remove</button>
+              </div>)}
+              {inside && !rows.length && <p className="hint">Nothing yet. Add a moment, or tick one filmed earlier.</p>}
+            </div>;
+          })}</div>
+          <button disabled={working} onClick={() => go("moment")}><Plus weight="bold"/> Add another moment</button>
+        </div>
+        <div className="set"><h3>How good should it look?</h3>
+          <div className="angle-list">{LEVELS.map(([key, label, size, blur, gives]) => <button key={key} className={`angle ${ticked.length && level === key ? "selected" : ""}`} disabled={working || !ticked.length} onClick={() => setLevel(size, blur)}>
+            <strong>{label}</strong><small>{gives}{ticked.length ? ` · ready in about ${howLong(levelCost(size, blur))}` : ""}</small></button>)}</div>
+        </div>
+      </> : <>
         <div className="panel-heading"><h2>4 <span>The cut</span></h2><span className="heading-actions">{shots.length} shots<button className="danger small" disabled={working || !shots.length} onClick={() => setForgetting({ids: shots.map(s => s.id), label: "all"})} title="Remove every shot from the cut, and choose whether their videos go too"><Trash/> Clear</button></span></div>
         <div className="cut-list">{shots.map(s => <div key={s.id} className={`cut-row ${draft?.id === s.id ? "selected" : ""}`}>
           <input type="checkbox" aria-label={`Render ${s.name}`} checked={!skipped.has(s.id)} onChange={() => setSkipped(old => { const next = new Set(old); if (!next.delete(s.id)) next.add(s.id); return next; })}/>
@@ -978,8 +1166,30 @@ export function App() {
           {chosen.length > 0 && <p className="cost-total" title="The plain render, and what each ticked effect adds to it. Estimates: the desk corrects them to this PC after each render">About <b>{howLong(cost.total)}</b> for {howLong(cost.film)} of film{cost.videos > 1 ? ` in ${cost.videos} videos` : ""}: plain {howLong(cost.render)}{cost.total > cost.render + 1 ? `, effects + ${howLong(cost.total - cost.render)}` : ""}{desk.pace?.[quality] == null ? " · measured on another PC until this one has rendered at this size" : ""}</p>}
           <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; renderCut(chosen, apart); }} title={dirty ? "Add or update the shot first" : apart ? "A video of each ticked shot, in its own file" : "One video of the ticked shots, gaps left out; shots of the same stretch get a video each"}><FilmSlate/> Render selected ({chosen.length})</button>
           <button onClick={openVideos} title={`Finished videos are kept in ${desk.videos}`}><FolderOpen/> Videos folder</button></div>
-      </aside>
+      </>}</aside>
+      {face === "done" && <div className="done panel">{making ? <><h2><span className="spinner"/>Making your video…</h2>
+          <p>Film Viewer plays your moments and records them. You do not need to do anything: leave Film Viewer open until this is done.</p>{progress}</>
+        : video ? <><h2><i><Check weight="bold"/></i>Your video is ready</h2>
+          <p>{(video.files || [video]).map(f => <b key={f.file}>{baseName(f.file)}</b>)}Saved in {desk.videos}</p>
+          <button className="primary" onClick={openVideos}><FolderOpen/> Open the folder with your videos</button>
+          <button onClick={() => { setSkipped(new Set(shots.map(s => s.id))); go("moment"); }}>Make another video from this replay</button>
+          <button onClick={() => go("replay")}>Choose another replay</button></>
+        : <><h2>No video was made</h2><p>{failure || "The work was stopped before the video was finished."}</p>
+          <button className="primary" onClick={() => setStep("video")}><CaretLeft weight="bold"/> Back</button></>}
+      </div>}
     </section>
+    {simple && (face === "replay" ? replays.length > few && !older : ["moment", "camera", "video"].includes(face)) && <footer className="bottom">
+      {face === "replay" && <span><button onClick={() => setOlder(true)}>Show older replays ({replays.length - few})</button></span>}
+      {face === "moment" && <><button onClick={() => go("replay")}><CaretLeft weight="bold"/> Other replay</button><span>
+        {!anywhere && uncovered.length > 0 && <button disabled={working || dirty} onClick={reel}>Film all my kills ({uncovered.length})</button>}
+        {anywhere ? <button className="primary" disabled={!project || working} onClick={freshHere}>Film from here <CaretRight weight="bold"/></button>
+          : <button className="primary" disabled={!draft || working} onClick={() => setStep("camera")}>Film this moment <CaretRight weight="bold"/></button>}</span></>}
+      {face === "camera" && <><button onClick={() => go("moment")}><CaretLeft weight="bold"/> Other moment</button><span>
+        {dirty && isSaved && <button onClick={discard}>Undo my changes</button>}
+        <button className="primary" disabled={working || conflict} onClick={keepCamera}>Use this camera <CaretRight weight="bold"/></button></span></>}
+      {face === "video" && <><button disabled={!draft} onClick={() => setStep("camera")}><CaretLeft weight="bold"/> Camera</button><span>
+        <button className="primary" disabled={working || dirty || !chosen.length} onClick={() => { asking.current = "cut"; renderCut(chosen, false); }}>Make the video <CaretRight weight="bold"/></button></span></>}
+    </footer>}
     {view === "assembly" && <Assembly desk={desk} busy={working || !desk.connected} cameraOf={camera} onError={setError} openVideos={openVideos}
       onRender={ids => renderCut(ids, true)} onOpenShot={shot => { setView("shots"); choose(shot); }}/>}
     {trashing && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="trash-title" onKeyDown={e => e.key === "Escape" && setTrashing(null)}>

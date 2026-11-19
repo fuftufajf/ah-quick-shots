@@ -655,7 +655,9 @@ class Desk:
             self._action(raw)
             self.progress("Ready")
         except Exception as error:
-            if not isinstance(error, Cancelled):  # asked for: nothing went wrong
+            # Nothing went wrong when it was asked for, or when there is no Film Viewer to connect to yet (not running,
+            # or too old): the simple desk asks again every few seconds, and errors.log would fill with it.
+            if not isinstance(error, Cancelled) and not (raw.get("action") == "connect" and isinstance(error, ConnectionError)):
                 self._log()
             with self.lock:
                 self.data["job"]["error"] = str(error)
