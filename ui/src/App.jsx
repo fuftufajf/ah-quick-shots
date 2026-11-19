@@ -209,7 +209,10 @@ export function App() {
     if (shot) setDraft({...shot});
   }, [project?.revision]);
 
-  useEffect(() => { if (desk.now != null && !scrubbing.current && wanted == null && (!clip || live)) setCursor(desk.now); }, [desk.now]);
+  // The playhead stands where the film does, also when a still comes of the moment the film already stood on (a shot
+  // chosen again: its still is taken a little into it). Left where the click put it, the first change of the camera
+  // asked for that other moment: a seek of some 2.4 s instead of a look of 0.06 s (measured 19 Nov 2026).
+  useEffect(() => { if (desk.now != null && !scrubbing.current && wanted == null && (!clip || live)) setCursor(desk.now); }, [desk.now, desk.preview?.url]);
 
   // Outside the clip on screen, dragging the playhead fetches a still as soon as it rests.
   useEffect(() => {

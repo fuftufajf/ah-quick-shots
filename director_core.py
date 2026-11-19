@@ -37,6 +37,7 @@ def rate(raw):
 # A preview clip is asked for at 60 frames a second and played as it comes: under 50 the viewer draws the recording
 # pilot's aircraft a frame off (see Desk._render), and keeping every second frame of a 6 s clip took ffmpeg 0.45 s.
 CLIP = "960 540 60"
+NEAR_AHEAD = 20  # seconds of film ahead up to which the plain seek is the quick one (see Desk._seek)
 # Since 3.07 Patch 3 a seek plays the 5 s before the moment: the aircraft are solid in a still taken straight after
 # it and in a video's first frame, and renders keep their whole sound back to back, after a seek or just after open
 # (measured 17 Nov 2026; see "What was measured in the viewer" in docs/how-it-works.md). So nothing waits for them.
@@ -668,7 +669,24 @@ class Desk:
             with self.lock:
                 self.data["job"]["running"] = False
 
+    def _stands(self):
+        """Where the film stands, as the viewer tells it (in tenths of a second): played or sought in its own window,
+        it is not where the desk left it. The desk's own word when the viewer's cannot be read."""
+        try:
+            return float(self.command("time")[0].split()[1])  # "time <film seconds> length <seconds> paused <0|1>"
+        except (IndexError, ValueError):
+            return self.data["now"]
+
     def _seek(self, seconds, rough=False):
+        # A rough seek reopens the film, wherever it goes: 2.3 to 2.4 s for a hop of 0.3 s as for one of 80 s, either
+        # way (measured 19 Nov 2026, 50 s into a 145 s film, 3.07 Patch 4). The plain seek plays on from where the
+        # film stands: 0.12 s for 0.3 s ahead, 0.2 s for 1 s, 0.35 s for 2 s, 0.8 s for 5 to 10 s, 1.1 s for 20 s,
+        # 1.6 s for 40 s (and 2.4 s again for any way back, where it reopens the film too; longer in a long film).
+        # So a look a little way ahead, the next keyframe or a shot's end moved later, is sought plainly: several
+        # times sooner, and exact. A tenth of a second at least: the viewer tells its time in tenths, and a plain
+        # seek that turned out to go back would cost more than the rough one it replaced.
+        if rough and .1 <= seconds - self._stands() <= NEAR_AHEAD:
+            rough = False
         backwards = seconds < self.data["now"]
         self.progress(("Rewinding" if backwards else "Seeking") + f" to {seconds:.2f}s — Film Viewer is rebuilding the scene")
         self.command(f"seek {seconds:.8f}" + (" rough" if rough else ""))

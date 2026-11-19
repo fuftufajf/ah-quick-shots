@@ -319,7 +319,7 @@ class DeskTests(unittest.TestCase):
         self.assertTrue(self.desk.snapshot()["icons"])
         # Asked with a time, a switch answers with a still of that moment: seen at once, no render.
         self.run_action({"action": "icons", "on": False, "seconds": 6, "rough": True})
-        self.assertEqual(commands[-4:-1], ["icons off", "seek 6.00000000 rough", "planes long"])
+        self.assertEqual(commands[-5:-1], ["icons off", "time", "seek 6.00000000", "planes long"])  # 4 s ahead of the film: the plain seek
         # Asked for again where the film already is, a still is taken without another jump.
         self.run_action({"action": "seek", "seconds": .2, "rough": True})
         del commands[:]
@@ -824,6 +824,38 @@ class DeskTests(unittest.TestCase):
         with self.assertRaises(ValueError):  # the script grows with the video: a long one is asked for shot by shot
             self.desk._trails(PROJECT, [{**SHOT, "start": 0, "end": 121}], 960, 540, 30, {}, trails.STYLE)
 
+    def test_a_look_a_little_ahead_is_sought_plainly_and_any_other_roughly(self):
+        # A rough seek reopens the film whatever the hop (2.4 s measured); the plain one plays on from where the film
+        # stands (0.1 s for 0.3 s ahead, 1.1 s for 20 s) and reopens it only to go back.
+        commands, film = [], {"at": 10.0}
+        def native(command, progress):
+            commands.append(command)
+            if command == "time":
+                return [f"time {film['at']:.1f} length 60.0 paused 1"]
+            if command.startswith("seek "):
+                film["at"] = float(command.split()[1])
+            if command.startswith("planes"):
+                return ['plane 19 "Pilot" 0 0 0 0 0 0 recorder']
+            if command.startswith("shot "):
+                Path(command[5:]).write_bytes(b"test")
+            return []
+        self.desk.viewer.command = native
+        self.desk.data["now"] = 10
+        self.desk.data["project"]["length"] = 100
+        sought = lambda: [c for c in commands if c.startswith("seek ")][-1]
+        for seconds, command in ((10.3, "seek 10.30000000"), (30.2, "seek 30.20000000"),  # ahead by 0.3 s, by all but 20 s
+                                 (51, "seek 51.00000000 rough"),  # further ahead than that
+                                 (50.7, "seek 50.70000000 rough"),  # back
+                                 (50.75, "seek 50.75000000 rough")):  # ahead by less than the tenth the viewer tells its time in
+            self.run_action({"action": "seek", "seconds": seconds, "rough": True})
+            self.assertEqual(sought(), command)
+        # Moved in the viewer's own window, the film is where the viewer says, not where the desk left it.
+        film["at"] = 20.0
+        self.run_action({"action": "seek", "seconds": 21, "rough": True})
+        self.assertEqual(sought(), "seek 21.00000000")
+        self.run_action({"action": "seek", "seconds": 5})  # asked for exactly, it is not asked of the viewer at all
+        self.assertEqual((sought(), commands.count("time")), ("seek 5.00000000", 6))
+
     def test_a_render_sends_each_camera_where_its_aircraft_are_in_the_film(self):
         # Film Viewer refuses `mount <id>` and `at <id>` for an aircraft not in the film where it stands: just opened,
         # at 1 s, the opponent who joined later was refused and the render failed (17 Nov 2026). Here he joins at 4 s.
@@ -850,10 +882,11 @@ class DeskTests(unittest.TestCase):
         self.desk.data.update(now=1, planes=[{"id": 19, "name": "Pilot"}])
         self.desk.save({"expected_revision": 1, "shots": [{**SHOT, "kind": "shoulder", "start": 3, "end": 6}]})
         self.run_action({"action": "export_cut", "quality": "draft"})
-        # A rough seek to the first moment with both of them in the film (and a tenth more), then its camera.
+        # A seek to the first moment with both of them in the film (and a tenth more), then its camera. Three seconds
+        # ahead of where the film stands it is the plain seek, quicker there than the rough one.
         first = next(i for i, c in enumerate(commands) if c.startswith("cam "))
         seek = commands[first - 2].split()
-        self.assertEqual((seek[0], seek[2], commands[first - 1]), ("seek", "rough", "planes long"))
+        self.assertEqual((seek[0], len(seek), commands[first - 1]), ("seek", 2, "planes long"))
         self.assertTrue(4 < float(seek[1]) <= 4.6)
         self.assertEqual(len([c for c in commands if c.startswith("video ")]), 1)
         # Standing where they both are, nothing is sought.
@@ -1394,7 +1427,7 @@ class DeskTests(unittest.TestCase):
         self.assertEqual([c.split()[0] for c in commands], ["cams", "cam", "cam", "cams", "shot"])
         # Anywhere else the film is moved, with the whole plan in the viewer again.
         self.run_action({"action": "seek", "seconds": 11, "rough": True, "shot": draft})
-        self.assertIn("seek 11.00000000 rough", commands)
+        self.assertIn("seek 11.00000000", commands)  # a second ahead: the plain seek
         self.assertEqual(len([c for c in commands if c.startswith("cam ")]), 2 + 6)  # the whole plan: the shot's six pieces
         # Asked to wait, the desk answers with the finished state: one round trip per look.
         server = make_server(0, Path(self.temp.name) / "http", self.desk.media_root)
