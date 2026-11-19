@@ -160,6 +160,10 @@ export function App() {
   // A shot's camera stops at its end, and a seek can land a little late (measured: up to 0.08 s): a still asked
   // for at the very end would show the pilot's view instead.
   const inShot = shot => shot ? Math.min(shot.end - .1, Math.max(cursor, shot.start)) : cursor;
+  // The takes of the moment the film stands on: the saved shots that hold it, in the cut's order. Keys 1 to 9 go
+  // from one to another on the full desk, and each has its number in the cut while there is more than one.
+  const holds = shot => desk.now != null && desk.now >= shot.start && desk.now <= shot.end - .1;
+  const takes = shots.filter(holds);
 
   useEffect(() => {
     let alive = true, timer;
@@ -293,6 +297,7 @@ export function App() {
       else if (e.key === "[") toKey(-1);
       else if (e.key === "]") toKey(1);
       else if (e.key === " ") { e.preventDefault(); if (live || rolling) pause(); else play(); }  // also when a button still has focus from the last click
+      else if (!simple && /^[1-9]$/.test(e.key) && takes[e.key - 1] && (takes[e.key - 1].id !== draft?.id || dirty)) choose(takes[e.key - 1]);
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -451,9 +456,17 @@ export function App() {
   function select(shot) {
     open({...shot}, false); setCursor(shot.start); look(shot);
   }
+  // A shot that holds the moment the film stands on (another take of the stretch being looked at) is seen at once:
+  // the film stays and only the camera changes, 0.06 s against the 2.4 s of a seek (measured 19 Nov 2026), so takes
+  // are compared at one moment. Any other shot opens at its start.
   function choose(shot) {
     if (keepDraft()) return;
-    open({...shot}, false); setCursor(shot.start); show(shot, shot.start, castOf(shot, desk.planes).lead);
+    open({...shot}, false);
+    if (holds(shot) && !live) {
+      film.current?.pause(); setCursor(desk.now);
+      return setWanted({action: "seek", body: {seconds: desk.now, rough: true, wait: true, shot}});
+    }
+    setCursor(shot.start); show(shot, shot.start, castOf(shot, desk.planes).lead);
   }
   function fresh(start, end) {
     if (keepDraft()) return;
@@ -1141,7 +1154,7 @@ export function App() {
           {renaming === s.id ? <input className="retitle" autoFocus defaultValue={s.name} maxLength={100} spellCheck={false} aria-label={`New name for ${s.name}`}
             onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") { e.currentTarget.dataset.cancel = "1"; e.currentTarget.blur(); } }}
             onBlur={e => e.target.dataset.cancel ? setRenaming(null) : retitle(s, e.target.value)}/>
-          : <button onClick={e => { if (e.detail < 2) choose(s); }} onDoubleClick={() => setRenaming(s.id)} title={`${s.name}\nDouble-click to rename`}><strong>{dirty && draft?.id === s.id && <span className="unsaved-dot" role="img" aria-label="Unsaved changes" title="Changed and not saved: Update shot keeps it"/>}{retitled?.id === s.id ? retitled.name : s.name}</strong><small>{formatTime(s.start)} — {formatTime(s.end)} · {camera(s)}</small>{(s.created || s.modified) && <small className="stamps" title={[s.created && `Made ${new Date(s.created * 1000).toLocaleString()}`, s.modified && `Changed ${new Date(s.modified * 1000).toLocaleString()}`].filter(Boolean).join("\n")}>
+          : <button onClick={e => { if (e.detail < 2) choose(s); }} onDoubleClick={() => setRenaming(s.id)} title={`${s.name}\nDouble-click to rename`}><strong>{takes.length > 1 && takes.includes(s) && <kbd title={`Press ${takes.indexOf(s) + 1}: this take of the moment the film stands on, at once`}>{takes.indexOf(s) + 1}</kbd>}{dirty && draft?.id === s.id && <span className="unsaved-dot" role="img" aria-label="Unsaved changes" title="Changed and not saved: Update shot keeps it"/>}{retitled?.id === s.id ? retitled.name : s.name}</strong><small>{formatTime(s.start)} — {formatTime(s.end)} · {camera(s)}</small>{(s.created || s.modified) && <small className="stamps" title={[s.created && `Made ${new Date(s.created * 1000).toLocaleString()}`, s.modified && `Changed ${new Date(s.modified * 1000).toLocaleString()}`].filter(Boolean).join("\n")}>
             {[s.created && `made ${when(s.created)}`, s.modified && `changed ${when(s.modified)}`].filter(Boolean).join(" · ")}</small>}{problems[s.id] && <small className="problem">Cannot be filmed: open it for the reason</small>}</button>}
           <button className="duplicate" disabled={working} onClick={() => duplicate(s)} aria-label={`Duplicate ${s.name}`} title="Duplicate this shot: the same stretch, camera and keyframes, to change"><Copy weight="bold"/></button>
           <button className="forget" disabled={working} onClick={() => setForgetting({ids: [s.id], label: s.name})} aria-label={`Remove ${s.name}`} title="Remove this shot from the cut"><X weight="bold"/></button>
