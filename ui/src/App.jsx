@@ -317,7 +317,9 @@ export function App() {
     try {
       const result = await request("/api/action", {action: name, expected_revision: project?.revision, ...extra});
       // A quick look answers with the finished state. Otherwise the job has begun; a poll may already know more.
-      setDesk(s => quick ? result : s.job?.id === result.id ? s : {...s, job: result});
+      // Laid over the state there is: a desk older than this page answers a quick look without its version, and
+      // without that the page would take itself for the other desk (simple or full) until the next poll.
+      setDesk(s => quick ? {...s, ...result} : s.job?.id === result.id ? s : {...s, job: result});
     } catch (e) { setError(e.message); }
     finally { flying(false); }
   }
@@ -529,7 +531,8 @@ export function App() {
     const dx = e.clientX - held.x, dy = e.clientY - held.y;
     if (!held.moved && Math.hypot(dx, dy) < 5) return;
     if (!held.moved) { held.moved = true; e.currentTarget.setPointerCapture(e.pointerId); film.current?.pause(); setStirred(FREE.includes(held.shot.kind) ? ["orbit", "height"] : ["turn", "tilt"]); }
-    tune(reframe(held.shot, held.at, dragCamera(frameOf(held.shot, held.at), dx, dy, e.currentTarget.clientWidth)));
+    // The picture's width as it is on screen, like the pointer's path: the simple desk is drawn larger than its sizes say.
+    tune(reframe(held.shot, held.at, dragCamera(frameOf(held.shot, held.at), dx, dy, e.currentTarget.getBoundingClientRect().width)));
   }
   function up() {
     if (grab.current?.moved) { dragged.current = true; setTimeout(() => { dragged.current = false; }, 0); setStirred([]); }

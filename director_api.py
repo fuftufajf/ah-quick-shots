@@ -61,6 +61,12 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def state(self):
+        """The state as the page reads it, from a poll or as a quick look's answer: what the desk knows, and what
+        only this process does. A quick look once answered without the latter, and the page lost its version (the
+        simple desk or the full one) until the next poll."""
+        return {**self.server.desk.snapshot(), "stale": code_stamp() != self.server.code, "folder": str(ROOT), "version": VERSION}
+
     def send_json(self, status, value):
         body = json.dumps(value, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -75,8 +81,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         relative = unquote(urlsplit(self.path).path)
         if relative == "/api/state":
-            return self.send_json(200, {**self.server.desk.snapshot(), "stale": code_stamp() != self.server.code, "folder": str(ROOT),
-                                        "version": VERSION})
+            return self.send_json(200, self.state())
         if relative == "/api/flight":
             data = self.server.desk.flight_data()
             return self.send_json(200, data) if data else self.send_json(404, {"message": "Read a stretch's flight first"})
@@ -170,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
                 job = self.server.desk.start(raw)
                 if raw.get("wait") is True:  # a quick look: the finished state in one round trip, no poll
                     self.server.desk.worker.join(5)
-                    return self.send_json(200, self.server.desk.snapshot())
+                    return self.send_json(200, self.state())
                 return self.send_json(202, job)
             if self.path == "/api/restart":
                 state = self.server.desk.snapshot()

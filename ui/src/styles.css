@@ -359,7 +359,7 @@ button.small{min-height:26px;padding:3px 8px;font-size:12px}
    One step is on screen at a time (data-step); a Full HD laptop at Windows' 150% leaves a window of about 1280 x 600.
    shortcut: zoom scales the whole face at once, give it sizes of its own if a browser without CSS zoom must show it */
 .desk.simple{--muted:#4a4f55;--silver:#5f6368;display:flex;flex-direction:column;gap:8px;min-height:calc(100vh / var(--z));padding:0 16px;
-  --pic:calc(min(46vw, (100vh - 304px) * 16 / 9) / var(--z))}
+  --pic:min(52%, calc((100vh - 304px) * 16 / 9 / var(--z)))}  /* the picture's column: a share of the page, which a wide window caps, not of the window */
 .simple .topbar{margin:0 -16px;padding:6px 16px;gap:10px;min-height:46px;background:#fff;border-bottom:1px solid var(--edge)}
 .steps{display:flex;gap:6px;margin-left:6px}
 .steps button{min-height:32px;padding:0 13px 0 6px;border-radius:16px;color:var(--muted)}

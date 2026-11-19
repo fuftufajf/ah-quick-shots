@@ -1407,6 +1407,8 @@ class DeskTests(unittest.TestCase):
             state = json.loads(response.read())
             connection.close()
             self.assertEqual((response.status, state["job"]["running"], state["preview"]["kind"]), (200, False, "image"))
+            # The same state a poll gives: without its version the page took the desk for a release until the next poll.
+            self.assertEqual((state["version"], state["stale"]), (director_api.VERSION, False))
         finally:
             server.shutdown(); server.server_close()
 
