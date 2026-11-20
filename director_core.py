@@ -1012,9 +1012,14 @@ class Desk:
             times[at].append(min(spans[at][1]["end"], spans[at][1]["start"] + k / fps - spans[at][0]))
         frames = []
         for (begin, shot, lines), mine in zip(spans, times):
-            self._go_on()
-            self.progress(f"Finding the camera for the trails: {begin:.0f} of {math.ceil(offset)} s", begin / max(.1, offset))
-            frames += zip(mine, self._eyes(lines, mine, shot))
+            # Said after every asking of the viewer, not once a shot: through one long shot the message stood at
+            # "0 of 107 s" for minutes, and Cancel was not heard until the shot was done.
+            def said(done=0, begin=begin):
+                self._go_on()
+                at = begin + done / fps
+                self.progress(f"Finding the camera for the trails: {at:.0f} of {math.ceil(offset)} s", at / max(.1, offset))
+            said()
+            frames += zip(mine, self._eyes(lines, mine, shot, said))
         radii = {int(ident): plane["radius"] for ident, plane in flight["data"]["aircraft"].items()}
         path = self.media_root / (uuid.uuid4().hex + ".ass")
         with path.open("w", encoding="utf-8") as script:  # line by line: the whole of it need not be held in memory
@@ -1022,14 +1027,16 @@ class Desk:
                                                                  fps, width, height, style, tail))
         return path
 
-    def _eyes(self, lines, times, shot):
+    def _eyes(self, lines, times, shot, tell=None):
         """Where the camera of a shot's compiled `cam` lines is at each of these film times, a frame apart: [(x, alt,
         z, yaw, pitch, roll, fov) or None], by the viewer's own projection from the kept tracks; None for the pilot's
         view and the weapon ride, which it does not project, and where the camera's aircraft is not in the film. The
         projection takes still cameras only: a standing one is asked once for all its times, a moving one is placed
         on its curve at each time and those cameras are asked 60 at a time, each one's answer taken at its own time.
         Asked a frame at a time, a 22 s shot at 60 frames a second took 18 s; so, under one, with the same answers
-        (measured 17 Nov 2026)."""
+        (measured 17 Nov 2026). That is with the stretch's tracks kept first (_read_flight: `tracks ... keep`):
+        without a kept file that covers the times the viewer reads the film for every asking, and 60 frames took
+        4.3 s (20 Nov 2026). `tell`, when given, hears how many of the times are done after each asking."""
         if shot["kind"] in ("recorded", "weapon"):
             return [None] * len(times)
         pieces = [line.split(maxsplit=3) for line in lines]  # cam, start, duration, the camera
@@ -1076,6 +1083,8 @@ class Desk:
                 near = min(mine[max(0, at - 1):at + 1], key=lambda eye: abs(eye[0] - t), default=None)
                 # The viewer tells the time in hundredths: its own step, or the camera's aircraft is not there then.
                 eyes.append(near[1] if near and abs(near[0] - t) < .006 else None)
+            if tell:
+                tell(len(eyes))
         return eyes
 
     def _cut(self, project, row):

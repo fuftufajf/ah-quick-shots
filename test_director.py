@@ -800,9 +800,10 @@ class DeskTests(unittest.TestCase):
         # More than 60 frames of a moving camera are asked 60 at a time; a last frame off the others' steps, alone.
         del projects[:]
         moving = next(shot for shot in self.desk.snapshot()["project"]["shots"] if shot["id"] == "two")
-        times = [5 + n / 100 for n in range(70)] + [5.999]
-        eyes = self.desk._eyes(self.desk._camera(moving), times, moving)
+        times, done = [5 + n / 100 for n in range(70)] + [5.999], []
+        eyes = self.desk._eyes(self.desk._camera(moving), times, moving, done.append)
         self.assertEqual([len(row[3]) for row in projects], [60, 10, 1])
+        self.assertEqual(done, [60, 70, 71])  # said after each asking: a long shot's progress moves, and Cancel is heard
         # The viewer projects a tenth of a second at least: the few last frames are begun whole steps earlier.
         self.assertTrue(all(end - begin > .1 for begin, end, *_rest in projects))
         self.assertEqual([round(v, 4) for v in projects[1][:3]], [5.58, 5.69, .01])
