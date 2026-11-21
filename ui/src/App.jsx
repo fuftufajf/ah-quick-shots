@@ -1001,7 +1001,8 @@ export function App() {
                 <strong><span className="spinner"/>{job.message || "Working…"}</strong>
                 {progress}
               </div></div>)}
-            {failure && <div className="preview-busy failed" role="alert"><span>{failure}</span><button onClick={() => setHidden(desk.job.id)} aria-label="Dismiss message">×</button></div>}
+            {/* The simple desk's "No video was made" beside the picture already says it. */}
+            {failure && !(simple && face === "done") && <div className="preview-busy failed" role="alert"><span>{failure}</span><button onClick={() => setHidden(desk.job.id)} aria-label="Dismiss message">×</button></div>}
           </div>
           {simple && <div className="under">
             {rolling || live ? <button aria-pressed="true" onClick={pause}><Pause weight="fill"/> Pause</button>
@@ -1193,7 +1194,7 @@ export function App() {
           <button className="primary" onClick={openVideos}><FolderOpen/> Open the folder with your videos</button>
           <button onClick={() => { setSkipped(new Set(shots.map(s => s.id))); go("moment"); }}>Make another video from this replay</button>
           <button onClick={() => go("replay")}>Choose another replay</button></>
-        : <><h2>No video was made</h2><p>{failure || "The work was stopped before the video was finished."}</p>
+        : <><h2>No video was made</h2><p role="alert">{failure ||"The work was stopped before the video was finished."}</p>
           <button className="primary" onClick={() => setStep("video")}><CaretLeft weight="bold"/> Back</button></>}
       </div>}
     </section>
@@ -1227,7 +1228,7 @@ export function App() {
         <div className="modal-box">
           <h2 id="replace-title">{many ? `${replacing.again.length} of these videos were made before` : "This video was made before"}</h2>
           <ul>{replacing.again.map(r => <li key={r.id}><b>{baseName(r.file)}</b><br/>{sizes[r.quality] || r.quality}{r.fps ? ` · ${r.fps} fps` : ""} · {(r.extras || []).includes("blur") ? "motion blur" : "no motion blur"}{r.made ? ` · made ${when(r.made)}` : ""}</li>)}</ul>
-          <p>Overwrite: the new {many ? "videos take the old ones'" : "video takes the old one's"} place and name, in the Assembly too, and the old {many ? "files go" : "file goes"} to the Recycle Bin. As new: {many ? "they are" : "it is"} kept beside {many ? "them" : "it"}.</p>
+          <p>Overwrite: the new {many ? "videos take the old ones'" : "video takes the old one's"} place and name{simple ? "" : ", in the Assembly too"}, and the old {many ? "files go" : "file goes"} to the Recycle Bin. As new: {many ? "they are" : "it is"} kept beside {many ? "them" : "it"}.</p>
           <div className="modal-actions">
             <button onClick={() => setReplacing(null)}>Cancel</button>
             <button disabled={working} onClick={() => renderCut(replacing.ids, replacing.each, false)}>Render as new</button>
