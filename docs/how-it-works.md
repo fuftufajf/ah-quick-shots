@@ -795,7 +795,10 @@ most 5 s later). One action runs at a time; a second is refused while
 
 - `connect`; `open` `{film}` — a path from `state.films`
 - `seek` `{seconds, rough?}` — a still of that moment; `rough` is the viewer's
-  fast approximate jump
+  fast approximate jump, which reopens the film (about 2.4 s wherever it goes).
+  Up to 20 s ahead of where the film stands the desk seeks plainly instead: the
+  viewer plays on from there, 0.1 s for 0.3 s of film and 1 s for 20 s, and is
+  exact (measured 19 Nov 2026; `Desk._seek`)
 - `preview` `{shot_id, seconds?}` — a still through a saved shot
 - `clip` `{start, end, still?, hero?}` — a 960×540 video of the stretch with
   sound, at `state.preview.url` when done; an unchanged stretch comes from its
