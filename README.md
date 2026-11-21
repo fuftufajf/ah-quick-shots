@@ -5,7 +5,7 @@ cameras, and render the ones you like. AH Quick Shots is a page in your browser
 that drives the offline Film Viewer for you: the viewer keeps the world, draws
 the picture and renders the video with the film's sound.
 
-![The Shots view: a fight picked from the list, shown through the Observer camera, with its shots in the cut](docs/screenshot.png)
+![Step 3 of 4, Camera: the fight's picture beside the Observer, Tripod and Pilot's view cameras, buttons that move the camera and set how long the shot is, and Use this camera](docs/step-3-camera.png)
 
 A fight filmed with it, on YouTube:
 
@@ -41,11 +41,16 @@ overlay and the Assembly's video. The package brings both.
    Film Viewer (since 3.07 Patch 4; the game closes by itself). That window
    can also put a Film Viewer shortcut on your desktop for next time.
 4. Double-click **AH Quick Shots.bat** in that folder. The page opens and
-   connects by itself.
+   connects by itself. This first start also puts an **AH Quick Shots**
+   shortcut on your desktop: next time, start Film Viewer and double-click it.
 
-Nothing is installed and nothing in Windows is changed; to remove it, delete
-the folder. From the source code instead: Code > Download ZIP on this page,
-unzip it to a folder without spaces in its path, and start the same file.
+`README.txt` in the folder says the same in short, and opens in Notepad.
+
+Nothing is installed: the desktop shortcut is the only thing put outside the
+folder. To remove AH Quick Shots, delete the folder and the shortcut; a
+shortcut you delete is not made again. From the source code instead: Code >
+Download ZIP on this page, unzip it to a folder without spaces in its path,
+and start the same file (it makes no shortcut).
 
 ### Is the download safe?
 
@@ -75,27 +80,65 @@ unzipping.
 
 ## How to use it
 
-The Windows package shows the simple desk: one step at a time, in large print.
+The Windows package shows the simple desk: one question at a time, in large
+print. The four steps stand at the top of the page; a step already done can be
+clicked to go back to it. The navy button at the bottom right goes on, the
+button at the bottom left goes back one step.
 
-1. **Replay** — pick a replay; the newest come first.
-2. **Moment** — your fights are listed as sentences ("You shot down Lefty59"). Click one to see it. Everything
-   lists every event of the film; Any place lets you film any part of it. Film all my kills makes a shot of
-   every kill at once.
-3. **Camera** — Observer flies beside you and films the fight, Tripod stands still and follows, Pilot's view is
-   what you saw. Buttons move the camera and make the shot longer or shorter (dragging the picture and the mouse
-   wheel do the same). Watch it plays the shot in Film Viewer's own window.
-4. **Video** — choose how good it should look (Quick, Good or Best, each with the time it takes) and press Make
-   the video. Shots from an earlier day wait below, unticked.
-5. When it is done the video plays on the page, and a button opens its folder.
+**1. Replay.** Which replay do you want to make a video from? The newest come
+first. Click one: Film Viewer opens it.
 
-A − and A + at the top make everything smaller or larger. If Film Viewer is not running, the page says how to
-start it and goes on by itself once it is.
+![Step 1, Replay: the replays as large buttons, the newest first](docs/step-1-replay.png)
+
+**2. Moment.** Which moment do you want to film? Your fights stand as
+sentences, such as "You shot down Lefty59" at 2:50. Click one and its picture
+comes up beside the list. Everything lists all that happened in the replay;
+Any place lets you film any part of it, moved to with buttons from − 1 min to
++ 1 min. Film all my kills, at the bottom, makes a shot of every kill not yet
+filmed. Then press **Film this moment**.
+
+![Step 2, Moment: your fights as sentences, the chosen one's picture beside them, and Film this moment](docs/step-2-moment.png)
+
+**3. Camera.** How should the camera film it? (The picture at the top of this
+page.)
+
+- **Observer** flies beside you and films the fight. It films Both of you,
+  Only you or Only him.
+- **Tripod** stands still, turns and zooms to follow.
+- **Pilot's view** is what you saw from the cockpit; it has nothing to move.
+- **Ride the bomb** follows a bomb you dropped from the release to the blast,
+  when there is one in the shot.
+
+Move it: Left, Right, Higher, Lower, Closer and Farther move the camera, and
+the picture shows the change. Dragging the picture and the mouse wheel do the
+same. How long: − 2 s and + 2 s move the shot's start and end. **Watch it**
+plays the shot in Film Viewer's own window, with sound; Pilots' names shows
+the names over the aircraft, in the video too. Then press **Use this camera**.
+
+**4. Video.** Ready to make your video? The shot is ticked under In this video.
+Shots you filmed earlier wait below, unticked: tick one to add it, or Add
+another moment. How good should it look?
+
+- **Quick**: sharp, plain motion.
+- **Good**: smooth motion, like film.
+- **Best**: extra sharp (4K), smooth motion.
+
+Each says about how long it takes. Press **Make the video**. When it is done
+the video plays on the page, and Open folder shows the file in
+**Videos\AH Quick Shots**.
+
+![Step 4, Video: the shots in this video, the three qualities with the time each takes, and Make the video](docs/step-4-video.png)
+
+A − and A + at the top right make everything smaller or larger. If Film Viewer
+is not running, the page says how to start it and goes on by itself once it is.
 
 ### The full desk
 
 Run from the source code, the page shows the full desk instead: every camera, keyframes, the timeline, the data
 overlay and the Assembly. The rest of this section describes it. (Add `?release` to the page's address to see the
 simple desk there too.)
+
+![The full desk's Shots view: a fight picked from the list, shown through the Observer camera, with its shots in the cut](docs/screenshot.png)
 
 **Replays.** Choose a replay (the ones you opened lately come first) and
 press Open. Its name stands large at the top: type over it and press Enter to
@@ -225,6 +268,7 @@ by the Windows package: they are experimental.
 - `fonts/` — Source Sans Pro, the data overlay's font
 - `dev/try_camera.py` — renders unsaved cameras through the running desk, for judging camera work
 - `dev/build_package.py` — builds the Windows package; GitHub runs it when a version is released
+- `docs/package-readme.txt` — the package's `README.txt`, the short read-me for the player
 
 Everything stays on your computer: the server listens on 127.0.0.1 only. Your
 shots are saved under `.quickshots/` beside the code.

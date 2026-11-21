@@ -24,11 +24,12 @@ FFMPEG = ("https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9
 
 
 def wanted(path):
-    """What a player needs: the app, its ready page, its font, its look, the documents. Not dev/, the tests or ui/src."""
+    """What a player needs: the app, its ready page, its font, its look, the licences. Not dev/, the tests, ui/src or
+    docs/, written for GitHub and for developers: the player's own read-me goes in as README.txt (see main)."""
     if "/" not in path:
         return path.endswith(".py") and path != "test_director.py" or path in (
-            "AH Quick Shots.bat", "LICENSE", "README.md", "THIRD-PARTY-NOTICES.md")
-    return path.startswith(("ui/dist/", "fonts/", "docs/", "looks/"))
+            "AH Quick Shots.bat", "LICENSE", "THIRD-PARTY-NOTICES.md")
+    return path.startswith(("ui/dist/", "fonts/", "looks/"))
 
 
 def download(url, sha256):
@@ -52,6 +53,8 @@ def main():
     for path in filter(wanted, files):
         (stage / path).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / path, stage / path)
+    # Plain text, so a double-click opens it in Notepad; README.md is the page GitHub shows.
+    shutil.copy2(ROOT / "docs" / "package-readme.txt", stage / "README.txt")
 
     with zipfile.ZipFile(download(*PYTHON)) as embed:
         embed.extractall(stage / "python")
@@ -79,7 +82,8 @@ def main():
 
     package = BUILD / NAME
     with zipfile.ZipFile(package, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as out:
-        for path in sorted(p for p in stage.rglob("*") if p.is_file()):
+        # Not the __pycache__ the checks above leave: Python writes its own on the player's first start.
+        for path in sorted(p for p in stage.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
             out.write(path, path.relative_to(BUILD).as_posix())
     digest = hashlib.sha256(package.read_bytes()).hexdigest()
     (BUILD / (NAME + ".sha256")).write_text(f"{digest} *{NAME}\n", encoding="ascii")
