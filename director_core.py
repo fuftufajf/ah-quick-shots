@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import struct
 import threading
 import time
 import traceback
@@ -20,11 +21,11 @@ from finishing import FASTEST, PASSES, Cancelled, assemble, blend, fastest, peak
 from flight_data import derive, pair, read_kept
 import overlay
 import trails
-from shot_plan import (PLACE, RIDES, compile_shot, film_order, filmer_path, ground_moments, nearby, passes, probe_cameras, stamp, track_rows, validate_effects,
-                       validate_plan, validate_shot, videos as video_rows)
+from shot_plan import (PLACE, RIDES, STAND, compile_shot, film_order, filmer_path, ground_moments, nearby, passes, probe_cameras, stamp, track_rows, validate_effects,
+                       landing, ray, ray_eyes, tripod, validate_plan, validate_shot, videos as video_rows)
 from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 
-ACTIONS = ("connect", "open", "rename", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "export_cut")
+ACTIONS = ("connect", "open", "rename", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "stand", "export_cut")
 RENDERS = {"draft": "960 540", "final": "1920 1080", "4k": "3840 2160"}
 # Frames a second of a finished video: 30 unless 60 is asked for (the operator's choice: more like film, and with
 # fewer frames for ffmpeg and the trails to work on).
@@ -158,7 +159,7 @@ class Desk:
         # `recent`: the replays opened last, newest first; `waiting`: those to go to the Recycle Bin once the viewer,
         # which holds the open one, has been given another.
         self.data = {"connected": False, "films": [], "project": None, "planes": [], "recent": kept("recent.json"), "waiting": kept("waiting.json"),
-                     "now": 0, "icons": True, "problems": {}, "nearby": None, "airfield": None, "flight": None,
+                     "now": 0, "icons": True, "problems": {}, "nearby": None, "airfield": None, "flight": None, "stand": None,
                      "preview": None, "proposals": [], "job": None, "videos": str(self.videos), "renders": [],
                      "ffmpeg": bool(shutil.which("ffmpeg")), "mounts": kept("mounts.json"), "overlays": None, "assembly": None, "assembling": None,
                      "pace": json.loads((self.root / PACE).read_text(encoding="utf-8")) if (self.root / PACE).exists() else {}}
@@ -700,7 +701,7 @@ class Desk:
         self.progress("Opening film and reading its moments")
         self.compiled, self.paths, self.reads, self.own, self.applied, self.flight = {}, {}, {}, [], None, None
         with self.lock:
-            self.data.update(project=None, preview=None, planes=[], problems={}, nearby=None, airfield=None, flight=None, assembly=None)
+            self.data.update(project=None, preview=None, planes=[], problems={}, nearby=None, airfield=None, flight=None, stand=None, assembly=None)
         reply = self.command("open " + film)
         match = re.search(r" length ([\d.]+) s", reply[0])
         if not match or "no ground" in reply[0]:
@@ -806,6 +807,43 @@ class Desk:
             while len(self.paths) > 12:
                 del self.paths[next(iter(self.paths))]
         return self.paths[key]
+
+    def _stand(self, raw, project):
+        """A tripod where a click on the still lands on the ground (shot_plan.tripod). The viewer has no picking: its
+        `camera` tells the camera that drew the still (turned as `at` turns it), and `project ... check` which of a few
+        thousand eyes along the way through the clicked point are under the ground. Measured live, 22 Nov 2026: five
+        clicks 440 to 1,080 ft off landed on the ground within a foot, one in the sky landed nowhere. The viewer's
+        ground has no trees: a tripod can stand in one."""
+        draft = validate_shot(raw.get("shot"), project["length"])
+        x, y = number(raw.get("x"), 0, 1, "x"), number(raw.get("y"), 0, 1, "y")
+        still = self.data["preview"]
+        if not still or still["kind"] != "image":
+            raise ValueError("Click on a still of the film, not on a video")
+        head = (self.media_root / still["url"].rsplit("/", 1)[1]).read_bytes()[:26]  # a .bmp: its width and height
+        width, height = (abs(n) for n in struct.unpack("<ii", head[18:26]))
+        # "camera fixed <x> <alt> <z> <yaw> <pitch> <roll> fov <f> time <t> shot <start>"
+        row = self.command("camera")[0].split()
+        if row[1:2] != ["fixed"]:
+            raise ValueError("Look through a camera that stands in the world (Observer, Tripod, a fly-by), then click the ground")
+        pose = [*map(float, row[2:8]), float(row[row.index("fov") + 1])]
+        moment = float(row[row.index("time") + 1])
+        eyes = ray_eyes(pose[:3], ray(pose, width / height, x, y))
+        cameras, output = self.media_root / "ground.txt", self.media_root / "ground-check.txt"
+        cameras.write_text("\n".join(f"fixed {e[0]:.3f} {e[1]:.3f} {e[2]:.3f} 0 0 0 1" for e in eyes), encoding="ascii")
+        self.progress("Finding the ground where you clicked")
+        # The viewer takes no shorter stretch than a tenth of a second; the ground is the same at both moments.
+        self.command(f"project {moment:.6f} {moment + .1001:.6f} 0.1001 {cameras.as_posix()} {output.as_posix()} check")
+        ground = {int(row[2]) - 1: float(row[3]) for row in map(str.split, output.read_text().splitlines())
+                  if row[:1] == ["ground"] and abs(float(row[1]) - moment) < .01}
+        spot = landing(eyes, ground)
+        if spot is None:
+            raise ValueError("That is not the ground: click on the ground in the picture")
+        t = round(min(draft["end"], max(draft["start"], self.data["now"])), 2)
+        stood = validate_shot(tripod(draft, self._tracks(draft["start"], draft["end"]), t, (spot[0], spot[1] + STAND, spot[2])),
+                              project["length"])
+        with self.lock:
+            self.data["stand"] = {"stamp": uuid.uuid4().hex, "id": draft["id"], "shot": stood,
+                                  "away": round(math.dist(pose[:3], spot))}
 
     def _around(self, raw, project):
         """Who is near the lead aircraft in a stretch, so a shot's opponent is whoever was there to be fought."""
@@ -1410,6 +1448,8 @@ class Desk:
             return self._around(raw, project)
         if action == "flight":
             return self._flight(raw, project)
+        if action == "stand":
+            return self._stand(raw, project)
         if action == "clip":
             return self._clip(raw, project)
         if action == "live":

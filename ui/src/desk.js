@@ -259,7 +259,7 @@ export function dragCamera(shot, dx, dy, width) {
   const way = shot.kind === "pair" || (shot.kind === "escort" && shot.watch !== "hero") ? 1 : -1;
   const orbit = shot.orbit + way * dx * shot.fov / (width * .4);
   return {...shot, orbit: Math.round(((((orbit + 180) % 360) + 360) % 360 - 180) * 10) / 10,
-    height: Math.round(clamp(shot.height + dy * shot.distance / (width * .35), -2000, 5000))};
+    height: Math.round(clamp(shot.height + dy * shot.distance / (width * .35), ...KEYED.height))};
 }
 // One notch of the wheel zooms the lens: the aircraft grows without the camera going nearer, which would distort it.
 export function zoomCamera(shot, closer) {
@@ -269,7 +269,7 @@ export function zoomCamera(shot, closer) {
 // With Shift the wheel moves the camera itself nearer or further: the aircraft grows and the perspective deepens.
 export function dollyCamera(shot, closer) {
   const distance = shot.distance * (closer ? .9 : 1.1);
-  return {...shot, distance: clamp(Math[closer ? "floor" : "ceil"](distance), 20, 10000)};
+  return {...shot, distance: clamp(Math[closer ? "floor" : "ceil"](distance), ...KEYED.distance)};
 }
 
 export function candidates(shot, cast) {
@@ -408,7 +408,8 @@ export function momentLabel(event) {
 // The observer can be directed. A keyframe is a framing (where the ship sits, its lens, and whom it watches) kept at
 // a moment of the shot; between keyframes the ship glides from one to the next (shot_plan.py: _glide, framed and
 // _watching, the same numbers). A keyframe saved before they said whom to watch watches whom the shot does.
-export const KEYED = {orbit: [-Infinity, Infinity], distance: [20, 10000], height: [-2000, 5000], fov: [6, 140]};
+// As shot_plan.py's: a tripod put on the ground by a click can stand miles off and far below a high aircraft.
+export const KEYED = {orbit: [-Infinity, Infinity], distance: [20, 60000], height: [-45000, 45000], fov: [6, 140]};
 export const keyable = shot => shot?.kind === "escort";
 const framing = from => Object.fromEntries([...Object.keys(KEYED), "watch"].filter(name => from[name] != null).map(name => [name, from[name]]));
 

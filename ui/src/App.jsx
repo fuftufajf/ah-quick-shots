@@ -104,6 +104,8 @@ export function App() {
   // The 9:16 frame of a vertical reel laid over the picture, kept in this browser across reloads (when it may store).
   const [upright, setUpright] = useState(() => { try { return localStorage.getItem("upright") === "1"; } catch { return false; } });
   const stand = on => { setUpright(on); try { localStorage.setItem("upright", on ? "1" : "0"); } catch { /* not kept: still works */ } };
+  const [standing, setStanding] = useState(false);  // the full desk: the next click on the picture puts a tripod on the ground there
+  const standAsked = useRef(null);  // {id, after}: the shot a tripod was asked for by a click, and the desk's answer before it
   const [step, setStep] = useState("replay");  // the simple desk: the step on screen
   const [anywhere, setAnywhere] = useState(false);  // the simple desk: a place in the replay found by hand, not a moment
   const [older, setOlder] = useState(false);  // the simple desk: every replay listed, not only the newest
@@ -289,7 +291,8 @@ export function App() {
     function key(e) {
       if (view !== "shots") return;  // the assembly has keys of its own
       if (e.ctrlKey || e.metaKey || e.altKey || e.target.matches("input:not([type=range]),select,textarea,summary,a")) return;
-      if (e.key === "i") mark("start");
+      if (e.key === "Escape") setStanding(false);
+      else if (e.key === "i") mark("start");
       else if (e.key === "o") mark("end");
       else if (e.key === "k") keyframe();
       else if (e.key === "Delete") keyframe(true);
@@ -537,10 +540,24 @@ export function App() {
 
   // A drag on the picture moves a free camera round the aircraft; a plain click still plays and pauses.
   function down(e) {
-    if (e.target.closest(".hud")) return;
+    if (e.target.closest(".hud") || picking) return;
     setOpened(null);
     if (movable && e.button === 0 && !e.target.closest("button")) grab.current = {x: e.clientX, y: e.clientY, shot: draft, at: inShot(draft), moved: false};
   }
+  // The click after Tripod here: the desk finds where it lands on the ground and makes the shot a tripod standing there.
+  function standAt(e) {
+    const box = screen.current?.querySelector("img")?.getBoundingClientRect();
+    if (!box) return;
+    const x = (e.clientX - box.left) / box.width, y = (e.clientY - box.top) / box.height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;  // a still's black bars are not the film
+    setStanding(false); standAsked.current = {id: draft.id, after: desk.stand?.stamp};
+    setWanted({action: "stand", body: {shot: draft, x, y, wait: true}});
+  }
+  useEffect(() => {
+    const asked = standAsked.current, stood = desk.stand;
+    if (!asked || !stood || stood.stamp === asked.after || stood.id !== asked.id || draft?.id !== asked.id) return;
+    standAsked.current = null; film.current?.pause(); tune(stood.shot);
+  }, [desk.stand?.stamp]);
   function move(e) {
     const held = grab.current;
     if (!held) return;
@@ -796,6 +813,10 @@ export function App() {
   const price = seconds => shotCost && !!desk.ffmpeg && <small className="cost">+ {howLong(seconds)}</small>;
   const video = desk.preview?.kind === "video" && desk.preview.url !== closedVideo ? desk.preview : null;
   const still = desk.preview?.kind === "image" ? desk.preview : null;
+  // A tripod goes where a click lands on the ground, seen through a camera that stands in the world: not one riding
+  // an aircraft (Behind you is a chase camera), and on a still, not a clip or a video.
+  const groundable = Boolean(draft) && FREE.includes(draft.kind) && draft.kind !== "follow" && Boolean(still) && !video && !clip && !conflict;
+  const picking = standing && groundable;
   // Waiting is said large, over the picture, except where the picture is what is being watched: a stretch playing
   // in the viewer's window and a camera's still that is back within a second.
   const job = desk.job || {}, quick = running && (live || (["seek", "icons", "around"].includes(job.action) && (job.elapsed || 0) < 1));
@@ -962,10 +983,12 @@ export function App() {
         <div className="picture panel" aria-busy={working}>
           {!simple && <div className="panel-heading"><h2>2 <span>Picture</span></h2>
             <div className="chips"><span className="note">Trails: tick them in Film Viewer</span><button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Names</button>
-              <button aria-pressed={upright} onClick={() => stand(!upright)} title="The frame a vertical 9:16 reel keeps: the middle of the 16:9 picture, as tall as it. A guide only: the video stays 16:9.">9:16</button></div>
+              <button aria-pressed={upright} onClick={() => stand(!upright)} title="The frame a vertical 9:16 reel keeps: the middle of the 16:9 picture, as tall as it. A guide only: the video stays 16:9.">9:16</button>
+              <button aria-pressed={picking} disabled={!groundable || working} onClick={() => setStanding(!standing)}
+                title="Then click the ground in the picture: a tripod stands there, 6 ft up, and follows the lead aircraft by turning and zooming. Film Viewer knows no trees: if it stands in one, raise it (Height). Esc: never mind">Tripod here</button></div>
           </div>}
-          <div ref={screen} className={`screen ${movable ? "movable" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
-            onClick={e => { if (!dragged.current && clip && !video && !e.target.closest("button, .hud")) renderPlay(); }}>
+          <div ref={screen} className={`screen ${movable ? "movable" : ""} ${picking ? "standing" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+            onClick={e => { if (picking) { if (!e.target.closest("button, .hud")) standAt(e); return; } if (!dragged.current && clip && !video && !e.target.closest("button, .hud")) renderPlay(); }}>
             {video ? <video key={video.url} ref={made} src={video.url} controls onLoadedData={() => { asking.current = null; }} onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} playsInline/>
             : clip ? <video key={clip.url} ref={player} src={clip.url} playsInline onPlay={() => setRolling(true)} onPause={() => setRolling(false)} onEnded={() => setRolling(false)} onTimeUpdate={e => { if (!scrubbing.current && !trimGrab.current) setCursor(clip.start + e.target.currentTime); }}/>
             : still ? <img src={still.url} draggable={false} alt={`Film Viewer frame at ${formatTime(still.time)}`}/>
@@ -1123,7 +1146,7 @@ export function App() {
                 title="The camera keeps its place beside you but is fastened to your aircraft as Film Viewer draws it. Use it when your aircraft hops in the picture: Film Viewer draws it a frame off now and then, most of all after you are shot down. In hard turns this camera trembles a little">Rides your aircraft</button>}
             </div>}
             {!adjustable && !conflict && !video && <p className="hint">This camera shows the flight as it was: there is nothing to adjust.</p>}
-            {adjustable && <p className="hint">{movable && turnable(draft) ? "Drag the picture to turn this camera where it looks; the wheel over it zooms the lens." : movable ? "Drag the picture: sideways walks the camera round the aircraft, up and down changes its height; the wheel over it zooms the lens, with Shift it moves the camera nearer." : "The wheel over the picture zooms the lens."} The controls in its corners show each value: click one to set it exactly.{keyed && (draft.zoom === "hold" && draft.keys?.length === 1 ? " The tripod stands where it was at its keyframe: a change moves it there, and its lens keeps the aircraft this size." : draft.keys?.length ? " With keyframes, every change you make, whom it looks at too, is a keyframe at the playhead." : " Keyframe (K) keeps this framing at the playhead: set another further on, and the observer glides between them.")}{watching === "both" && " The observer opens its lens to hold you both; further off, it flies more of a line of its own."}</p>}
+            {adjustable && <p className="hint">{movable && turnable(draft) ? "Drag the picture to turn this camera where it looks; the wheel over it zooms the lens." : movable ? "Drag the picture: sideways walks the camera round the aircraft, up and down changes its height; the wheel over it zooms the lens, with Shift it moves the camera nearer." : "The wheel over the picture zooms the lens."} The controls in its corners show each value: click one to set it exactly.{keyed && (draft.zoom === "hold" && draft.keys?.length === 1 ? " The tripod stands where it was at its keyframe: a change moves it there, and its lens keeps the aircraft this size. Tripod here, over the picture, puts it on the ground where you click." : draft.keys?.length ? " With keyframes, every change you make, whom it looks at too, is a keyframe at the playhead." : " Keyframe (K) keeps this framing at the playhead: set another further on, and the observer glides between them.")}{watching === "both" && " The observer opens its lens to hold you both; further off, it flies more of a line of its own."}</p>}
           </> : <p className="empty-small">Click a moment, or press New shot at the playhead. The cameras for that shot appear here.</p>}
         </>}</div>
       </section>

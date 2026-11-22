@@ -22,7 +22,8 @@ import finishing
 import flight_data
 import overlay
 import trails
-from shot_plan import _glide, _last_seen, _seat, _steady, camera_pose, framed, compile_shot, escort_poses, filmer_path, ground_moments, nearby, passes, probe_cameras, validate_plan, validate_shot
+from shot_plan import (_glide, _last_seen, _seat, _steady, camera_pose, framed, compile_shot, escort_poses, filmer_path, ground_moments, landing, nearby,
+                       passes, probe_cameras, ray, ray_eyes, validate_plan, validate_shot)
 from viewer_socket import Viewer, film_rows, plane_rows
 
 SHOT = {"id": "one", "name": "Pair", "start": 1, "end": 3, "kind": "pair",
@@ -236,6 +237,54 @@ class DeskTests(unittest.TestCase):
         while self.desk.snapshot()["job"]["running"] and time.monotonic()<deadline:
             time.sleep(.01)
         self.assertIsNone(self.desk.snapshot()["job"]["error"])
+
+    def test_a_click_on_the_ground_in_a_still_puts_a_tripod_there(self):
+        # The way through a point of the picture: the middle along the camera, the right edge to its right, the top
+        # up. A camera rolled 0.3 rad shows at (0.3074, -0.1088) what one not rolled shows at (0.2755, -0.2653), both
+        # as the viewer's own `project` put an aircraft (22 Nov 2026).
+        level = [0, 0, 0, 0, 0, 0, math.radians(90)]
+        self.assertEqual([round(v, 6) + 0 for v in ray(level, 2, .5, .5)], [0, 0, 1])
+        self.assertEqual([round(v, 6) + 0 for v in ray(level, 2, 1, .5)], [round(math.sqrt(.5), 6), 0, round(math.sqrt(.5), 6)])
+        self.assertGreater(ray(level, 2, .5, 0)[1], 0)
+        turned, screen = [0, 0, 0, 1.1, -.2, 0, 1.0], lambda x, y: ((x + 1) / 2, (1 - y) / 2)
+        self.assertLess(math.dist(ray(turned, 16 / 9, *screen(.2755, -.2653)), ray([*turned[:5], .3, 1.0], 16 / 9, *screen(.3074, -.1088))), 3e-4)
+        self.assertIsNone(landing(ray_eyes((0, 0, 0), (0, 1, 0)), {}))  # straight up: the sky
+        # The viewer drew the still from 300 ft up, looking 0.3 rad down along +z, over flat ground 100 ft up.
+        self.desk.media_root.mkdir(parents=True, exist_ok=True)
+        (self.desk.media_root / "still.bmp").write_bytes(b"BM" + bytes(16) + struct.pack("<ii", 1600, -900) + bytes(8))
+        self.desk.data["preview"] = {"url": "/media/still.bmp", "kind": "image", "time": 10, "revision": 1, "film": PROJECT["film"]}
+        drawn = ["camera fixed 0 300 0 0 -0.3 0 fov 1.0 time 10.00 shot 8.00"]
+        def native(command, progress):
+            if command == "camera":
+                return drawn
+            if command.startswith("tracks "):  # the hero flying along +z 2,000 ft up, the other beside him
+                return [f"track {t / 50:.2f} {ident} {x} 2000 {300 * t / 50:.2f} 0 0 0" for t in range(390, 651) for ident, x in ((19, 0), (10, 300))]
+            if command.startswith("project "):
+                parts = command.split()
+                self.assertEqual((parts[1], parts[2], parts[-1]), ("10.000000", "10.100100", "check"))
+                eyes = [list(map(float, line.split()[1:4])) for line in Path(parts[4]).read_text().splitlines()]
+                Path(parts[5]).write_text("\n".join(f"ground 10.00 {i + 1} {alt - 100:.1f}" for i, (_x, alt, _z) in enumerate(eyes) if alt - 100 < 3))
+            return []
+        self.desk.viewer.command = native
+        self.run_action({"action": "stand", "shot": {**SHOT, "start": 8, "end": 12}, "x": .5, "y": .5})
+        stood = self.desk.snapshot()["stand"]
+        self.assertEqual({k: stood["shot"][k] for k in ("kind", "watch", "path", "zoom", "hero", "target")},
+                         {"kind": "escort", "watch": "hero", "path": "own", "zoom": "hold", "hero": 19, "target": 10})
+        self.assertEqual(stood["shot"]["keys"][0]["t"], 10)
+        # It stands 6 ft over where the middle of the picture meets the ground, all through the shot.
+        tracks = self.desk._tracks(8, 12)
+        places = {tuple(round(v, 1) for v in pose[:3]) for pose in escort_poses(stood["shot"], _steady(stood["shot"], tracks))}
+        self.assertEqual(len(places), 1)
+        self.assertLess(math.dist(next(iter(places)), (0, 106, 200 / math.tan(.3))), 3)
+        self.assertAlmostEqual(stood["away"], math.hypot(200, 200 / math.tan(.3)), delta=3)
+        # Clicked in the sky, or on a picture from the pilot's seat, nothing moves and the page is told why.
+        for x, y, camera, said in ((.5, 0, drawn, "not the ground"), (.5, .5, ["camera recorded time 10.00"], "stands in the world")):
+            drawn = camera
+            self.desk.start({"action": "stand", "shot": {**SHOT, "start": 8, "end": 12}, "x": x, "y": y, "expected_revision": 1})
+            while self.desk.snapshot()["job"]["running"]:
+                time.sleep(.01)
+            self.assertIn(said, self.desk.snapshot()["job"]["error"])
+        self.assertEqual(self.desk.snapshot()["stand"]["stamp"], stood["stamp"])
 
     def test_angles_are_rated_over_the_whole_shot(self):
         commands = []

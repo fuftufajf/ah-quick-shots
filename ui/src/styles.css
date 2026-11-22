@@ -103,6 +103,8 @@ small{font-size:12px}
 .screen img,.screen video{display:block;width:100%;height:100%;object-fit:contain}
 /* A still has the viewer window's shape and the video's width of view: at full width it sits where it will in the 16:9 picture. */
 .screen img{height:auto;user-select:none;-webkit-user-drag:none}
+/* Tripod here: the next click on the picture says where on the ground it stands. */
+.screen.standing,.screen.standing img{cursor:crosshair}
 /* A 9:16 frame as tall as the 16:9 picture, in its middle; the rest is dimmed. Full height also over a still's black
    bars: the video shows more there. The drag and the wheel go through it to the picture. */
 .reel-guide{position:absolute;top:0;left:50%;height:100%;aspect-ratio:9/16;transform:translateX(-50%);box-shadow:0 0 0 100vmax #000000a6;outline:1px solid #ffffffb3;pointer-events:none}

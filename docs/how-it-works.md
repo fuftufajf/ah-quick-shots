@@ -258,7 +258,22 @@ the two-aircraft cameras then take whoever comes nearest.
   down to 6 degrees; further off than that reaches, the aircraft does grow
   small. A change (a drag, a slider) moves the tripod where it stands,
   wherever the playhead is; a second keyframe (K) makes it a moving camera
-  again. Checked on made-up tracks only, not yet on a real film.
+  again.
+  Tripod here, over the picture, puts it on the ground where you click, 6 ft
+  up. The viewer has no picking, so the desk asks it: `camera` tells the
+  camera that drew the still (turned as `at` turns it), and `project ...
+  check` tells which of about 4,000 eyes along the way through the clicked
+  point, each a quarter of a percent further out, are under the ground. The
+  first one under it, lifted onto the ground, is the spot, and the tripod's
+  keyframe is the orbit, distance and height that put the observer there,
+  worked out with the observer's own sums. Measured on a live viewer (22 Nov
+  2026): the desk's sums put an aircraft where `project` does to 0.0001 of
+  the picture, also on a rolled camera; five clicks 440 to 1,080 ft off each
+  landed on the ground within a foot, and a click on the sky landed nowhere;
+  a tripod put 3,100 ft off, 2,500 ft below a Me 163, followed it in a
+  render. The viewer's ground has no trees: a click on a wood stands the
+  tripod in the trees, looking into leaves (raise it with Height). A click
+  takes about 2 s on a film the viewer has no kept tracks of.
 - Close on you, Close on opponent — the same ship watching one aircraft alone
   from any side (front quarter first; drag the picture round it). The viewer
   holds that aircraft in the middle of the picture, so it can fill the frame

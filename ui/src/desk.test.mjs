@@ -97,7 +97,7 @@ const tail = {kind:'follow', orbit:0, distance:80, height:16, fov:65};
 assert.ok(dragCamera(tail, 100, 0, 960).orbit < 0 && dragCamera({...tail, kind:'pair'}, 100, 0, 960).orbit > 0);
 assert.ok(dragCamera(tail, 0, 100, 960).height > 16 && Math.abs(dragCamera({...tail, orbit:175}, -400, 0, 960).orbit) <= 180);
 assert.deepEqual([zoomCamera(tail, true).fov, zoomCamera(tail, true).distance, zoomCamera({...tail, fov:7}, true).fov, zoomCamera({...tail, fov:6}, false).fov], [58, 80, 6, 7]);
-assert.deepEqual([dollyCamera(tail, true).distance, dollyCamera(tail, true).fov, dollyCamera(tail, false).distance, dollyCamera({...tail, distance:21}, true).distance, dollyCamera({...tail, distance:9500}, false).distance], [72, 65, 88, 20, 10000]);
+assert.deepEqual([dollyCamera(tail, true).distance, dollyCamera(tail, true).fov, dollyCamera(tail, false).distance, dollyCamera({...tail, distance:21}, true).distance, dollyCamera({...tail, distance:59000}, false).distance], [72, 65, 88, 20, 60000]);
 // A camera ship watching one aircraft circles that aircraft's own line of flight, like the camera on your tail.
 const close = ANGLES.find(a => a.key === 'closeThem').make(cast)[0];
 assert.deepEqual([close.kind, close.watch, close.hero, close.target], ['escort', 'hero', 10, 19]);

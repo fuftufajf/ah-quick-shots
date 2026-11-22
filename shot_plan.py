@@ -21,8 +21,9 @@ SIDES = {"right": 90, "left": -90, "rear": 0, "front": 180, "top": 0}
 RIDES = ("follow", "wing", "cockpit", "weapon", "recorded", "airframe", *MOUNTS)
 # Where the free camera on the airframe sits (`airframe`): feet to the right, up and ahead of the pilot's eye.
 PLACE = (("right", -150, 150), ("up", -60, 60), ("ahead", -150, 150))
-# What a keyframe of the observer holds, with the limits each has on a shot: where the ship sits and its lens.
-KEYED = (("orbit", -180, 180), ("distance", 20, 10000), ("height", -2000, 5000), ("fov", 6, 140))
+# What a keyframe of the observer holds, with the limits each has on a shot: where the ship sits and its lens. A
+# tripod put on the ground by a click (`tripod`) can stand miles off and far below an aircraft high up.
+KEYED = (("orbit", -180, 180), ("distance", 20, 60000), ("height", -45000, 45000), ("fov", 6, 140))
 
 
 def validate_shot(raw, length):
@@ -36,7 +37,7 @@ def validate_shot(raw, length):
             "kind": kind, "side": side if side in ("left", "right") else "right"}
     orbit = (-25 if side == "left" else 25) if kind == "pair" else SIDES[side]
     for key, default, low, high in [("start", 0, 0, length), ("end", 6, 0, length), ("orbit", orbit, -180, 180),
-                                   ("distance", 280, 20, 10000), ("height", 60, -2000, 5000),
+                                   ("distance", 280, 20, 60000), ("height", 60, -45000, 45000),
                                    ("fov", 60, 6, 140), ("roll", 0, -180, 180)]:
         shot[key] = number(raw.get(key, default), low, high, key)
     if shot["end"] - shot["start"] < .1 or shot["end"] - shot["start"] > 120:
@@ -516,6 +517,72 @@ def _poses(shot, tracks, times, seen, step=None):
 
 def _held(follow):
     return "" if follow is None else f" at {follow}"
+
+
+STAND = 6  # feet: a tripod put on the ground by a click has its eye this far above it
+
+
+def ray(pose, aspect, x, y):
+    """The way from a camera [x, alt, z, yaw, pitch, roll, fov] through a point of its picture (x, y from 0 to 1
+    from the top left; the picture `aspect` wide to its height), as a unit vector. The viewer's axes: yaw 0 looks
+    toward +z and +pi/2 toward -x, pitch up is positive, fov is the width of view, and a roll turns the picture
+    (checked against `project` on a live viewer, 22 Nov 2026: a point within 0.0001 of the picture)."""
+    yaw, pitch, roll, fov = pose[3:7]
+    look = (-math.sin(yaw) * math.cos(pitch), math.sin(pitch), math.cos(yaw) * math.cos(pitch))
+    side = (math.cos(yaw), 0.0, math.sin(yaw))
+    up = (look[1] * side[2] - look[2] * side[1], look[2] * side[0] - look[0] * side[2], look[0] * side[1] - look[1] * side[0])
+    c, s, span = math.cos(roll), math.sin(roll), math.tan(fov / 2)
+    across, rise = (2 * x - 1) * span, (1 - 2 * y) * span / aspect
+    way = [look[k] + across * (c * side[k] - s * up[k]) + rise * (s * side[k] + c * up[k]) for k in range(3)]
+    size = math.hypot(*way)
+    return tuple(w / size for w in way)
+
+
+def ray_eyes(origin, way, near=3.0, far=60000.0, ratio=1.0025):
+    """Eyes along a ray to ask the viewer about, each a quarter of a percent further out: 2.5 ft apart at 1,000 ft."""
+    count = int(math.log(far / near) / math.log(ratio)) + 1
+    return [tuple(o + w * near * ratio ** i for o, w in zip(origin, way)) for i in range(count)]
+
+
+def landing(eyes, ground):
+    """Where a ray of `eyes` meets the ground: on it, straight above the first eye under it. `ground` is what
+    `project ... check` tells, {eye index: feet above the ground} for eyes under it or within 3 ft of it. None when
+    none is under it (the sky, or further than the last eye) or the camera itself is."""
+    under = [i for i, feet in ground.items() if feet < 0]
+    if not under or min(under) == 0:
+        return None
+    x, alt, z = eyes[min(under)]
+    return x, alt - ground[min(under)], z
+
+
+def _escort_places(shot, tracks):
+    """Where the observer sits at each track time of its shot, as compile_shot has it fly."""
+    times = sorted(t for t in tracks if shot["start"] - .011 <= t <= shot["end"] + .011)
+    part = {t: tracks[t] for t in times}
+    return [pose[:3] for pose in escort_poses(shot, _steady(shot, part), seen=_last_seen(shot, part))]
+
+
+def tripod(shot, tracks, t, eye):
+    """`shot` as the Tripod camera standing at `eye` (x, alt, z) from moment t: the observer watching its hero alone
+    on a path of its own, pinned by one keyframe at t, its lens holding the hero the size the Tripod opens with
+    (14 degrees from 400 ft). The keyframe's orbit, distance and height come from the observer's own sums: where it
+    sits for orbit 0 at 100 and 200 ft gives the bearing orbit 0 means and, 100 ft back from the nearer, the hero's
+    averaged path at t (framed() holds a distance to 20 ft and more)."""
+    base = {key: value for key, value in shot.items() if key not in ("loose", "ride", "sweep", "closer", "keys")}
+    base.update(kind="escort", watch="hero", path="own", zoom="hold", roll=0)
+
+    def at(distance):
+        return _escort_places({**base, "keys": [{"t": t, "orbit": 0, "distance": distance, "height": 0, "fov": 14, "watch": "hero"}]}, tracks)[0]
+
+    near, far = at(100), at(200)
+    here = tuple(2 * a - b for a, b in zip(near, far))
+    behind = math.atan2(far[0] - near[0], far[2] - near[2])
+    across, along = eye[0] - here[0], eye[2] - here[2]
+    distance = max(20.0, math.hypot(across, along))
+    key = {"t": t, "orbit": round((math.degrees(behind - math.atan2(across, along)) + 180) % 360 - 180, 3),
+           "distance": round(distance, 2), "height": round(eye[1] - here[1], 2),
+           "fov": round(min(140.0, max(6.0, 2 * math.degrees(math.atan(math.tan(math.radians(7)) * 400 / distance)))), 2), "watch": "hero"}
+    return {**base, **{name: key[name] for name in ("orbit", "distance", "height", "fov")}, "keys": [key]}
 
 
 def _seat(pose, plane):
