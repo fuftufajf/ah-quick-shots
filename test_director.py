@@ -741,6 +741,20 @@ class DeskTests(unittest.TestCase):
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,r_frame_rate,nb_frames",
                                 "-of", "csv=p=0", str(target)], capture_output=True, text=True).stdout.split()
         self.assertEqual(probe[0], "video,30/1,45")
+        # At 60 fps a frame shows 1/30 s too: one white moment among black ones (the first pass's 61st frame) is in two
+        # frames, a sixteenth as bright, where a frame's own 1/60 s put it in one at an eighth.
+        parts = [Path(self.temp.name) / f"flash{n}.mp4" for n in range(4)]
+        for n, part in enumerate(parts):
+            flash = ",drawbox=c=white:t=fill:enable='eq(n,60)'" if n == 0 else ""
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=black:s=160x90:r=120:d=1{flash}",
+                            "-c:v", "libx264", "-qp", "0", str(part)], check=True)
+        finishing.blend(parts, target, 60)
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(target), "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True).stdout
+        size = 160 * 90
+        lit = [round(sum(raw[i:i + size]) / size) for i in range(0, len(raw), size)]
+        self.assertEqual(len(lit), 60)
+        self.assertEqual([i for i, v in enumerate(lit) if v > 4], [30, 31])
+        self.assertTrue(all(abs(lit[i] - 255 / 16) < 3 for i in (30, 31)), lit[29:33])
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
     def test_haze_lies_along_the_horizon_and_not_on_an_aircraft_in_the_sky(self):

@@ -415,9 +415,14 @@ with `?release` in the page's address, which shows the page as a release does.
 Motion blur, the slowest effect and the finest, renders each video four times
 at 120 fps, the viewer's most, each pass a quarter of a frame (1/480 s) after
 the one before, and ffmpeg weaves the passes and makes each frame the mean of
-all the frames in its time, as a 360° shutter does: eight frames a frame at
-60 fps, sixteen at 30. The blur is made of the viewer's own frames: nothing is
-guessed. It is ticked from the start, since 30 frames without it look jerky.
+the frames of 1/30 s round it: at 30 fps its own time, as a 360° shutter does,
+sixteen frames a frame; at 60 fps the same sixteen, each window overlapping
+the next. A 60 fps frame's own 1/60 s (eight frames) showed half the streak:
+side by side on a tripod shot (22 Nov 2026) the 1/30 s looked more natural, and
+the operator chose it. No real shutter stays open longer than a frame, but
+nothing here is exposed: a mean is as bright however many frames make it, and
+the viewer renders no more for it. The blur is made of the viewer's own frames:
+nothing is guessed. It is ticked from the start, since 30 frames without it look jerky.
 A film camera's 180° (half of them) left too little to see; two a frame at
 120 fps gave a double image instead of a streak. At 30 fps, on a fast roll (a
 15 s render at 1080p30), one pass drew the aircraft's edges as four steps and

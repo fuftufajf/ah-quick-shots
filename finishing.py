@@ -8,13 +8,17 @@ import threading
 
 # With motion blur a video is rendered PASSES times at the viewer's most, FASTEST frames a second ("fps 1 to 120", it
 # answers to more), each pass a quarter of a frame of FASTEST later, and ffmpeg weaves them and makes each frame the
-# mean of all the frames in its time, as a 360° shutter does: real blur from the viewer's own frames. That is eight
-# frames a frame at 60 fps, sixteen at 30. Half of them (a film camera's 180°) left too little to see; two frames a
+# mean of the frames of SMEAR round it: real blur from the viewer's own frames. At 30 fps that is a frame's own time,
+# as a 360° shutter does, sixteen frames a frame; at 60 fps the same sixteen, each frame's window overlapping the
+# next. A frame's own 1/60 s (eight) showed half the streak; side by side on the operator's tripod shot (22 Nov 2026)
+# the 1/30 s looked more natural, and he chose it. A real shutter cannot stay open longer than a frame, but nothing
+# here is exposed: a mean is as bright however many frames make it, and the viewer renders no more for it. Half of them (a film camera's 180°) left too little to see; two frames a
 # frame at 120 showed a double image, not a streak. At 30 fps, on a fast roll (operator's renders, 15 Nov 2026), one
 # pass drew an aircraft's edges as four steps and two passes left a faint fan at the wingtip: the operator chose four,
 # slow and beautiful. ffmpeg's motion interpolation took 130 times the film's length.
 FASTEST = 120
 PASSES = 4
+SMEAR = 1 / 30  # seconds of motion every blurred frame shows, at 30 and 60 fps alike
 # Not at 4K: 4K at 120 frames a second is more than the H.264 encoder the viewer writes with takes (NVIDIA's, through
 # Media Foundation, was loaded for 1080p at 60 and 120 and 4K at 60, and wrote levels 4.2, 5.1 and 5.2). The viewer
 # then turned to the PC's other one, Intel Quick Sync's (mfx_mft_h264ve_32.dll of Oct 2024), and crashed in it at the
@@ -109,10 +113,10 @@ def trim(source, target, filters="", fps=None):
 def blend(sources, target, fps, filters=""):
     """The passes of a blurred video (see PASSES), as `target` at `fps` with the first pass's sound: as `trim`."""
     rate = FASTEST * PASSES  # the instants the passes hold between them, however many passes they came in (see LEVEL)
-    each = rate // fps  # woven frames in one frame's time: all of them make it
+    each, step = max(rate // fps, round(rate * SMEAR)), rate // fps  # woven frames a frame shows, and one frame's time
     weave = "".join(f"[{n}:v]setpts=PTS+{n}/{rate}/TB[w{n}];" for n in range(len(sources)))
     graph = (weave + "".join(f"[w{n}]" for n in range(len(sources))) + f"interleave=nb_inputs={len(sources)},"
-             f"tmix=frames={each},select='eq(mod(n,{each}),{each - 1})',setpts=N/{fps}/TB"
+             f"tmix=frames={each},select='eq(mod(n,{step}),{step - 1})',setpts=N/{fps}/TB"
              + (f",{filters}" if filters else "") + "[v]")
     encode([a for s in sources for a in ("-i", str(s))],
            ["-filter_complex", graph, "-map", "[v]", "-map", "0:a?", "-r", str(fps)], sources, target, "blend the motion blur")
