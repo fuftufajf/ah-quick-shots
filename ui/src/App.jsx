@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Aperture, ArrowArcRight, ArrowBendUpRight, ArrowClockwise, ArrowFatLinesUp, ArrowLineRight, ArrowLineUp, ArrowRight, ArrowsClockwise, ArrowsHorizontal, ArrowsInLineHorizontal, ArrowsOutLineHorizontal, ArrowsVertical, CaretDown, CaretLeft, CaretRight, CaretUp, Check, Copy, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Minus, Mouse, Pause, Play, Plus, SkipBack, Sparkle, Stop, Swap, Trash, Wind, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
-import {ANGLES, FREE, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, when, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera, dayOf, killShot, momentSentence} from "./desk.js";
+import {ANGLES, FREE, anchored, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, when, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera, dayOf, killShot, momentSentence} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
@@ -430,6 +430,7 @@ export function App() {
   }
   function change(next) {
     if (!dirty) setBaseRevision(project.revision);
+    next = anchored(draft, next);
     latest.current = next; setDraft(next); setDirty(true);
   }
   function tune(next) { change(next); look(next); }  // the camera moved

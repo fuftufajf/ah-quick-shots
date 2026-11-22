@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {ANGLES, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, fitShot, killSequence, landingSequence, ownKills, sequenceOf, turnable, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera, dayOf, killShot, momentSentence} from './desk.js';
+import {ANGLES, anchored, angleOf, reframe, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, fitShot, killSequence, landingSequence, ownKills, sequenceOf, turnable, takeoffSequence, formatTime, filterMoments, isMine, momentLabel, newShot, ratingLabel, trimShot, zoomCamera, dayOf, killShot, momentSentence} from './desk.js';
 const event = {time:199, kind:'kill', text:'Hawk Raven 1 19 10', fields:['Hawk','Raven','1','19','10']};
 assert.equal(formatTime(195.3), '03:15.3');
 assert.equal(filterMoments([event], 'Raven 03:19', 'kill').length, 1);
@@ -170,3 +170,13 @@ console.log('OK: moment search, fights, film times, shot creation and angle pres
 await import("./assembly.test.mjs");
 await import("./cost.test.mjs");
 await import("./keyframes.test.mjs");
+// A tripod whose stretch changes keeps the stretch it was placed over, once, and a drag on it keeps that too.
+const tripodShot = {id: 't', start: 8, end: 14, zoom: 'hold', path: 'own', keys: [{t: 8.3, orbit: 90, distance: 400, height: 30, fov: 14}]};
+const cut = anchored(tripodShot, {...tripodShot, start: 11});
+assert.deepEqual(cut.keys[0].span, [8, 14]);
+assert.deepEqual(anchored(cut, {...cut, end: 13}).keys[0].span, [8, 14]);
+assert.equal(anchored(tripodShot, {...tripodShot, keys: [...tripodShot.keys, {t: 12}]}).keys.length, 2);  // two keyframes: a moving camera
+assert.equal(anchored(tripodShot, {...tripodShot, orbit: 10}).keys[0].span, undefined);  // the same stretch: nothing to keep
+assert.deepEqual(reframe(cut, 12, {...cut, orbit: 100}).keys[0].span, [8, 14]);
+console.log('OK: a trimmed tripod keeps the stretch it was placed over');
+

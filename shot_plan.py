@@ -70,10 +70,16 @@ def validate_shot(raw, length):
         if not isinstance(keys, list) or len(keys) > 40 or not all(isinstance(key, dict) for key in keys):
             raise ValueError("A shot holds up to 40 keyframes")
         kept = {}
+        # A tripod (one keyframe, a path of its own, the lens holding) keeps the stretch it was placed over, `span`,
+        # once its own stretch changes: it stands where that put it, its keyframe in the shot or not (Desk._camera).
+        tripod_key = raw.get("zoom") == "hold" and raw.get("path") == "own" and len(keys) == 1
         for key in keys:
             t = round(number(key.get("t"), 0, length, "keyframe time"), 2)
-            if shot["start"] - .001 <= t <= shot["end"] + .001:  # one outside the shot went with what was trimmed off
+            span = _span(key.get("span"), t, length) if tripod_key and key.get("span") is not None else None
+            if shot["start"] - .001 <= t <= shot["end"] + .001 or span:  # else it went with what was trimmed off
                 kept[t] = {"t": t, **{name: number(key.get(name), low, high, name) for name, low, high in KEYED}}
+                if span:
+                    kept[t]["span"] = span
                 if key.get("watch") is not None:
                     if key["watch"] not in WATCH or (key["watch"] != "hero" and shot["target"] is None):
                         raise ValueError("A keyframe watches both aircraft, the hero or the target, and only an aircraft the shot has")
@@ -93,6 +99,17 @@ def validate_shot(raw, length):
         if raw.get(key) is not None:
             shot[key] = round(number(raw[key], 0, 1e10, key))
     return shot
+
+
+def _span(raw, t, length):
+    """The stretch a tripod's keyframe was placed over: two times of the film, at least a tenth of a second and at
+    most 120 s apart, round the keyframe's own."""
+    if not isinstance(raw, list) or len(raw) != 2:
+        raise ValueError("A tripod's stretch is two times")
+    start, end = (round(number(v, 0, length, "tripod's stretch"), 2) for v in raw)
+    if not .1 <= end - start <= 120 or not start - .001 <= t <= end + .001:
+        raise ValueError("A tripod's stretch must hold its keyframe and last 0.1 to 120 seconds")
+    return [start, end]
 
 
 def validate_effects(raw):
@@ -453,7 +470,9 @@ def escort_poses(shot, tracks, step=None, seen=None):
         up = math.sin(climb) * math.cos(turns[i]) * distance
         flat = math.sqrt(distance ** 2 - up ** 2)
         places.append((path[i][0] + math.sin(bearing) * flat, path[i][1] + up + frames[i]["height"], path[i][2] + math.cos(bearing) * flat))
-    if shot.get("path") == "own":
+    if shot.get("place") is not None:  # a tripod standing where its keyframe put it over another stretch (Desk._camera)
+        places = [tuple(shot["place"])] * len(when)
+    elif shot.get("path") == "own":
         # Its own path: each keyframe pins the ship to the sky where it then sat, and it flies a smooth line through
         # those places, standing at the first before it and at the last after. The aircraft come by, pass and leave.
         pins = [(key["t"], places[min(range(len(when)), key=lambda i: abs(when[i] - key["t"]))]) for key in shot["keys"]]
@@ -555,7 +574,7 @@ def landing(eyes, ground):
     return x, alt - ground[min(under)], z
 
 
-def _escort_places(shot, tracks):
+def escort_places(shot, tracks):
     """Where the observer sits at each track time of its shot, as compile_shot has it fly."""
     times = sorted(t for t in tracks if shot["start"] - .011 <= t <= shot["end"] + .011)
     part = {t: tracks[t] for t in times}
@@ -572,7 +591,7 @@ def tripod(shot, tracks, t, eye):
     base.update(kind="escort", watch="hero", path="own", zoom="hold", roll=0)
 
     def at(distance):
-        return _escort_places({**base, "keys": [{"t": t, "orbit": 0, "distance": distance, "height": 0, "fov": 14, "watch": "hero"}]}, tracks)[0]
+        return escort_places({**base, "keys": [{"t": t, "orbit": 0, "distance": distance, "height": 0, "fov": 14, "watch": "hero"}]}, tracks)[0]
 
     near, far = at(100), at(200)
     here = tuple(2 * a - b for a, b in zip(near, far))

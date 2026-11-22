@@ -22,7 +22,7 @@ from flight_data import derive, pair, read_kept
 import overlay
 import trails
 from shot_plan import (PLACE, RIDES, STAND, compile_shot, film_order, filmer_path, ground_moments, nearby, passes, probe_cameras, stamp, track_rows, validate_effects,
-                       landing, ray, ray_eyes, tripod, validate_plan, validate_shot, videos as video_rows)
+                       escort_places, landing, ray, ray_eyes, tripod, validate_plan, validate_shot, videos as video_rows)
 from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 
 ACTIONS = ("connect", "open", "rename", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "stand", "export_cut")
@@ -972,10 +972,20 @@ class Desk:
         key = camera_key(shot)
         if key not in self.compiled:
             tracks = {} if shot["kind"] in RIDES else self._tracks(shot["start"], shot["end"])
-            self.compiled[key] = compile_shot(shot, tracks)
+            self.compiled[key] = compile_shot(self._anchored(shot), tracks)
             while len(self.compiled) > 300:  # angles tried and dropped
                 del self.compiled[next(iter(self.compiled))]
         return self.compiled[key]
+
+    def _anchored(self, shot):
+        """A tripod copied or trimmed to another stretch stands where it stood. Where it stands is worked out from the
+        hero's averaged path, which a stretch's ends change, and its keyframe may now lie outside the stretch: so its
+        keyframe keeps the stretch it was placed over (`span`, which the page sets when the stretch first changes),
+        and its place is worked out over that one, as it was."""
+        span = (shot.get("keys") or [{}])[0].get("span")
+        if not span or shot.get("zoom") != "hold":
+            return shot
+        return {**shot, "place": escort_places({**shot, "start": span[0], "end": span[1]}, self._tracks(*span))[0]}
 
     def _present(self, shot, ids):
         """A moment of a shot's stretch at which all these aircraft are in the film, from its tracks: a tenth of a

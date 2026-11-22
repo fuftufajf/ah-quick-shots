@@ -286,6 +286,26 @@ class DeskTests(unittest.TestCase):
             self.assertIn(said, self.desk.snapshot()["job"]["error"])
         self.assertEqual(self.desk.snapshot()["stand"]["stamp"], stood["stamp"])
 
+    def test_a_tripod_trimmed_to_a_later_stretch_stands_where_it_stood(self):
+        # The hero turning, so his averaged path, and the tripod's place with it, depends on where a stretch ends.
+        def native(command, progress):
+            if command.startswith("tracks "):
+                return [f"track {t / 50:.2f} {ident} {2000 * math.cos(t / 50 * .3) + x:.2f} 2000 {2000 * math.sin(t / 50 * .3):.2f} 0 0 0"
+                        for t in range(390, 901) for ident, x in ((19, 0), (10, 300))]
+            return []
+        self.desk.viewer.command = native
+        self.desk.data["job"] = {"running": False, "message": "", "share": None, "clock": time.monotonic()}  # what reading reports to
+        place = lambda shot: tuple(round(float(v), 3) for v in self.desk._camera(validate_shot(shot, 20))[0].split()[4:7])
+        stood = {**SHOT, "kind": "escort", "watch": "hero", "path": "own", "zoom": "hold", "start": 8, "end": 14,
+                 "keys": [{"t": 8.3, "orbit": 90, "distance": 400, "height": 30, "fov": 14, "watch": "hero"}]}
+        later = {**stood, "id": "copy", "start": 11, "end": 14}
+        # A copy cut to a stretch after its keyframe: with the stretch it was placed over it stands where it stood.
+        self.assertEqual(place({**later, "keys": [{**stood["keys"][0], "span": [8, 14]}]}), place(stood))
+        # Without it, as before: the keyframe went with what was trimmed off, and the camera flies with the hero.
+        self.assertNotIn("keys", validate_shot(later, 20))
+        with self.assertRaises(ValueError):  # a stretch that does not hold its keyframe
+            validate_shot({**later, "keys": [{**stood["keys"][0], "span": [11, 14]}]}, 20)
+
     def test_angles_are_rated_over_the_whole_shot(self):
         commands = []
         def native(command, progress):

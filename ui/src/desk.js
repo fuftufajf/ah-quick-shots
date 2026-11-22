@@ -456,8 +456,18 @@ export function reframe(shot, t, next) {
   if (!shot.keys?.length) return next;
   // A tripod stands where its one keyframe is: a change moves it, wherever the playhead is, and it stays one place.
   const at = shot.zoom === "hold" && shot.keys.length === 1 ? 0 : keyAt(shot, t), key = {t: Math.round(t * 100) / 100, ...framing(next)};
-  const keys = at >= 0 ? shot.keys.map((k, i) => i === at ? {...key, t: k.t} : k) : [...shot.keys, key].sort((a, b) => a.t - b.t);
+  const keys = at >= 0 ? shot.keys.map((k, i) => i === at ? {...key, t: k.t, ...(k.span && {span: k.span})} : k) : [...shot.keys, key].sort((a, b) => a.t - b.t);
   return {...next, ...framing(shot), keys};
+}
+
+// A tripod (one keyframe, a path of its own, the lens holding) stands where its keyframe puts it over the stretch it
+// was placed on: when its stretch first changes (trimmed, or a copy cut to a later part), its keyframe keeps that one
+// (`span`), and the desk works its place out there (Desk._anchored), so it does not move and its keyframe may lie outside.
+export function anchored(before, next) {
+  const key = next?.keys?.[0];
+  if (!before || before.id !== next.id || next.zoom !== "hold" || next.path !== "own" || next.keys.length !== 1 || key.span
+    || (before.start === next.start && before.end === next.end)) return next;
+  return {...next, keys: [{...key, span: [before.start, before.end]}]};
 }
 
 // The keyframe at the playhead put there, or taken away when there is one. The first keeps the shot's camera as it
