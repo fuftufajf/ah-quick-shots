@@ -70,12 +70,12 @@ def validate_shot(raw, length):
         if not isinstance(keys, list) or len(keys) > 40 or not all(isinstance(key, dict) for key in keys):
             raise ValueError("A shot holds up to 40 keyframes")
         kept = {}
-        # A tripod (one keyframe, a path of its own, the lens holding) keeps the stretch it was placed over, `span`,
-        # once its own stretch changes: it stands where that put it, its keyframe in the shot or not (Desk._camera).
-        tripod_key = raw.get("zoom") == "hold" and raw.get("path") == "own" and len(keys) == 1
+        # A keyframe of a path of its own (a tripod's too) keeps the stretch it was placed over, `span`, once the
+        # shot's stretch changes: it stays where that put it, in the shot or not (Desk._anchored).
+        own = raw.get("path") == "own"
         for key in keys:
             t = round(number(key.get("t"), 0, length, "keyframe time"), 2)
-            span = _span(key.get("span"), t, length) if tripod_key and key.get("span") is not None else None
+            span = _span(key.get("span"), t, length) if own and key.get("span") is not None else None
             if shot["start"] - .001 <= t <= shot["end"] + .001 or span:  # else it went with what was trimmed off
                 kept[t] = {"t": t, **{name: number(key.get(name), low, high, name) for name, low, high in KEYED}}
                 if span:
@@ -88,6 +88,10 @@ def validate_shot(raw, length):
             shot["keys"] = [kept[t] for t in sorted(kept)]
             if raw.get("path") == "own":
                 shot["path"] = "own"
+                if raw.get("ease", "both") not in EASES:
+                    raise ValueError("A path goes smoothly, at an even speed, or easing in or out")
+                if raw.get("ease", "both") != "both":
+                    shot["ease"] = raw["ease"]
         if raw.get("ride") is True:  # where it watches the hero alone, it is a camera on the hero's airframe (compile_shot)
             shot["ride"] = True
         if raw.get("zoom") == "hold":  # the lens follows the aircraft it watches alone, to keep it the size it was framed
@@ -131,18 +135,35 @@ def validate_effects(raw):
     return effects
 
 
-def _glide(times, values, t):
+# How a camera of its own path travels between its points: starting and stopping gently (both), starting gently and
+# arriving at speed (in), setting off at speed and stopping gently (out), or at an even speed from point to point.
+EASES = ("both", "in", "out", "linear")
+
+
+def _glide(times, values, t, ease="both"):
     """A value through keyframes at t: held before the first and after the last; between them on a cubic that
     passes each at the pace of its neighbours and is flat at the two ends, so a move starts and stops gently and
-    does not halt at the keyframes on the way."""
+    does not halt at the keyframes on the way. `ease` (EASES) says which ends are flat: at the other the move keeps
+    the pace of its first or last stretch; linear goes straight from one value to the next."""
     if t <= times[0] or len(times) == 1:
         return values[0]
     if t >= times[-1]:
         return values[-1]
-    i = max(k for k in range(len(times) - 1) if times[k] <= t)
-    pace = [0.0 if k in (0, len(times) - 1) else (values[k + 1] - values[k - 1]) / (times[k + 1] - times[k - 1]) for k in (i, i + 1)]
+    i, last = max(k for k in range(len(times) - 1) if times[k] <= t), len(times) - 1
     h = times[i + 1] - times[i]
     s = (t - times[i]) / h
+    if ease == "linear":
+        return values[i] + (values[i + 1] - values[i]) * s
+
+    def slope(k):
+        if 0 < k < last:
+            return (values[k + 1] - values[k - 1]) / (times[k + 1] - times[k - 1])
+        if ease == "both" or ease == ("in" if k == 0 else "out"):
+            return 0.0
+        j = 0 if k == 0 else last - 1
+        return (values[j + 1] - values[j]) / (times[j + 1] - times[j])
+
+    pace = [slope(i), slope(i + 1)]
     return ((2 * s**3 - 3 * s**2 + 1) * values[i] + (s**3 - 2 * s**2 + s) * h * pace[0]
             + (-2 * s**3 + 3 * s**2) * values[i + 1] + (s**3 - s**2) * h * pace[1])
 
@@ -470,13 +491,13 @@ def escort_poses(shot, tracks, step=None, seen=None):
         up = math.sin(climb) * math.cos(turns[i]) * distance
         flat = math.sqrt(distance ** 2 - up ** 2)
         places.append((path[i][0] + math.sin(bearing) * flat, path[i][1] + up + frames[i]["height"], path[i][2] + math.cos(bearing) * flat))
-    if shot.get("place") is not None:  # a tripod standing where its keyframe put it over another stretch (Desk._camera)
-        places = [tuple(shot["place"])] * len(when)
-    elif shot.get("path") == "own":
-        # Its own path: each keyframe pins the ship to the sky where it then sat, and it flies a smooth line through
-        # those places, standing at the first before it and at the last after. The aircraft come by, pass and leave.
-        pins = [(key["t"], places[min(range(len(when)), key=lambda i: abs(when[i] - key["t"]))]) for key in shot["keys"]]
-        places = [tuple(_glide([t for t, _place in pins], [place[axis] for _t, place in pins], t) for axis in range(3)) for t in when]
+    if shot.get("path") == "own":
+        # Its own path: each keyframe pins the ship to the sky where it then sat, and it flies a line through those
+        # places as `ease` says, standing at the first before it and at the last after. The aircraft come by, pass
+        # and leave. A keyframe placed over another stretch is pinned there (`pins`, from Desk._anchored).
+        pins = shot.get("pins") or [(key["t"], places[min(range(len(when)), key=lambda i: abs(when[i] - key["t"]))]) for key in shot["keys"]]
+        places = [tuple(_glide([t for t, _place in pins], [place[axis] for _t, place in pins], t, shot.get("ease", "both"))
+                        for axis in range(3)) for t in when]
     fovs = [math.radians(frame["fov"]) for frame in frames]
     if shot.get("zoom") == "hold":
         # The lens keeps the aircraft it watches alone as big as the framed lens shows one from the framed distance:
@@ -574,34 +595,43 @@ def landing(eyes, ground):
     return x, alt - ground[min(under)], z
 
 
-def escort_places(shot, tracks):
-    """Where the observer sits at each track time of its shot, as compile_shot has it fly."""
+def escort_pins(shot, tracks):
+    """Where an observer of its own path is pinned at each keyframe: where it would sit then flying with its hero,
+    worked out over the shot's stretch as compile_shot has it fly."""
     times = sorted(t for t in tracks if shot["start"] - .011 <= t <= shot["end"] + .011)
     part = {t: tracks[t] for t in times}
-    return [pose[:3] for pose in escort_poses(shot, _steady(shot, part), seen=_last_seen(shot, part))]
+    places = [pose[:3] for pose in escort_poses({**shot, "path": None}, _steady(shot, part), seen=_last_seen(shot, part))]
+    return [(key["t"], places[min(range(len(times)), key=lambda i: abs(times[i] - key["t"]))]) for key in shot["keys"]]
 
 
 def tripod(shot, tracks, t, eye):
     """`shot` as the Tripod camera standing at `eye` (x, alt, z) from moment t: the observer watching its hero alone
     on a path of its own, pinned by one keyframe at t, its lens holding the hero the size the Tripod opens with
-    (14 degrees from 400 ft). The keyframe's orbit, distance and height come from the observer's own sums: where it
-    sits for orbit 0 at 100 and 200 ft gives the bearing orbit 0 means and, 100 ft back from the nearer, the hero's
-    averaged path at t (framed() holds a distance to 20 ft and more)."""
+    (14 degrees from 400 ft). Already a tripod or a path, with t away from its points, it gets a point there and
+    travels from one to the next, its lens holding the hero the size its nearest point does; at one of them, that
+    one moves. The keyframe's orbit, distance and height come from the observer's own sums: where it sits for orbit 0
+    at 100 and 200 ft gives the bearing orbit 0 means and, 100 ft back from the nearer, the hero's averaged path at t
+    (framed() holds a distance to 20 ft and more)."""
+    held = shot.get("kind") == "escort" and shot.get("path") == "own" and shot.get("zoom") == "hold" and bool(shot.get("keys"))
     base = {key: value for key, value in shot.items() if key not in ("loose", "ride", "sweep", "closer", "keys")}
     base.update(kind="escort", watch="hero", path="own", zoom="hold", roll=0)
 
     def at(distance):
-        return escort_places({**base, "keys": [{"t": t, "orbit": 0, "distance": distance, "height": 0, "fov": 14, "watch": "hero"}]}, tracks)[0]
+        return escort_pins({**base, "keys": [{"t": t, "orbit": 0, "distance": distance, "height": 0, "fov": 14, "watch": "hero"}]}, tracks)[0][1]
 
     near, far = at(100), at(200)
     here = tuple(2 * a - b for a, b in zip(near, far))
     behind = math.atan2(far[0] - near[0], far[2] - near[2])
     across, along = eye[0] - here[0], eye[2] - here[2]
     distance = max(20.0, math.hypot(across, along))
+    near = min(shot["keys"], key=lambda k: abs(k["t"] - t)) if held else {"fov": 14, "distance": 400}
+    size = math.tan(math.radians(near["fov"]) / 2) * near["distance"]  # how big the lens holds the hero
     key = {"t": t, "orbit": round((math.degrees(behind - math.atan2(across, along)) + 180) % 360 - 180, 3),
            "distance": round(distance, 2), "height": round(eye[1] - here[1], 2),
-           "fov": round(min(140.0, max(6.0, 2 * math.degrees(math.atan(math.tan(math.radians(7)) * 400 / distance)))), 2), "watch": "hero"}
-    return {**base, **{name: key[name] for name in ("orbit", "distance", "height", "fov")}, "keys": [key]}
+           "fov": round(min(140.0, max(6.0, 2 * math.degrees(math.atan(size / distance)))), 2), "watch": "hero"}
+    keys = sorted([k for k in shot["keys"] if abs(k["t"] - t) > .25] if held else [], key=lambda k: k["t"])
+    keys = sorted(keys + [key], key=lambda k: k["t"])
+    return {**base, **({name: key[name] for name in ("orbit", "distance", "height", "fov")} if len(keys) == 1 else {}), "keys": keys}
 
 
 def _seat(pose, plane):

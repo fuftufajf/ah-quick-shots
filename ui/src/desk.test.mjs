@@ -178,5 +178,9 @@ assert.deepEqual(anchored(cut, {...cut, end: 13}).keys[0].span, [8, 14]);
 assert.equal(anchored(tripodShot, {...tripodShot, keys: [...tripodShot.keys, {t: 12}]}).keys.length, 2);  // two keyframes: a moving camera
 assert.equal(anchored(tripodShot, {...tripodShot, orbit: 10}).keys[0].span, undefined);  // the same stretch: nothing to keep
 assert.deepEqual(reframe(cut, 12, {...cut, orbit: 100}).keys[0].span, [8, 14]);
-console.log('OK: a trimmed tripod keeps the stretch it was placed over');
+const twoPoints = {...tripodShot, keys: [...tripodShot.keys, {t: 12, orbit: 0, distance: 900, height: 30, fov: 14}]};
+assert.deepEqual(anchored(twoPoints, {...twoPoints, start: 11}).keys.map(k => k.span), [[8, 14], [8, 14]]);  // a path: every point
+const later = anchored(cut, {...cut, keys: [...cut.keys, {t: 13}], end: 13.5});
+assert.deepEqual(later.keys.map(k => k.span), [[8, 14], [11, 14]]);  // a point added since keeps the stretch it was placed on
+console.log('OK: a trimmed tripod or path keeps the stretch it was placed over');
 

@@ -23,7 +23,7 @@ import flight_data
 import overlay
 import trails
 from shot_plan import (_glide, _last_seen, _seat, _steady, camera_pose, framed, compile_shot, escort_poses, filmer_path, ground_moments, landing, nearby,
-                       passes, probe_cameras, ray, ray_eyes, validate_plan, validate_shot)
+                       passes, probe_cameras, ray, ray_eyes, stamp, validate_plan, validate_shot, EASES)
 from viewer_socket import Viewer, film_rows, plane_rows
 
 SHOT = {"id": "one", "name": "Pair", "start": 1, "end": 3, "kind": "pair",
@@ -286,6 +286,50 @@ class DeskTests(unittest.TestCase):
             self.assertIn(said, self.desk.snapshot()["job"]["error"])
         self.assertEqual(self.desk.snapshot()["stand"]["stamp"], stood["stamp"])
 
+    def test_a_second_click_makes_the_tripod_a_path_that_goes_as_its_ease_says(self):
+        # A quarter of the way from 0 to 10 in time: both ends gentle, a gentle start, a gentle stop, an even speed.
+        self.assertEqual([round(_glide([0, 2], [0, 10], .5, ease), 5) for ease in EASES], [1.5625, 1.09375, 2.96875, 2.5])
+        self.assertEqual(round(_glide([0, 2, 4], [0, 10, 0], 3, "linear"), 5), 5)
+        # The still of the click test: 300 ft up over flat ground 100 ft up; a first click at 10 s, a second at 11.5 s.
+        self.desk.media_root.mkdir(parents=True, exist_ok=True)
+        (self.desk.media_root / "still.bmp").write_bytes(b"BM" + bytes(16) + struct.pack("<ii", 1600, -900) + bytes(8))
+        self.desk.data["preview"] = {"url": "/media/still.bmp", "kind": "image", "time": 10, "revision": 1, "film": PROJECT["film"]}
+        def native(command, progress):
+            if command == "camera":
+                return ["camera fixed 0 300 0 0 -0.3 0 fov 1.0 time 10.00 shot 8.00"]
+            if command.startswith("tracks "):
+                return [f"track {t / 50:.2f} {ident} {x} 2000 {300 * t / 50:.2f} 0 0 0" for t in range(390, 651) for ident, x in ((19, 0), (10, 300))]
+            if command.startswith("project "):
+                parts = command.split()
+                eyes = [list(map(float, line.split()[1:4])) for line in Path(parts[4]).read_text().splitlines()]
+                Path(parts[5]).write_text("\n".join(f"ground 10.00 {i + 1} {alt - 100:.1f}" for i, (_x, alt, _z) in enumerate(eyes) if alt - 100 < 3))
+            return []
+        self.desk.viewer.command = native
+        clicked = []
+        shot = {**SHOT, "start": 8, "end": 12}
+        for now, x in ((10, .5), (11.5, .2)):
+            self.desk.data["now"] = now
+            self.run_action({"action": "stand", "shot": shot, "x": x, "y": .5})
+            shot = self.desk.snapshot()["stand"]["shot"]
+            clicked.append(self.desk.snapshot()["stand"]["away"])
+        self.assertEqual([key["t"] for key in shot["keys"]], [10, 11.5])
+        tracks = self.desk._tracks(8, 12)
+        times = sorted(tracks)
+        at = lambda t: min(range(len(times)), key=lambda i: abs(times[i] - t))
+        for ease in EASES:
+            poses = escort_poses(validate_shot({**shot, "ease": ease}, 20), _steady(shot, tracks))
+            a, b, half = (poses[at(t)][:3] for t in (10, 11.5, 10.8))
+            # It stands at each point when there, 6 ft over the ground where each click landed, on the line between.
+            self.assertEqual([round(a[1]), round(b[1])], [106, 106])
+            self.assertLess(abs(math.dist((0, 300, 0), a) - clicked[0]), 8)
+            off = math.dist(a, half) + math.dist(half, b) - math.dist(a, b)
+            self.assertLess(off, .01)
+            share = math.dist(a, half) / math.dist(a, b)
+            self.assertAlmostEqual(share, _glide([10, 11.5], [0, 1], times[at(10.8)], ease), places=3)
+        self.assertNotIn("ease", validate_shot({**shot, "ease": "both"}, 20))
+        with self.assertRaises(ValueError):
+            validate_shot({**shot, "ease": "bounce"}, 20)
+
     def test_a_tripod_trimmed_to_a_later_stretch_stands_where_it_stood(self):
         # The hero turning, so his averaged path, and the tripod's place with it, depends on where a stretch ends.
         def native(command, progress):
@@ -305,6 +349,12 @@ class DeskTests(unittest.TestCase):
         self.assertNotIn("keys", validate_shot(later, 20))
         with self.assertRaises(ValueError):  # a stretch that does not hold its keyframe
             validate_shot({**later, "keys": [{**stood["keys"][0], "span": [11, 14]}]}, 20)
+        # A path of two points cut to a later part flies the same line, at the same pace, as the whole one.
+        path = {**stood, "ease": "linear", "keys": [stood["keys"][0], {**stood["keys"][0], "t": 12.5, "orbit": -60, "distance": 900}]}
+        cut = {**path, "id": "copy", "start": 11, "end": 14, "keys": [{**key, "span": [8, 14]} for key in path["keys"]]}
+        line = lambda shot, t: next(row for row in self.desk._camera(validate_shot(shot, 20)) if row.split()[1] == stamp(t)).split()[4:7]
+        for t in (11, 12, 12.5):
+            self.assertEqual(line(cut, t), line(path, t))
 
     def test_angles_are_rated_over_the_whole_shot(self):
         commands = []

@@ -460,15 +460,18 @@ export function reframe(shot, t, next) {
   return {...next, ...framing(shot), keys};
 }
 
-// A tripod (one keyframe, a path of its own, the lens holding) stands where its keyframe puts it over the stretch it
-// was placed on: when its stretch first changes (trimmed, or a copy cut to a later part), its keyframe keeps that one
-// (`span`), and the desk works its place out there (Desk._anchored), so it does not move and its keyframe may lie outside.
+// A tripod or a path of its own stays where its keyframes put it over the stretch they were placed on: when the
+// shot's stretch changes (trimmed, or a copy cut to a later part), each keyframe that has none keeps that one (`span`),
+// and the desk works its point out there (Desk._anchored), so nothing moves and a keyframe may lie outside the shot.
 export function anchored(before, next) {
-  const key = next?.keys?.[0];
-  if (!before || before.id !== next.id || next.zoom !== "hold" || next.path !== "own" || next.keys.length !== 1 || key.span
+  if (!before || before.id !== next?.id || next.path !== "own" || !next.keys?.length || !next.keys.some(key => !key.span)
     || (before.start === next.start && before.end === next.end)) return next;
-  return {...next, keys: [{...key, span: [before.start, before.end]}]};
+  return {...next, keys: next.keys.map(key => key.span ? key : {...key, span: [before.start, before.end]})};
 }
+
+// How a path of its own goes from point to point (shot_plan.py's EASES): [value, label, what it does].
+export const EASES = [["both", "Smooth", "Sets off and arrives gently"], ["in", "Ease in", "Sets off gently, arrives at speed"],
+  ["out", "Ease out", "Sets off at speed, arrives gently"], ["linear", "Linear", "The same speed all the way"]];
 
 // The keyframe at the playhead put there, or taken away when there is one. The first keeps the shot's camera as it
 // is; with the last one gone the shot keeps that one's camera, flying with the aircraft again.

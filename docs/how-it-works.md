@@ -274,6 +274,17 @@ the two-aircraft cameras then take whoever comes nearest.
   render. The viewer's ground has no trees: a click on a wood stands the
   tripod in the trees, looking into leaves (raise it with Height). A click
   takes about 2 s on a film the viewer has no kept tracks of.
+  With the playhead away from its point, Tripod here adds a second point
+  (or K does, where the camera then is): a path of its own with the lens
+  holding, travelling in a straight line from point to point. Goes says how
+  (`ease`): Smooth starts and stops gently, Ease in starts gently and arrives
+  at speed, Ease out sets off at speed and stops gently, Linear keeps one
+  speed (shot_plan._glide: which ends of the cubic are flat, or straight).
+  Where a point stands is worked out from the hero's averaged path, whose
+  ends move with the shot's: so when a shot of its own path is trimmed, or
+  copied and cut to a later part, each keyframe keeps the stretch it was
+  placed over (`span`) and is pinned there, inside the shot or not. A copy
+  cut 3 s later stood 1,700 ft off before (on a turning flight in a test).
 - Close on you, Close on opponent — the same ship watching one aircraft alone
   from any side (front quarter first; drag the picture round it). The viewer
   holds that aircraft in the middle of the picture, so it can fill the frame

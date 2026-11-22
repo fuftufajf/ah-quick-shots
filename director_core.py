@@ -22,7 +22,7 @@ from flight_data import derive, pair, read_kept
 import overlay
 import trails
 from shot_plan import (PLACE, RIDES, STAND, compile_shot, film_order, filmer_path, ground_moments, nearby, passes, probe_cameras, stamp, track_rows, validate_effects,
-                       escort_places, landing, ray, ray_eyes, tripod, validate_plan, validate_shot, videos as video_rows)
+                       escort_pins, landing, ray, ray_eyes, tripod, validate_plan, validate_shot, videos as video_rows)
 from viewer_socket import Viewer, film_rows, number, plane_rows, safe_text
 
 ACTIONS = ("connect", "open", "rename", "seek", "preview", "clip", "live", "around", "airfield", "flight", "icons", "suggest", "stand", "export_cut")
@@ -978,14 +978,19 @@ class Desk:
         return self.compiled[key]
 
     def _anchored(self, shot):
-        """A tripod copied or trimmed to another stretch stands where it stood. Where it stands is worked out from the
-        hero's averaged path, which a stretch's ends change, and its keyframe may now lie outside the stretch: so its
-        keyframe keeps the stretch it was placed over (`span`, which the page sets when the stretch first changes),
-        and its place is worked out over that one, as it was."""
-        span = (shot.get("keys") or [{}])[0].get("span")
-        if not span or shot.get("zoom") != "hold":
+        """A tripod or a path of its own, copied or trimmed to another stretch, stays where it was. Where a point
+        stands is worked out from the hero's averaged path, which a stretch's ends change, and a point may now lie
+        outside the stretch: so each keyframe keeps the stretch it was placed over (`span`, which the page sets when
+        the stretch first changes), and its pin is worked out over that one, as it was."""
+        keys = shot.get("keys") or []
+        if shot.get("path") != "own" or not any("span" in key for key in keys):
             return shot
-        return {**shot, "place": escort_places({**shot, "start": span[0], "end": span[1]}, self._tracks(*span))[0]}
+        groups = {}
+        for key in keys:
+            groups.setdefault(tuple(key["span"]) if "span" in key else (shot["start"], shot["end"]), []).append(key)
+        pins = [pin for (start, end), group in groups.items()
+                for pin in escort_pins({**shot, "start": start, "end": end, "keys": group}, self._tracks(start, end))]
+        return {**shot, "pins": sorted(pins)}
 
     def _present(self, shot, ids):
         """A moment of a shot's stretch at which all these aircraft are in the film, from its tracks: a tenth of a

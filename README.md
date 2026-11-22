@@ -170,7 +170,10 @@ marked, and goes to the Recycle Bin when you open the next.
    - **Tripod** stands still and follows by turning and zooming only.
      Tripod here, over the picture, then a click on the ground puts it
      there, 6 ft up. Film Viewer does not know trees: if it stands in one,
-     raise it with Height.
+     raise it with Height. Move the playhead and click the ground again (or
+     press K) for a second point: the camera travels from one to the other in
+     a straight line, and Goes says how: Smooth, Ease in, Ease out or Linear.
+     A tripod or a path copied, or trimmed, to another part stays where it was.
    - The rest: you or the opponent in front, close views, over your shoulder,
      from your wing, behind you, fly-bys, the cockpit (straight ahead, or as
      you looked in the fight), cameras on the airframe, riding the bomb.

@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Aperture, ArrowArcRight, ArrowBendUpRight, ArrowClockwise, ArrowFatLinesUp, ArrowLineRight, ArrowLineUp, ArrowRight, ArrowsClockwise, ArrowsHorizontal, ArrowsInLineHorizontal, ArrowsOutLineHorizontal, ArrowsVertical, CaretDown, CaretLeft, CaretRight, CaretUp, Check, Copy, Diamond, FilmSlate, FilmStrip, FolderOpen, MagnifyingGlass, Minus, Mouse, Pause, Play, Plus, SkipBack, Sparkle, Stop, Swap, Trash, Wind, X} from "@phosphor-icons/react";
 import {Assembly} from "./Assembly.jsx";
-import {ANGLES, FREE, anchored, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, when, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera, dayOf, killShot, momentSentence} from "./desk.js";
+import {ANGLES, EASES, FREE, anchored, angleOf, bestVariant, candidates, castOf, clipKey, copyName, dollyCamera, dragCamera, fights, lastVideo, takeName, when, frameOf, keyAt, keyBeside, keyable, looseness, reframe, toggleKey, filterMoments, fitShot, formatTime, howLong, killSequence, landingSequence, sequenceOf, takeoffSequence, turnable, lens, momentLabel, newShot, ownKills, ratingLabel, renderCost, request, trimShot, cutCost, videoRows, zoomCamera, dayOf, killShot, momentSentence} from "./desk.js";
 
 const KINDS = [["fight", "Fights"], ["mine", "Mine"], ["kill", "Kills"], ["drop", "Drops"], ["", "All"]];
 // key, label, unit, min, max, step, the cameras it moves (null: every camera with a lens of its own)
@@ -986,7 +986,7 @@ export function App() {
             <div className="chips"><span className="note">Trails: tick them in Film Viewer</span><button aria-pressed={flags[0]} disabled={!project} onClick={() => look(draft, {action: "icons", body: {on: !desk.icons}})}>Names</button>
               <button aria-pressed={upright} onClick={() => stand(!upright)} title="The frame a vertical 9:16 reel keeps: the middle of the 16:9 picture, as tall as it. A guide only: the video stays 16:9.">9:16</button>
               <button aria-pressed={picking} disabled={!groundable || working} onClick={() => setStanding(!standing)}
-                title="Then click the ground in the picture: a tripod stands there, 6 ft up, and follows the lead aircraft by turning and zooming. Film Viewer knows no trees: if it stands in one, raise it (Height). Esc: never mind">Tripod here</button></div>
+                title="Then click the ground in the picture: a tripod stands there, 6 ft up, and follows the lead aircraft by turning and zooming. On a tripod, with the playhead away from where it was placed, the click is a second point: it travels there in a straight line (Goes). Film Viewer knows no trees: if it stands in one, raise it (Height). Esc: never mind">Tripod here</button></div>
           </div>}
           <div ref={screen} className={`screen ${movable ? "movable" : ""} ${picking ? "standing" : ""}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
             onClick={e => { if (picking) { if (!e.target.closest("button, .hud")) standAt(e); return; } if (!dragged.current && clip && !video && !e.target.closest("button, .hud")) renderPlay(); }}>
@@ -1129,6 +1129,10 @@ export function App() {
               <button aria-pressed={draft.path !== "own"} onClick={() => tune({...draft, path: undefined})} title="The observer keeps flying with you, and glides from one framing to the next">With you</button>
               <button aria-pressed={draft.path === "own"} onClick={() => tune({...draft, path: "own"})} title="Each keyframe pins the observer to the sky where it then is: it flies a smooth line of its own through those places, and you come by, pass and leave. One keyframe is a camera standing still">Its own path</button>
               <button onClick={() => tune({...cam, keys: undefined, path: undefined, zoom: undefined})} title="Back to one framing for the whole shot: the one at the playhead">Clear keyframes</button>
+            </div>}
+            {keyed && draft.path === "own" && draft.keys?.length > 1 && <div className="around" aria-label="How it goes from point to point"><span>Goes</span>
+              {EASES.map(([value, label, says]) => <button key={value} aria-pressed={(draft.ease || "both") === value}
+                onClick={() => tune({...draft, ease: value === "both" ? undefined : value})} title={`${says}, in a straight line from one point to the next`}>{label}</button>)}
             </div>}
             {["cockpit", "recorded"].includes(draft.kind) && <div className="around" aria-label="How the pilot's seat looks"><span>Looks</span>
               <button aria-pressed={draft.kind === "cockpit"} disabled={conflict} onClick={() => tune({...draft, kind: "cockpit", target: stage.other ?? null, fov: 69})} title="Straight ahead, or where the sliders turn it">Straight ahead</button>
