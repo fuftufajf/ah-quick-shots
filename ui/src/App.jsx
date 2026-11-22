@@ -919,7 +919,7 @@ export function App() {
         <button role="tab" aria-selected={view === "assembly"} aria-pressed={view === "assembly"} onClick={() => { film.current?.pause(); setView("assembly"); }} title="The rendered shots in a row, cut and set to music">Assembly</button>
       </div>
       <div className="open-film"><select aria-label="Film" value={filmChoice || project?.film || ""} onChange={e => setFilmChoice(e.target.value)}><option value="">Choose a replay</option>{(() => {
-          const option = f => <option key={f.path} value={f.path}>{f.name}{f.modified ? ` · ${new Date(f.modified * 1000).toLocaleDateString()}` : ""}{waiting.includes(f.path) ? " · to be deleted" : ""}</option>;
+          const option = f => <option key={f.path} value={f.path}>{f.name}{f.modified ? ` · ${new Date(f.modified * 1000).toLocaleString([], {dateStyle: "short", timeStyle: "short"})}` : ""}{waiting.includes(f.path) ? " · to be deleted" : ""}</option>;
           const lately = (desk.recent || []).map(path => desk.films.find(f => f.path === path)).filter(Boolean);
           return lately.length > 1 ? <><optgroup label="Opened lately">{lately.map(option)}</optgroup><optgroup label="All replays">{desk.films.map(option)}</optgroup></> : desk.films.map(option);
         })()}</select><button disabled={!(filmChoice || project?.film) || (running && desk.job.action === "export_cut")} onClick={load} title="Open this replay; an operation in progress finishes first">Open</button>

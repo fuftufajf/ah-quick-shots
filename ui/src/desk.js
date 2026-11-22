@@ -368,13 +368,14 @@ export function momentSentence(event) {
   return ["You fired, no hits", `${count(fight.bursts, "burst")}, ${took}`];
 }
 
-// A replay's day as people say it (its file's time, seconds since 1970): today and yesterday with the time, the
-// weekday within a week, else the date. Names in English like the page; the time as this PC writes it.
+// A replay's day as people say it (its file's time, seconds since 1970): today, yesterday, the weekday within a week,
+// else the date; each with the hour it was saved, which is when it was flown. Names in English like the page; the time
+// as this PC writes it.
 export function dayOf(seconds, now = Date.now()) {
   const at = new Date(seconds * 1000), midnight = date => new Date(date).setHours(0, 0, 0, 0);
   const days = Math.round((midnight(now) - midnight(at)) / 864e5), time = at.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
   if (days === 0 || days === 1) return `${days ? "Yesterday" : "Today"}, ${time}`;
-  return at.toLocaleDateString("en-US", days > 0 && days < 7 ? {weekday: "long"} : {day: "numeric", month: "long", year: "numeric"});
+  return `${at.toLocaleDateString("en-US", days > 0 && days < 7 ? {weekday: "long"} : {day: "numeric", month: "long", year: "numeric"})}, ${time}`;
 }
 
 // The simple desk films a kill as one shot through the observer, from closing in to flying on (the stretch of the

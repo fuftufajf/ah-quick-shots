@@ -157,7 +157,8 @@ assert.deepEqual([momentSentence(film[8]), momentSentence(film[11])], [['Hawk sh
 const noon = new Date(2026, 10, 19, 12).getTime(), day = (y, m, d, h = 9) => new Date(y, m, d, h).getTime() / 1000;
 assert.match(dayOf(day(2026, 10, 19), noon), /^Today, /);
 assert.match(dayOf(day(2026, 10, 18, 23), noon), /^Yesterday, /);
-assert.deepEqual([dayOf(day(2026, 10, 16), noon), dayOf(day(2026, 10, 12), noon)], ['Monday', 'November 12, 2026']);
+assert.match(dayOf(day(2026, 10, 16), noon), /^Monday, \d/);  // with the time it was saved: when it was flown
+assert.match(dayOf(day(2026, 10, 12), noon), /^November 12, 2026, \d/);
 // A kill as one shot: the observer on both, from where the kill sequence begins to where it ends.
 const parts = killSequence({length:400}, [], film[8], film), whole = killShot({length:400}, [], film[8], film);
 assert.deepEqual([whole.kind, whole.hero, whole.target, whole.start, whole.end], ['escort', 19, 10, parts[0].start, parts.at(-1).end]);
